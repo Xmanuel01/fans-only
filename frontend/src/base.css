@@ -1,0 +1,11 @@
+body {
+  margin: 0;
+}
+
+#react-root {
+  display: none;
+}
+
+body.react-page #react-root {
+  display: block;
+}
