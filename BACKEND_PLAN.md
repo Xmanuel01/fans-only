@@ -4,7 +4,7 @@ Scope: outline minimal backend to support non-public mutations (tips/payments, a
 
 ## Stack choices
 - **Supabase**: Postgres, Auth, Storage, Edge Functions (Deno). RLS for all tables.
-- **Edge Functions**: handle payment intents, webhooks, and any privileged writes using the `service_role` key (never exposed to the client).
+- **Edge Functions**: handle payment intents, webhooks, and any privileged writes using the `service_role` key (never exposed to the client). Paystack and Stripe both supported via separate functions.
 - **Client**: calls public selects via anon key; all writes that need trust go through Edge Functions.
 
 ## Migration workflow
@@ -53,8 +53,10 @@ Scope: outline minimal backend to support non-public mutations (tips/payments, a
 - `audit_log`: insert only via service role; no select for clients.
 
 ## Edge Functions / serverless endpoints
-- `create-payment-intent`: input (creator_id, amount, type=tips|subscription); calls Stripe, stores pending row in `payments`, returns client secret.
+- `create-payment-intent`: Stripe path — input (creator_id, amount, type=tips|subscription); calls Stripe, stores pending row in `payments`, returns client secret.
 - `stripe-webhook`: verifies signature, updates `payments` status, creates `subscriptions` or `tips` records, enqueues notifications.
+- `paystack-init`: initializes Paystack transaction (NGN), records pending `payments` row (provider=paystack).
+- `paystack-webhook`: validates signature, marks payments succeeded, and spawns subscriptions/tips based on metadata.
 - `mark-age-confirmed`: server-side update of `profiles.age_confirmed_at` for consistency with audit logging.
 - `notify`: queues notifications; can be reused for system events.
 
