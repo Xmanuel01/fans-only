@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import {
   FiBell,
   FiCompass,
@@ -17,7 +17,28 @@ import {
   FiChevronDown,
 } from 'react-icons/fi'
 import { TbMessageDots } from 'react-icons/tb'
-import { fetchAgeConfirmation, markAgeConfirmed, logAgeExit } from './supabaseClient'
+import {
+  fetchAgeConfirmation,
+  markAgeConfirmed,
+  logAgeExit,
+  logAgeEvent,
+  getCurrentSession,
+} from './supabaseClient'
+
+function AuthPrompt() {
+  return (
+    <div className="auth-block">
+      <div className="auth-card">
+        <h2>Sign in to continue</h2>
+        <p>This content is only available to signed-in users. Please log in or create an account.</p>
+        <ul>
+          <li>Use the Supabase-hosted auth page or your embedded login flow.</li>
+          <li>After sign-in, return here to view content.</li>
+        </ul>
+      </div>
+    </div>
+  )
+}
 
 function AgeGate({
   open,
@@ -1231,6 +1252,8 @@ export default function App() {
     'home' | 'explore' | 'chats' | 'notifications' | 'settings' | 'membership'
   >('explore')
   const [ageConfirmed, setAgeConfirmed] = useState(false)
+  const [sessionChecked, setSessionChecked] = useState(false)
+  const [session, setSession] = useState<any>(null)
   const [filter, setFilter] = useState(filters[0])
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [settingsTab, setSettingsTab] = useState('Basics')
@@ -1244,12 +1267,20 @@ export default function App() {
   const giftRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
+    ;(async () => {
+      const s = await getCurrentSession()
+      setSession(s)
+      setSessionChecked(true)
+    })()
+  }, [])
+
+  useEffect(() => {
     const stored = localStorage.getItem('ageConfirmed')
     if (stored === 'true') setAgeConfirmed(true)
   }, [])
 
   useEffect(() => {
-    if (ageConfirmed) return
+    if (ageConfirmed || !session) return
     ;(async () => {
       const remote = await fetchAgeConfirmation()
       if (remote) {
@@ -1314,6 +1345,26 @@ export default function App() {
 
   const handleCreatorCTA = () => handleUpgradeClick()
 
+  if (!sessionChecked) {
+    return (
+      <div className="app">
+        <div className="auth-block">
+          <div className="auth-card">
+            <p>Checking session…</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return (
+      <div className="app">
+        <AuthPrompt />
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <AgeGate
@@ -1322,6 +1373,7 @@ export default function App() {
           setAgeConfirmed(true)
           localStorage.setItem('ageConfirmed', 'true')
           markAgeConfirmed()
+          logAgeEvent('enter')
         }}
         onExit={() => {
           logAgeExit()

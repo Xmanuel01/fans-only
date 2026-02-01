@@ -1533,6 +1533,33 @@ body {
   font-weight: 700;
 }
 
+.auth-block {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 20% 20%, #1b1b2f, #0e0e15);
+}
+
+.auth-card {
+  background: #0f1624;
+  color: #e8edf5;
+  padding: 32px;
+  border-radius: 16px;
+  max-width: 520px;
+  width: 90%;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.auth-card h2 {
+  margin: 0 0 12px 0;
+}
+
+.auth-card ul {
+  margin: 10px 0 0 18px;
+  color: #b7c2d0;
+}
+
 @media (max-width: 1100px) {
   .sidebar {
     display: none;
