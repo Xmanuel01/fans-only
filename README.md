@@ -27,3 +27,9 @@ Two Vite + React + TypeScript frontends that mirror an OnlyFans-style experience
 ## CI
 - GitHub Actions workflow at `.github/workflows/ci.yml` runs `npm ci && npm run lint && npm run build` for `user-side/` and `npm ci && npm run build` for `creator-side/`.
 - Add repository secrets `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` so the user build uses real Supabase values; otherwise fallback placeholders are used.
+
+## Security hardening checklist (Supabase)
+- **Rotate** Supabase project keys (anon & service) in the dashboard; update GitHub repo secrets accordingly. Replace any local `.env.*` with non-sensitive values (examples in `user-side/.env*.example`).
+- **Enable RLS** on all tables (`profiles`, `age_gate_events`, future content tables) with policies that scope rows to `auth.uid()`.
+- **Keep `service_role` server-side only** (e.g., edge functions) and never in client bundles.
+- **Auth settings:** require email confirmation, configure allowed redirect domains, and enable secret-scanning alerts.
