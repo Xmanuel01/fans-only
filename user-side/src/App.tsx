@@ -40,6 +40,21 @@ function AuthPrompt() {
   )
 }
 
+function ConsentBanner({ onAccept }: { onAccept: () => void }) {
+  return (
+    <div className="consent-banner">
+      <div className="consent-text">
+        We use cookies for sign-in, security, and analytics. See our Cookies and Privacy policies.
+      </div>
+      <div className="consent-actions">
+        <a href="/pages/cookies.html">Cookies</a>
+        <a href="/pages/privacy.html">Privacy</a>
+        <button onClick={onAccept}>Accept</button>
+      </div>
+    </div>
+  )
+}
+
 function AgeGate({
   open,
   onEnter,
@@ -66,6 +81,11 @@ function AgeGate({
           Please use parental controls and filtering tools to prevent minors from accessing
           age-restricted content. If you are under 18, or if such content is illegal in your
           location, please leave now.
+        </p>
+        <p className="age-links">
+          <a href="/pages/terms.html">Terms</a> · <a href="/pages/privacy.html">Privacy</a> ·{' '}
+          <a href="/pages/usc2257.html">2257</a> ·{' '}
+          <a href="/pages/acceptable-use-policy.html">Acceptable Use</a>
         </p>
         <div className="age-actions">
           <button className="pill light full" onClick={onEnter}>
@@ -1259,6 +1279,7 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState('Basics')
   const [membershipTab, setMembershipTab] = useState<'Membership' | 'Gift Creator'>('Membership')
   const [toast, setToast] = useState<string | null>(null)
+  const [consentAccepted, setConsentAccepted] = useState(false)
 
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const connectedRef = useRef<HTMLDivElement | null>(null)
@@ -1288,7 +1309,12 @@ export default function App() {
         localStorage.setItem('ageConfirmed', 'true')
       }
     })()
-  }, [ageConfirmed])
+  }, [ageConfirmed, session])
+
+  useEffect(() => {
+    const consent = localStorage.getItem('cookieConsent')
+    if (consent === 'accepted') setConsentAccepted(true)
+  }, [])
 
   useEffect(() => {
     if (!toast) return
@@ -1502,6 +1528,25 @@ export default function App() {
           />
         )}
       </div>
+      <footer className="footer">
+        <div className="footer-links">
+          <a href="/pages/terms.html">Terms</a>
+          <a href="/pages/privacy.html">Privacy</a>
+          <a href="/pages/cookies.html">Cookies</a>
+          <a href="/pages/dmca.html">DMCA</a>
+          <a href="/pages/acceptable-use-policy.html">Acceptable Use</a>
+          <a href="/pages/usc2257.html">2257</a>
+        </div>
+        <div className="footer-note">Age verification required. Adults 18+ only.</div>
+      </footer>
+      {!consentAccepted && (
+        <ConsentBanner
+          onAccept={() => {
+            localStorage.setItem('cookieConsent', 'accepted')
+            setConsentAccepted(true)
+          }}
+        />
+      )}
     </div>
   )
 }

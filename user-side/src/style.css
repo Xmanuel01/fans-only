@@ -1560,6 +1560,86 @@ body {
   color: #b7c2d0;
 }
 
+.age-links {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #a0a0a0;
+  text-align: center;
+}
+
+.age-links a {
+  color: #d0d7ff;
+}
+
+.footer {
+  margin-top: 28px;
+  padding: 18px 18px 30px;
+  border-top: 1px solid #1f1f1f;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #9aa4b5;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.footer a {
+  color: #cbd3ff;
+  font-weight: 600;
+}
+
+.footer-note {
+  font-size: 12px;
+}
+
+.consent-banner {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(12, 16, 28, 0.9);
+  border: 1px solid #1f2a44;
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: #d7deea;
+  backdrop-filter: blur(8px);
+  z-index: 300;
+}
+
+.consent-text {
+  flex: 1;
+  font-size: 14px;
+}
+
+.consent-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.consent-actions a {
+  color: #cbd3ff;
+  font-weight: 600;
+}
+
+.consent-actions button {
+  border: none;
+  background: #4b7bff;
+  color: white;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 @media (max-width: 1100px) {
   .sidebar {
     display: none;
