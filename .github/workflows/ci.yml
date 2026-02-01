@@ -53,3 +53,25 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+
+  supabase-migrations:
+    name: Supabase migrations dry-run
+    runs-on: ubuntu-latest
+    needs: [user-app, creator-app]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Show Supabase version
+        run: supabase --version
+      - name: Dry-run migrations (skips if no DB URL secret)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "No SUPABASE_DB_URL secret set; skipping dry-run."
+            exit 0
+          fi
+          supabase db push --dry-run --db-url "$SUPABASE_DB_URL"

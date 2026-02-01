@@ -14,6 +14,7 @@ Scope: outline minimal backend to support non-public mutations (tips/payments, a
 - Apply locally: `supabase db push` (uses local dev DB) or `supabase db reset` to rebuild.
 - CI step: run `supabase db lint` (once rules are added) and `supabase db push --dry-run` to ensure migrations apply.
 - Store all migration SQL in `supabase/migrations/` committed to git.
+  - This repo already includes `supabase/config.toml` and an initial migration `20260201T000000_init.sql` (profiles + age_gate_events with RLS).
 
 ## Data model (initial)
 

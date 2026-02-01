@@ -1,0 +1,6 @@
+.env
+.temp
+.branches
+.backup
+local.db
+*.log
