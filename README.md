@@ -23,3 +23,7 @@ Two Vite + React + TypeScript frontends that mirror an OnlyFans-style experience
 ## Deploying
 - Both apps output static bundles suitable for any CDN/static host (e.g., Vercel, Netlify, S3 + CloudFront).
 - Ensure Supabase env vars are configured in the host environment before serving the user app.
+
+## CI
+- GitHub Actions workflow at `.github/workflows/ci.yml` runs `npm ci && npm run lint && npm run build` for `user-side/` and `npm ci && npm run build` for `creator-side/`.
+- Add repository secrets `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` so the user build uses real Supabase values; otherwise fallback placeholders are used.
