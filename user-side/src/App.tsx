@@ -25,6 +25,8 @@ import {
   getCurrentSession,
   sendMagicLink,
   signOut,
+  signInWithProvider,
+  submitFeatureRequest,
 } from './supabaseClient'
 
 function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
@@ -1323,6 +1325,8 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null)
   const [consentAccepted, setConsentAccepted] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
+  const [featureText, setFeatureText] = useState('')
+  const [authError, setAuthError] = useState<string | null>(null)
 
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const connectedRef = useRef<HTMLDivElement | null>(null)
@@ -1444,6 +1448,35 @@ export default function App() {
     return (
       <div className="app">
         <AuthPrompt onLinkSent={() => setToast('Check your email for a sign-in link')} />
+        <div className="oauth-buttons">
+          <button
+            className="pill full"
+            onClick={async () => {
+              try {
+                await signInWithProvider('google')
+              } catch (err) {
+                console.error(err)
+                setAuthError('Google sign-in failed')
+              }
+            }}
+          >
+            Continue with Google
+          </button>
+          <button
+            className="pill full"
+            onClick={async () => {
+              try {
+                await signInWithProvider('github')
+              } catch (err) {
+                console.error(err)
+                setAuthError('GitHub sign-in failed')
+              }
+            }}
+          >
+            Continue with GitHub
+          </button>
+        </div>
+        {authError && <div className="auth-error">{authError}</div>}
         {toast && <div className="toast">{toast}</div>}
       </div>
     )
@@ -1625,8 +1658,27 @@ export default function App() {
         {page === 'features' && (
           <div className="info-page">
             <h2>Feature Requests</h2>
-            <p>Tell us what to build next. This form sends feedback to the team.</p>
-            <button className="pill" onClick={() => setToast('Feedback submitted')}>
+            <p>Tell us what to build next. This sends feedback to the team.</p>
+            <textarea
+              className="feature-input"
+              value={featureText}
+              onChange={(e) => setFeatureText(e.target.value)}
+              placeholder="Describe your idea..."
+            />
+            <button
+              className="pill"
+              onClick={async () => {
+                if (!featureText.trim()) return setToast('Enter a feature idea first')
+                try {
+                  await submitFeatureRequest(featureText.trim())
+                  setFeatureText('')
+                  setToast('Feedback submitted')
+                } catch (err) {
+                  console.error(err)
+                  setToast('Could not submit request')
+                }
+              }}
+            >
               Submit feedback
             </button>
           </div>

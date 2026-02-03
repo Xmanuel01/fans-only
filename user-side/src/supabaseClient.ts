@@ -1,4 +1,4 @@
-import { createClient, type Session } from '@supabase/supabase-js'
+import { createClient, type Session, type Provider } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -102,6 +102,24 @@ export async function signOut() {
   if (error) {
     console.warn('Supabase sign-out failed', error)
   }
+}
+
+export async function signInWithProvider(provider: Provider) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: { redirectTo: window.location.origin },
+  })
+  if (error) throw error
+}
+
+export async function submitFeatureRequest(message: string) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data, error } = await supabase.functions.invoke('feature-request', {
+    body: { message },
+  })
+  if (error) throw error
+  return data
 }
 
 async function getPublicIp(): Promise<string | null> {

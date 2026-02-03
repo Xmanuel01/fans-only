@@ -1560,6 +1560,47 @@ body {
   color: #b7c2d0;
 }
 
+.auth-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 14px 0;
+  font-weight: 600;
+}
+
+.auth-label input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #2b3650;
+  background: #0b1220;
+  color: #e8edf5;
+}
+
+.auth-btn {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: none;
+  background: #4b7bff;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.auth-error {
+  margin-top: 8px;
+  color: #ff9f9f;
+  font-weight: 600;
+}
+
+.oauth-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 320px;
+  margin: 12px auto 0;
+}
+
 .age-links {
   margin-top: 6px;
   font-size: 12px;
@@ -1638,6 +1679,17 @@ body {
   padding: 8px 12px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.feature-input {
+  width: 100%;
+  min-height: 120px;
+  border-radius: 10px;
+  border: 1px solid #1e2636;
+  background: #0f1624;
+  color: #e8edf5;
+  padding: 12px;
+  margin: 12px 0;
 }
 
 @media (max-width: 1100px) {
