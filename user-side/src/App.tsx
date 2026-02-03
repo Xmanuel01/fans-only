@@ -27,6 +27,8 @@ import {
   signOut,
   signInWithProvider,
   submitFeatureRequest,
+  fetchPopularCreators,
+  type CreatorCard,
 } from './supabaseClient'
 
 function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
@@ -297,50 +299,6 @@ const exploreCreators = [
   },
 ]
 
-const popularThisWeek = [
-  {
-    name: 'Kali Lowry',
-    tag: 'Welcome to the exclusive community for all things',
-    img: 'https://i.pravatar.cc/120?img=33',
-  },
-  {
-    name: 'Quazii',
-    tag: 'I create epic content & videos for World of Warcraft.',
-    img: 'https://i.pravatar.cc/120?img=16',
-  },
-  {
-    name: 'The Cutting Room Floor',
-    tag: 'Creating podcasts',
-    img: 'https://dummyimage.com/300x300/1aaf2b/fff&text=TCRF',
-  },
-  {
-    name: 'Fear&',
-    tag: 'a podcast hosted by Hasan, Will, QT & Austin',
-    img: 'https://dummyimage.com/300x300/111/fff&text=Fear&',
-  },
-  {
-    name: 'Smarter Every Day',
-    tag: 'Creating Science Videos',
-    img: 'https://dummyimage.com/300x300/f33/fff&text=SED',
-  },
-  {
-    name: 'Watch What Crappens',
-    tag: 'Creating Podcast!',
-    img: 'https://dummyimage.com/300x300/1990ff/fff&text=Crappens',
-  },
-  { name: 'Eoin Reardon', tag: 'Woodworking Content', img: 'https://i.pravatar.cc/120?img=22' },
-  {
-    name: 'Second Thought',
-    tag: 'Creating Socialist Educational Videos',
-    img: 'https://dummyimage.com/300x300/e23d53/fff&text=Second+Thought',
-  },
-  {
-    name: 'Zane and Heath: UNFILTERED',
-    tag: 'creating UNFILTERED Podcasts, Bonus Episodes, Vlogs, and Shows',
-    img: 'https://dummyimage.com/300x300/2c2c2c/fff&text=Z&H',
-  },
-]
-
 const newOnPatreon = [
   {
     name: 'CirqueDuSirois',
@@ -522,6 +480,17 @@ function ExplorePage({
   filter: string
   onSelectFilter: (value: string) => void
 }) {
+  const [popularCreators, setPopularCreators] = useState<CreatorCard[]>([])
+  const [popularLoading, setPopularLoading] = useState(true)
+
+  useEffect(() => {
+    setPopularLoading(true)
+    ;(async () => {
+      const data = await fetchPopularCreators()
+      if (data.length) setPopularCreators(data)
+      setPopularLoading(false)
+    })()
+  }, [])
   return (
     <div className="explore">
       <div className="search-bar">
@@ -550,9 +519,44 @@ function ExplorePage({
 
       <ExploreSection title="Popular this week">
         <div className="list-grid">
-          {popularThisWeek.map((c) => (
-            <SquareCard key={c.name} {...c} />
-          ))}
+          {popularLoading && <p className="muted">Loading top creators…</p>}
+          {!popularLoading &&
+            (popularCreators.length
+              ? popularCreators
+              : [
+                  {
+                    id: 'placeholder-1',
+                    display_name: 'Creator One',
+                    handle: '@creator1',
+                    avatar_url: null,
+                    category: 'Lifestyle',
+                  },
+                  {
+                    id: 'placeholder-2',
+                    display_name: 'Creator Two',
+                    handle: '@creator2',
+                    avatar_url: null,
+                    category: 'Gaming',
+                  },
+                  {
+                    id: 'placeholder-3',
+                    display_name: 'Creator Three',
+                    handle: '@creator3',
+                    avatar_url: null,
+                    category: 'Fitness',
+                  },
+                ]
+            ).map((c) => (
+              <SquareCard
+                key={c.id}
+                name={c.display_name}
+                tag={c.category ?? c.handle}
+                img={
+                  c.avatar_url ??
+                  `https://ui-avatars.com/api/?name=${encodeURIComponent(c.display_name)}&background=111827&color=f9fafb`
+                }
+              />
+            ))}
         </div>
       </ExploreSection>
 
@@ -1436,6 +1440,7 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('theme', theme)
   }, [theme])
+
 
   const scrollToRef = (ref: React.RefObject<HTMLElement | null>) => {
     setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)

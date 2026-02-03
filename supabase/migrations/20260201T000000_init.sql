@@ -85,3 +85,28 @@ create policy "Feature requests: insert self or anonymous"
   on public.feature_requests
   for insert
   with check (auth.uid() is null or auth.uid() = user_id);
+
+-- Creators (for popular feed)
+create table if not exists public.creators (
+  id uuid primary key references auth.users (id) on delete cascade,
+  handle text unique not null,
+  display_name text not null,
+  avatar_url text,
+  category text,
+  popularity_score numeric default 0,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists creators_popularity_idx on public.creators (popularity_score desc);
+create index if not exists creators_handle_idx on public.creators (lower(handle));
+
+alter table public.creators enable row level security;
+
+create policy "Creators: public select" on public.creators for select using (true);
+
+create policy "Creators: self upsert" on public.creators
+  for insert
+  with check (auth.uid() = id);
+
+create policy "Creators: self update" on public.creators
+  for update using (auth.uid() = id) with check (auth.uid() = id);

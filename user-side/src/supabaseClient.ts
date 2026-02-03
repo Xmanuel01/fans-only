@@ -122,6 +122,38 @@ export async function submitFeatureRequest(message: string) {
   return data
 }
 
+export type CreatorCard = {
+  id: string
+  handle: string
+  display_name: string
+  avatar_url: string | null
+  category: string | null
+}
+
+export async function fetchPopularCreators(limit = 6): Promise<CreatorCard[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('creators')
+    .select('id, handle, display_name, avatar_url, category, popularity_score')
+    .order('popularity_score', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    console.warn('Supabase popular creators fetch failed', error)
+    return []
+  }
+
+  return (
+    data?.map((c) => ({
+      id: c.id,
+      handle: c.handle,
+      display_name: c.display_name,
+      avatar_url: c.avatar_url,
+      category: c.category,
+    })) ?? []
+  )
+}
+
 async function getPublicIp(): Promise<string | null> {
   if (cachedIp) return cachedIp
   try {
