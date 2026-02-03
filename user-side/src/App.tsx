@@ -299,7 +299,7 @@ const exploreCreators = [
   },
 ]
 
-const newOnPatreon = [
+const newOnChic = [
   {
     name: 'CirqueDuSirois',
     tag: 'The Throbbing Pulse of DFW …',
@@ -562,9 +562,9 @@ function ExplorePage({
 
       <TopicsGrid />
 
-      <ExploreSection title="New on Patreon">
+      <ExploreSection title="New on Chic">
         <div className="card-row">
-          {newOnPatreon.map((c) => (
+          {newOnChic.map((c) => (
             <SquareCard key={c.name} {...c} />
           ))}
         </div>
@@ -661,7 +661,7 @@ function ChatsPage() {
             with access will be able to see that you've joined.
           </p>
           <p>
-            Patreon's <span className="link-like">Community Guidelines</span> apply to all community
+            Chic's <span className="link-like">Community Guidelines</span> apply to all community
             spaces. To keep chats safe and friendly, please:
           </p>
           <ul>
@@ -853,7 +853,7 @@ function AccountCard() {
           <div>
             <div className="name">Full public profile</div>
             <div className="muted">
-              Your public profile always includes your name, photo, the date you joined Patreon, and
+              Your public profile always includes your name, photo, the date you joined Chic, and
               any social links or other information you add.
             </div>
           </div>
@@ -1001,6 +1001,18 @@ function SettingsPage({
           <div className="settings-card">
             <div className="card-title">Blocked users</div>
             <div className="muted">You haven't blocked any users.</div>
+          </div>
+          <div className="settings-card">
+            <div className="card-title">Policies & Compliance</div>
+            <div className="footer-links">
+              <a href="/pages/terms.html">Terms</a>
+              <a href="/pages/privacy.html">Privacy</a>
+              <a href="/pages/cookies.html">Cookies</a>
+              <a href="/pages/dmca.html">DMCA</a>
+              <a href="/pages/acceptable-use-policy.html">Acceptable Use</a>
+              <a href="/pages/usc2257.html">2257</a>
+            </div>
+            <div className="footer-note">Age verification required. Adults 18+ only.</div>
           </div>
         </div>
       )}
@@ -1645,7 +1657,7 @@ export default function App() {
           <button className="menu-item" onClick={() => setPage('news')}>
             News
           </button>
-          <button className="menu-item" onClick={() => window.open('https://www.patreon.com/', '_blank')}>
+          <button className="menu-item" onClick={() => window.open('https://www.Chic.com/', '_blank')}>
             Patreon for Creators
           </button>
           <button className="menu-item" onClick={() => setPage('help')}>
@@ -1763,17 +1775,6 @@ export default function App() {
           />
         )}
       </div>
-      <footer className="footer">
-        <div className="footer-links">
-          <a href="/pages/terms.html">Terms</a>
-          <a href="/pages/privacy.html">Privacy</a>
-          <a href="/pages/cookies.html">Cookies</a>
-          <a href="/pages/dmca.html">DMCA</a>
-          <a href="/pages/acceptable-use-policy.html">Acceptable Use</a>
-          <a href="/pages/usc2257.html">2257</a>
-        </div>
-        <div className="footer-note">Age verification required. Adults 18+ only.</div>
-      </footer>
       {!consentAccepted && (
         <ConsentBanner
           onAccept={() => {
