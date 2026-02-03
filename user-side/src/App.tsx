@@ -61,16 +61,12 @@ function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
       <div className="oauth-group">
         <button
           className="oauth-btn"
-          onClick={async () => {
-            try {
-              await signInWithProvider('github')
-            } catch (err) {
-              console.error(err)
-              setError('GitHub sign-in failed')
-            }
+          onClick={() => {
+            localStorage.setItem('guestMode', 'true')
+            window.location.reload()
           }}
         >
-          Continue with GitHub
+          Proceed without login
         </button>
         <button
           className="oauth-btn"
@@ -1388,6 +1384,7 @@ export default function App() {
   const [consentAccepted, setConsentAccepted] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
   const [featureText, setFeatureText] = useState('')
+  const [guestMode, setGuestMode] = useState(false)
 
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const connectedRef = useRef<HTMLDivElement | null>(null)
@@ -1414,6 +1411,8 @@ export default function App() {
     const storedTheme = localStorage.getItem('theme')
     if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system')
       setTheme(storedTheme)
+    const guest = localStorage.getItem('guestMode')
+    if (guest === 'true') setGuestMode(true)
   }, [])
 
   useEffect(() => {
@@ -1488,6 +1487,7 @@ export default function App() {
   const handleCreatorCTA = () => handleUpgradeClick()
 
   const handleLogout = async () => {
+    localStorage.removeItem('guestMode')
     await signOut()
     setSession(null)
     setAgeConfirmed(false)
@@ -1503,7 +1503,7 @@ export default function App() {
     )
   }
 
-  if (!session) {
+  if (!session && !guestMode) {
     return (
       <div className="auth-shell">
         <AuthPrompt onLinkSent={() => setToast('Check your email for a sign-in link')} />
