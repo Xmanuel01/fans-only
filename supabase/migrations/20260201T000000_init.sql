@@ -63,3 +63,25 @@ create policy "Age events: insert"
   );
 
 -- Service role can do anything (implicit via bypass RLS)
+
+-- Feature requests
+create table if not exists public.feature_requests (
+  id bigserial primary key,
+  user_id uuid references auth.users (id) on delete set null,
+  message text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists feature_requests_user_idx on public.feature_requests (user_id, created_at desc);
+
+alter table public.feature_requests enable row level security;
+
+create policy "Feature requests: owner select"
+  on public.feature_requests
+  for select
+  using (auth.uid() = user_id);
+
+create policy "Feature requests: insert self or anonymous"
+  on public.feature_requests
+  for insert
+  with check (auth.uid() is null or auth.uid() = user_id);

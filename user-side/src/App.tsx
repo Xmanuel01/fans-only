@@ -1636,23 +1636,31 @@ export default function App() {
         {page === 'news' && (
           <div className="info-page">
             <h2>Product News</h2>
-            <p>Stay tuned for release notes, compliance updates, and creator tools.</p>
-            <ul>
-              <li>Age-gate logging and IP capture now active.</li>
-              <li>Paystack integration in progress.</li>
-              <li>Supabase auth with magic link sign-in enabled.</li>
-            </ul>
+            <p>Read the latest release notes and compliance updates.</p>
+            <button
+              className="pill"
+              onClick={() => window.open('https://yourdomain.com/docs/releasenotes', '_blank')}
+            >
+              Open release notes
+            </button>
           </div>
         )}
         {page === 'help' && (
           <div className="info-page">
             <h2>Help Center</h2>
             <p>Find quick answers or contact support.</p>
-            <ul>
-              <li>Payments: Check your bank statement for Paystack/Stripe charges.</li>
-              <li>Age gate: You must be 18+ and logged in to view content.</li>
-              <li>Need support? Email support@yourdomain.com.</li>
-            </ul>
+            <button
+              className="pill"
+              onClick={() => window.open('https://yourdomain.com/support', '_blank')}
+            >
+              Open Help Center
+            </button>
+            <button
+              className="pill ghost"
+              onClick={() => window.open('mailto:support@yourdomain.com')}
+            >
+              Email support
+            </button>
           </div>
         )}
         {page === 'features' && (
