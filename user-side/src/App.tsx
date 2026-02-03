@@ -54,7 +54,7 @@ function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
   return (
     <div className="auth-panel">
       <div className="auth-brand">
-        <div className="brand-mark" />
+        <img src="/logo.png" alt="Logo" className="brand-logo" />
         <span>supabase</span>
       </div>
       <h1>Welcome back</h1>
@@ -1552,7 +1552,9 @@ export default function App() {
         }}
       />
       <aside className="sidebar">
-        <div className="logo-mark" />
+        <div className="logo-mark">
+          <img src="/logo.png" alt="Logo" />
+        </div>
         <nav className="nav">
           {sidebarNav.map((item) => {
             const Icon = item.icon
