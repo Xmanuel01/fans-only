@@ -1442,6 +1442,7 @@ export default function App() {
   }
 
   const handleUpgradeClick = () => {
+    if (guestMode && !session) return setToast('Sign in to manage memberships')
     setPage('membership')
     setMembershipTab('Membership')
     setToast('Opening upgrade options')
@@ -1449,6 +1450,7 @@ export default function App() {
   }
 
   const handleGiftClick = () => {
+    if (guestMode && !session) return setToast('Sign in to send gifts')
     setPage('membership')
     setMembershipTab('Gift Creator')
     setToast('Opening gift creator')
@@ -1456,6 +1458,7 @@ export default function App() {
   }
 
   const handlePaymentMethods = () => {
+    if (guestMode && !session) return setToast('Sign in to manage payment methods')
     setPage('settings')
     setSettingsTab('More')
     setToast('Opening payment methods')
@@ -1463,6 +1466,7 @@ export default function App() {
   }
 
   const handleConnectedApp = (app: string) => {
+    if (guestMode && !session) return setToast('Sign in to connect apps')
     setPage('settings')
     setSettingsTab('More')
     setToast(`Opening ${app} connect`)
@@ -1470,6 +1474,7 @@ export default function App() {
   }
 
   const handleMembershipEntry = () => {
+    if (guestMode && !session) return setToast('Sign in to view memberships')
     setPage('membership')
     setMembershipTab('Membership')
     scrollToRef(upgradeRef)
@@ -1477,6 +1482,7 @@ export default function App() {
   }
 
   const handleVisitedClick = (name: string) => {
+    if (guestMode && !session) return setToast('Sign in to view creator details')
     setPage('membership')
     setToast(`Opening ${name}`)
     scrollToRef(upgradeRef)
@@ -1534,14 +1540,21 @@ export default function App() {
           {sidebarNav.map((item) => {
             const Icon = item.icon
             const active = page === item.key
+            const gated = guestMode && !session && ['chats', 'notifications', 'settings', 'membership'].includes(item.key)
             return (
               <button
                 key={item.label}
-                className={`nav-item ${active ? 'active' : ''}`}
+                className={`nav-item ${active ? 'active' : ''} ${gated ? 'disabled' : ''}`}
+                disabled={gated}
                 onClick={() => {
+                  if (gated) {
+                    setToast('Sign in to access this section')
+                    return
+                  }
                   setShowProfileMenu(false)
                   setPage(item.key as typeof page)
                 }}
+                title={gated ? 'Sign in to access' : undefined}
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
@@ -1581,12 +1594,12 @@ export default function App() {
           </button>
         </div>
 
-        <div className="creator-cta" onClick={handleCreatorCTA}>
-          <div className="cta-header">
-            <span>Become a creator</span>
-            <FiMoreHorizontal />
-          </div>
-          <p>Build a membership for your fans and get paid to create on your own terms.</p>
+          <div className={`creator-cta ${guestMode && !session ? 'disabled' : ''}`} onClick={handleCreatorCTA}>
+            <div className="cta-header">
+              <span>Become a creator</span>
+              <FiMoreHorizontal />
+            </div>
+            <p>Build a membership for your fans and get paid to create on your own terms.</p>
           <button onClick={() => setPage('membership')}>Get started</button>
         </div>
 
@@ -1764,6 +1777,7 @@ export default function App() {
           }}
         />
       )}
+      {guestMode && !session && <div className="guest-badge">Guest mode: limited features</div>}
     </div>
   )
 }
