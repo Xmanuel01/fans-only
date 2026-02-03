@@ -87,6 +87,23 @@ export async function logAgeExit() {
   await logAgeEvent('exit')
 }
 
+export async function sendMagicLink(email: string) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.origin },
+  })
+  if (error) throw error
+}
+
+export async function signOut() {
+  if (!supabase) return
+  const { error } = await supabase.auth.signOut()
+  if (error) {
+    console.warn('Supabase sign-out failed', error)
+  }
+}
+
 async function getPublicIp(): Promise<string | null> {
   if (cachedIp) return cachedIp
   try {

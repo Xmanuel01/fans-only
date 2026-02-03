@@ -23,14 +23,48 @@ import {
   logAgeExit,
   logAgeEvent,
   getCurrentSession,
+  sendMagicLink,
+  signOut,
 } from './supabaseClient'
 
-function AuthPrompt() {
+function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
+  const [email, setEmail] = useState('')
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSend = async () => {
+    if (!email) return
+    setStatus('sending')
+    setError(null)
+    try {
+      await sendMagicLink(email)
+      setStatus('sent')
+      onLinkSent()
+    } catch (err) {
+      console.error(err)
+      setError('Could not send sign-in link. Try again.')
+      setStatus('error')
+    }
+  }
+
   return (
     <div className="auth-block">
       <div className="auth-card">
         <h2>Sign in to continue</h2>
         <p>This content is only available to signed-in users. Please log in or create an account.</p>
+        <label className="auth-label">
+          Email for magic link
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            placeholder="you@example.com"
+          />
+        </label>
+        <button className="auth-btn" onClick={handleSend} disabled={status === 'sending'}>
+          {status === 'sending' ? 'Sending…' : status === 'sent' ? 'Link sent!' : 'Send magic link'}
+        </button>
+        {error && <div className="auth-error">{error}</div>}
         <ul>
           <li>Use the Supabase-hosted auth page or your embedded login flow.</li>
           <li>After sign-in, return here to view content.</li>
@@ -1269,7 +1303,15 @@ function HomePage({ onSeeAll }: { onSeeAll: () => void }) {
 
 export default function App() {
   const [page, setPage] = useState<
-    'home' | 'explore' | 'chats' | 'notifications' | 'settings' | 'membership'
+    | 'home'
+    | 'explore'
+    | 'chats'
+    | 'notifications'
+    | 'settings'
+    | 'membership'
+    | 'news'
+    | 'help'
+    | 'features'
   >('explore')
   const [ageConfirmed, setAgeConfirmed] = useState(false)
   const [sessionChecked, setSessionChecked] = useState(false)
@@ -1280,6 +1322,7 @@ export default function App() {
   const [membershipTab, setMembershipTab] = useState<'Membership' | 'Gift Creator'>('Membership')
   const [toast, setToast] = useState<string | null>(null)
   const [consentAccepted, setConsentAccepted] = useState(false)
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
 
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const connectedRef = useRef<HTMLDivElement | null>(null)
@@ -1301,6 +1344,14 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const consent = localStorage.getItem('cookieConsent')
+    if (consent === 'accepted') setConsentAccepted(true)
+    const storedTheme = localStorage.getItem('theme')
+    if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system')
+      setTheme(storedTheme)
+  }, [])
+
+  useEffect(() => {
     if (ageConfirmed || !session) return
     ;(async () => {
       const remote = await fetchAgeConfirmation()
@@ -1312,15 +1363,15 @@ export default function App() {
   }, [ageConfirmed, session])
 
   useEffect(() => {
-    const consent = localStorage.getItem('cookieConsent')
-    if (consent === 'accepted') setConsentAccepted(true)
-  }, [])
-
-  useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 2400)
     return () => clearTimeout(t)
   }, [toast])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('theme', theme)
+  }, [theme])
 
   const scrollToRef = (ref: React.RefObject<HTMLElement | null>) => {
     setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
@@ -1371,7 +1422,11 @@ export default function App() {
 
   const handleCreatorCTA = () => handleUpgradeClick()
 
-  const handleComingSoon = (label: string) => setToast(`${label} coming soon`)
+  const handleLogout = async () => {
+    await signOut()
+    setSession(null)
+    setAgeConfirmed(false)
+  }
 
   if (!sessionChecked) {
     return (
@@ -1388,7 +1443,8 @@ export default function App() {
   if (!session) {
     return (
       <div className="app">
-        <AuthPrompt />
+        <AuthPrompt onLinkSent={() => setToast('Check your email for a sign-in link')} />
+        {toast && <div className="toast">{toast}</div>}
       </div>
     )
   }
@@ -1467,7 +1523,7 @@ export default function App() {
             <FiMoreHorizontal />
           </div>
           <p>Build a membership for your fans and get paid to create on your own terms.</p>
-          <button onClick={() => handleComingSoon('Creator onboarding')}>Get started</button>
+          <button onClick={() => setPage('membership')}>Get started</button>
         </div>
 
         <div className="profile">
@@ -1485,26 +1541,35 @@ export default function App() {
             <div className="profile-menu">
               <div className="menu-title">Appearance</div>
           <div className="appearance-row">
-            <button className="chip tiny" onClick={() => handleComingSoon('Light theme')}>
+            <button
+              className={`chip tiny ${theme === 'light' ? 'active' : ''}`}
+              onClick={() => setTheme('light')}
+            >
               Light
             </button>
-            <button className="chip tiny active" onClick={() => handleComingSoon('Dark theme')}>
+            <button
+              className={`chip tiny ${theme === 'dark' ? 'active' : ''}`}
+              onClick={() => setTheme('dark')}
+            >
               Dark
             </button>
-            <button className="chip tiny" onClick={() => handleComingSoon('System theme')}>
+            <button
+              className={`chip tiny ${theme === 'system' ? 'active' : ''}`}
+              onClick={() => setTheme('system')}
+            >
               System
             </button>
           </div>
-          <button className="menu-item" onClick={() => handleComingSoon('News')}>
+          <button className="menu-item" onClick={() => setPage('news')}>
             News
           </button>
-          <button className="menu-item" onClick={() => handleComingSoon('Patreon for Creators')}>
+          <button className="menu-item" onClick={() => window.open('https://www.patreon.com/', '_blank')}>
             Patreon for Creators
           </button>
-          <button className="menu-item" onClick={() => handleComingSoon('Help Center')}>
+          <button className="menu-item" onClick={() => setPage('help')}>
             Help Center & FAQ
           </button>
-          <button className="menu-item" onClick={() => handleComingSoon('Feature Requests')}>
+          <button className="menu-item" onClick={() => setPage('features')}>
             Feature Requests
           </button>
           <button className="menu-item" onClick={() => window.open('/pages/terms.html', '_blank')}>
@@ -1522,7 +1587,9 @@ export default function App() {
           >
             Community Policies
           </button>
-          <button className="menu-item danger">Log out</button>
+          <button className="menu-item danger" onClick={handleLogout}>
+            Log out
+          </button>
         </div>
       )}
         </div>
@@ -1533,6 +1600,37 @@ export default function App() {
         {page === 'explore' && <ExplorePage filter={filter} onSelectFilter={setFilter} />}
         {page === 'chats' && <ChatsPage />}
         {page === 'notifications' && <NotificationsPage />}
+        {page === 'news' && (
+          <div className="info-page">
+            <h2>Product News</h2>
+            <p>Stay tuned for release notes, compliance updates, and creator tools.</p>
+            <ul>
+              <li>Age-gate logging and IP capture now active.</li>
+              <li>Paystack integration in progress.</li>
+              <li>Supabase auth with magic link sign-in enabled.</li>
+            </ul>
+          </div>
+        )}
+        {page === 'help' && (
+          <div className="info-page">
+            <h2>Help Center</h2>
+            <p>Find quick answers or contact support.</p>
+            <ul>
+              <li>Payments: Check your bank statement for Paystack/Stripe charges.</li>
+              <li>Age gate: You must be 18+ and logged in to view content.</li>
+              <li>Need support? Email support@yourdomain.com.</li>
+            </ul>
+          </div>
+        )}
+        {page === 'features' && (
+          <div className="info-page">
+            <h2>Feature Requests</h2>
+            <p>Tell us what to build next. This form sends feedback to the team.</p>
+            <button className="pill" onClick={() => setToast('Feedback submitted')}>
+              Submit feedback
+            </button>
+          </div>
+        )}
         {page === 'settings' && (
           <SettingsPage
             tab={settingsTab}
