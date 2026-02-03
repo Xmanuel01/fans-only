@@ -1371,6 +1371,8 @@ export default function App() {
 
   const handleCreatorCTA = () => handleUpgradeClick()
 
+  const handleComingSoon = (label: string) => setToast(`${label} coming soon`)
+
   if (!sessionChecked) {
     return (
       <div className="app">
@@ -1465,7 +1467,7 @@ export default function App() {
             <FiMoreHorizontal />
           </div>
           <p>Build a membership for your fans and get paid to create on your own terms.</p>
-          <button>Get started</button>
+          <button onClick={() => handleComingSoon('Creator onboarding')}>Get started</button>
         </div>
 
         <div className="profile">
@@ -1482,21 +1484,47 @@ export default function App() {
           {showProfileMenu && (
             <div className="profile-menu">
               <div className="menu-title">Appearance</div>
-              <div className="appearance-row">
-                <button className="chip tiny">Light</button>
-                <button className="chip tiny active">Dark</button>
-                <button className="chip tiny">System</button>
-              </div>
-              <button className="menu-item">News</button>
-              <button className="menu-item">Patreon for Creators</button>
-              <button className="menu-item">Help Center & FAQ</button>
-              <button className="menu-item">Feature Requests</button>
-              <button className="menu-item">Terms of Use</button>
-              <button className="menu-item">Privacy Policy</button>
-              <button className="menu-item">Community Policies</button>
-              <button className="menu-item danger">Log out</button>
-            </div>
-          )}
+          <div className="appearance-row">
+            <button className="chip tiny" onClick={() => handleComingSoon('Light theme')}>
+              Light
+            </button>
+            <button className="chip tiny active" onClick={() => handleComingSoon('Dark theme')}>
+              Dark
+            </button>
+            <button className="chip tiny" onClick={() => handleComingSoon('System theme')}>
+              System
+            </button>
+          </div>
+          <button className="menu-item" onClick={() => handleComingSoon('News')}>
+            News
+          </button>
+          <button className="menu-item" onClick={() => handleComingSoon('Patreon for Creators')}>
+            Patreon for Creators
+          </button>
+          <button className="menu-item" onClick={() => handleComingSoon('Help Center')}>
+            Help Center & FAQ
+          </button>
+          <button className="menu-item" onClick={() => handleComingSoon('Feature Requests')}>
+            Feature Requests
+          </button>
+          <button className="menu-item" onClick={() => window.open('/pages/terms.html', '_blank')}>
+            Terms of Use
+          </button>
+          <button
+            className="menu-item"
+            onClick={() => window.open('/pages/privacy.html', '_blank')}
+          >
+            Privacy Policy
+          </button>
+          <button
+            className="menu-item"
+            onClick={() => window.open('/pages/acceptable-use-policy.html', '_blank')}
+          >
+            Community Policies
+          </button>
+          <button className="menu-item danger">Log out</button>
+        </div>
+      )}
         </div>
       </aside>
 
