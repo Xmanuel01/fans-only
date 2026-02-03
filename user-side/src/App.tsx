@@ -50,28 +50,90 @@ function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
   }
 
   return (
-    <div className="auth-block">
-      <div className="auth-card">
-        <h2>Sign in to continue</h2>
-        <p>This content is only available to signed-in users. Please log in or create an account.</p>
-        <label className="auth-label">
-          Email for magic link
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            type="email"
-            placeholder="you@example.com"
-          />
-        </label>
-        <button className="auth-btn" onClick={handleSend} disabled={status === 'sending'}>
-          {status === 'sending' ? 'Sending…' : status === 'sent' ? 'Link sent!' : 'Send magic link'}
-        </button>
-        {error && <div className="auth-error">{error}</div>}
-        <ul>
-          <li>Use the Supabase-hosted auth page or your embedded login flow.</li>
-          <li>After sign-in, return here to view content.</li>
-        </ul>
+    <div className="auth-panel">
+      <div className="auth-brand">
+        <div className="brand-mark" />
+        <span>supabase</span>
       </div>
+      <h1>Welcome back</h1>
+      <p className="auth-lede">Sign in to your account</p>
+
+      <div className="oauth-group">
+        <button
+          className="oauth-btn"
+          onClick={async () => {
+            try {
+              await signInWithProvider('github')
+            } catch (err) {
+              console.error(err)
+              setError('GitHub sign-in failed')
+            }
+          }}
+        >
+          Continue with GitHub
+        </button>
+        <button
+          className="oauth-btn"
+          onClick={async () => {
+            try {
+              await signInWithProvider('google')
+            } catch (err) {
+              console.error(err)
+              setError('Google sign-in failed')
+            }
+          }}
+        >
+          Continue with Google
+        </button>
+      </div>
+
+      <div className="divider-row">
+        <span className="line" />
+        <span className="or">or</span>
+        <span className="line" />
+      </div>
+
+      <label className="auth-label">
+        Email for magic link
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          type="email"
+          placeholder="you@example.com"
+        />
+      </label>
+      <button className="auth-btn primary" onClick={handleSend} disabled={status === 'sending'}>
+        {status === 'sending' ? 'Sending…' : status === 'sent' ? 'Link sent!' : 'Send magic link'}
+      </button>
+      {error && <div className="auth-error">{error}</div>}
+
+      <ul className="auth-notes">
+        <li>Use the Supabase-hosted auth page or your embedded login flow.</li>
+        <li>After sign-in, return here to view content.</li>
+      </ul>
+    </div>
+  )
+}
+
+function AuthHero() {
+  return (
+    <div className="auth-hero">
+      <div className="hero-quote">
+        “Loving Supabase. The auth and database just work, letting us ship faster.”
+      </div>
+      <div className="hero-meta">
+        <img
+          src="https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=120&q=80"
+          alt="Avatar"
+        />
+        <div>
+          <div className="hero-name">@creator</div>
+          <div className="hero-role">Product Designer</div>
+        </div>
+      </div>
+      <a className="doc-link" href="https://supabase.com/docs" target="_blank" rel="noreferrer">
+        Documentation
+      </a>
     </div>
   )
 }
@@ -1326,7 +1388,6 @@ export default function App() {
   const [consentAccepted, setConsentAccepted] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
   const [featureText, setFeatureText] = useState('')
-  const [authError, setAuthError] = useState<string | null>(null)
 
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const connectedRef = useRef<HTMLDivElement | null>(null)
@@ -1434,11 +1495,9 @@ export default function App() {
 
   if (!sessionChecked) {
     return (
-      <div className="app">
-        <div className="auth-block">
-          <div className="auth-card">
-            <p>Checking session…</p>
-          </div>
+      <div className="auth-shell">
+        <div className="auth-panel single">
+          <p>Checking session…</p>
         </div>
       </div>
     )
@@ -1446,37 +1505,9 @@ export default function App() {
 
   if (!session) {
     return (
-      <div className="app">
+      <div className="auth-shell">
         <AuthPrompt onLinkSent={() => setToast('Check your email for a sign-in link')} />
-        <div className="oauth-buttons">
-          <button
-            className="pill full"
-            onClick={async () => {
-              try {
-                await signInWithProvider('google')
-              } catch (err) {
-                console.error(err)
-                setAuthError('Google sign-in failed')
-              }
-            }}
-          >
-            Continue with Google
-          </button>
-          <button
-            className="pill full"
-            onClick={async () => {
-              try {
-                await signInWithProvider('github')
-              } catch (err) {
-                console.error(err)
-                setAuthError('GitHub sign-in failed')
-              }
-            }}
-          >
-            Continue with GitHub
-          </button>
-        </div>
-        {authError && <div className="auth-error">{authError}</div>}
+        <AuthHero />
         {toast && <div className="toast">{toast}</div>}
       </div>
     )
