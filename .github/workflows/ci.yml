@@ -27,6 +27,8 @@ jobs:
           cache-dependency-path: user-side/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Test
+        run: npm test
       - name: Lint (type check)
         run: npm run lint
       - name: Build
@@ -51,6 +53,8 @@ jobs:
           cache-dependency-path: creator-side/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build
 
@@ -66,7 +70,7 @@ jobs:
           version: latest
       - name: Show Supabase version
         run: supabase --version
-      - name: Dry-run migrations (skips if no DB URL secret)
+      - name: Lint and dry-run migrations (skips if no DB URL secret)
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
@@ -74,4 +78,5 @@ jobs:
             echo "No SUPABASE_DB_URL secret set; skipping dry-run."
             exit 0
           fi
+          supabase db lint
           supabase db push --dry-run --db-url "$SUPABASE_DB_URL"

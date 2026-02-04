@@ -12,7 +12,8 @@ Two Vite + React + TypeScript frontends that mirror an OnlyFans-style experience
 - Build static assets: `npm run build` -> `dist/`.
 
 ## Environment
-- `user-side/` reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` via Vite.
+- `user-side/` reads `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_CREATOR_APP_URL` via Vite.
+- `creator-side/` reads `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_CONSUMER_APP_URL` via Vite.
 - Copy the provided `.env.local.example`, `.env.staging.example`, or `.env.production.example` to the matching file and fill values; keep real secrets out of git.
 
 ## Project notes

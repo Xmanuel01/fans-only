@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './MyPages.css';
 
@@ -189,13 +189,115 @@ const PAYMENTS: PaymentItem[] = [
   { id: 'p-4', label: 'Chargeback', date: 'Dec 29', amount: '-$42.00', status: 'failed' },
 ];
 
+export function MyHome() {
+  return (
+    <MyLayout title="Home" activeNav="home" contentClassName="my-home">
+      <div className="home-hero">
+        <div className="home-hero__title">Welcome back, Aiko</div>
+        <div className="home-hero__subtitle">Jump into your chats or create a new post.</div>
+        <div className="home-hero__actions">
+          <a className="pill bright" href="/posts/create">
+            New Post
+          </a>
+          <a className="pill ghost" href="/my/chats">
+            Go to Chats
+          </a>
+        </div>
+      </div>
+      <div className="home-grid">
+        <div className="home-card">
+          <div className="card-title">Quick links</div>
+          <div className="home-links">
+            <a href="/my/notifications">Notifications</a>
+            <a href="/my/collections/user-lists/subscriptions/active">Earnings & payouts</a>
+            <a href="/my/payments/add_card">Wallet</a>
+            <a href="/my/settings">Settings</a>
+          </div>
+        </div>
+        <div className="home-card">
+          <div className="card-title">Tips</div>
+          <p className="muted">Set up auto-renew offers to keep fans engaged.</p>
+        </div>
+      </div>
+    </MyLayout>
+  );
+}
+
+type ChatItem = {
+  id: string;
+  name: string;
+  handle: string;
+  preview: string;
+  time: string;
+  avatar: string;
+  stats: {
+    totalSpent: string;
+    lastSpend: string;
+    ppv: string;
+    tip: string;
+    fanType: string;
+    cost?: string;
+    duration?: string;
+    autoRenew?: string;
+    nickname?: string;
+    notes: Array<{ id: string; text: string; date: string }>;
+  };
+};
+
+const CHAT_LIST: ChatItem[] = [
+  {
+    id: 'chat-1',
+    name: 'Technological Cow',
+    handle: '@technological-cow-21',
+    preview: 'hello my sweet filip, so nice to see u here again 💗',
+    time: 'now',
+    avatar: 'https://dummyimage.com/64x64/0f172a/fff&text=TC',
+    stats: {
+      totalSpent: '$0.00',
+      lastSpend: 'N/A',
+      ppv: '$0.00',
+      tip: '$0.00',
+      fanType: 'Expired',
+      autoRenew: '—',
+      nickname: '🪙',
+      notes: [
+        { id: 'n1', text: 'User is often alone at home', date: 'Jan 07' },
+        { id: 'n2', text: 'User watches anime like Gate and Berserk', date: 'Jan 07' },
+        { id: 'n3', text: 'User practices handicrafts with wood and metal', date: 'Jan 07' },
+      ],
+    },
+  },
+  {
+    id: 'chat-2',
+    name: 'Raven',
+    handle: '@raven',
+    preview: 'You came back 🥹 my heart is warm',
+    time: '13:13',
+    avatar: 'https://dummyimage.com/64x64/111/fff&text=R',
+    stats: {
+      totalSpent: '$24.00',
+      lastSpend: 'Jan 12',
+      ppv: '$12.00',
+      tip: '$12.00',
+      fanType: 'Active',
+      cost: '$12/mo',
+      duration: '3 months',
+      autoRenew: 'On',
+      nickname: '💜 Raven',
+      notes: [
+        { id: 'n4', text: 'Enjoys cosplay streams', date: 'Jan 03' },
+        { id: 'n5', text: 'Likes weekend drops', date: 'Jan 10' },
+      ],
+    },
+  },
+];
+
 export function MyChats() {
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
-  const [activeFilter, setActiveFilter] = useState<'all'>('all');
-  const [isEditing, setIsEditing] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
+  const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -204,11 +306,20 @@ export function MyChats() {
     }
   }, [isSearchOpen]);
 
-  const sortLabel = sortOrder === 'newest' ? 'Newest first' : 'Oldest first';
+  const filteredChats = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return CHAT_LIST;
+    return CHAT_LIST.filter(
+      (c) =>
+        c.name.toLowerCase().includes(term) ||
+        c.handle.toLowerCase().includes(term) ||
+        c.preview.toLowerCase().includes(term)
+    );
+  }, [searchTerm]);
 
   return (
     <MyLayout title="Messages" activeNav="messages" header={null} contentClassName="msg-content">
-      <div className="msg-shell">
+      <div className="msg-shell msg-shell--3col">
         <section className="msg-panel">
           <div className="msg-panel__header">
             <div className="msg-panel__title">
@@ -258,6 +369,7 @@ export function MyChats() {
           ) : null}
 
           <div className="msg-panel__controls">
+            <span className="muted">Sort</span>
             <button
               className="msg-sort"
               type="button"
@@ -265,50 +377,145 @@ export function MyChats() {
                 setSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'))
               }
             >
-              {sortLabel}
-            </button>
-            <button
-              className="msg-icon-button small"
-              type="button"
-              aria-label="Sort options"
-              onClick={() =>
-                setSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'))
-              }
-            >
-              <FilterIcon />
+              {sortOrder === 'newest' ? 'Newest first' : 'Oldest first'}
             </button>
           </div>
 
-          <div className={`msg-panel__filters${isEditing ? ' is-editing' : ''}`}>
-            <button
-              className={`msg-pill${activeFilter === 'all' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => setActiveFilter('all')}
-            >
-              All
-            </button>
-            <button
-              className="msg-icon-button small"
-              type="button"
-              aria-label="Edit filters"
-              aria-pressed={isEditing}
-              onClick={() => setIsEditing((prev) => !prev)}
-            >
-              <PencilIcon />
-            </button>
+          <div className="msg-list">
+            {filteredChats.map((chat) => (
+              <button
+                key={chat.id}
+                className={`msg-list__item${selectedChat?.id === chat.id ? ' is-active' : ''}`}
+                onClick={() => setSelectedChat(chat)}
+              >
+                <img className="msg-list__avatar" src={chat.avatar} alt={chat.name} />
+                <div className="msg-list__meta">
+                  <div className="msg-list__top">
+                    <span className="msg-list__name">{chat.name}</span>
+                    <span className="msg-list__time">{chat.time}</span>
+                  </div>
+                  <div className="msg-list__handle">{chat.handle}</div>
+                  <div className="msg-list__preview">{chat.preview}</div>
+                </div>
+              </button>
+            ))}
           </div>
-
-          <div className="msg-panel__empty">Nothing found</div>
         </section>
 
-        <section className="msg-detail">
-          <div className="msg-detail__text">
-            Please subscribe to a creator to access this feature.
-          </div>
-          {composerOpen ? <div className="msg-detail__note">New message ready.</div> : null}
+        <section className="msg-detail dark">
+          {selectedChat ? (
+            <div className="msg-thread">
+              <div className="msg-thread__header">
+                <div className="msg-thread__user">
+                  <img src={selectedChat.avatar} alt={selectedChat.name} />
+                  <div>
+                    <div className="name">{selectedChat.name}</div>
+                    <div className="handle">{selectedChat.handle}</div>
+                  </div>
+                </div>
+                <div className="msg-thread__tabs">
+                  <button className="is-active">Messages</button>
+                  <button>Media</button>
+                </div>
+              </div>
+              <div className="msg-thread__body">
+                <div className="msg-bubble other">Hello sweet Mitsuri, how was your weekend?</div>
+                <div className="msg-bubble me">
+                  weekend was calm, yoga, coffee, cuddles with mochi and some reading... how was
+                  yours, mon cher? 😊🌸
+                </div>
+              </div>
+              <div className="msg-thread__composer">
+                <button className="pill ghost">Generate message with AI</button>
+                <input placeholder="Type a message..." />
+              </div>
+            </div>
+          ) : (
+            <div className="msg-detail__text">Select a contact from the list to start chatting.</div>
+          )}
+        </section>
+
+        <section className="msg-insights">
+          {selectedChat ? (
+            <ChatInsights chat={selectedChat} />
+          ) : (
+            <div className="msg-insights__empty">Select a chat to view fan insights.</div>
+          )}
         </section>
       </div>
     </MyLayout>
+  );
+}
+
+function ChatInsights({ chat }: { chat: ChatItem }) {
+  return (
+    <div className="insights-stack">
+      <div className="insight-card">
+        <div className="card-title">Spending behavior</div>
+        <div className="spend-grid">
+          <div className="spend-box">
+            <div className="muted small">Total spent</div>
+            <div className="spend-amount">{chat.stats.totalSpent}</div>
+            <div className="muted tiny">Since Jan 2026</div>
+          </div>
+          <div className="spend-box">
+            <div className="muted small">Last spend</div>
+            <div className="spend-amount">{chat.stats.lastSpend}</div>
+            <div className="muted tiny">Total PPV</div>
+          </div>
+        </div>
+        <div className="spend-row">
+          <span>Total PPV</span>
+          <span>{chat.stats.ppv}</span>
+        </div>
+        <div className="spend-row">
+          <span>Total Tip</span>
+          <span>{chat.stats.tip}</span>
+        </div>
+      </div>
+
+      <div className="insight-card">
+        <div className="card-title">Subscription</div>
+        <div className="sub-row">
+          <span>Fan type</span>
+          <span className="pill tiny muted">{chat.stats.fanType}</span>
+        </div>
+        <div className="sub-row">
+          <span>Cost</span>
+          <span>{chat.stats.cost ?? '-'}</span>
+        </div>
+        <div className="sub-row">
+          <span>Duration</span>
+          <span>{chat.stats.duration ?? '-'}</span>
+        </div>
+        <div className="sub-row">
+          <span>Auto-renewal</span>
+          <span>{chat.stats.autoRenew ?? '-'}</span>
+        </div>
+      </div>
+
+      <div className="insight-card">
+        <div className="card-title">Nickname</div>
+        <div className="nick-box">{chat.stats.nickname ?? '—'}</div>
+      </div>
+
+      <div className="insight-card">
+        <div className="card-title">Notes</div>
+        <div className="note-chips">
+          <button className="chip tiny is-active">All</button>
+          <button className="chip tiny">Must know</button>
+          <button className="chip tiny">Top facts</button>
+        </div>
+        <div className="note-list">
+          {chat.stats.notes.map((note) => (
+            <div key={note.id} className="note-card">
+              <div className="muted tiny">{note.date}</div>
+              <div className="note-text">{note.text}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1988,44 +2195,57 @@ function MyLayout({
 
   return (
     <div className="my-shell">
-      <aside className="my-nav">
-        <div className="my-nav__avatar" aria-label="Profile avatar" />
+      <aside className="my-nav my-nav--dark">
+        <div className="my-nav__profile">
+          <img className="my-nav__avatar" src="https://i.pravatar.cc/120?img=21" alt="Profile avatar" />
+          <div className="my-nav__identity">
+            <div className="name">Aiko Mitsuri</div>
+            <div className="handle">@aiko.mitsuri</div>
+            <div className="meta">
+              <span>1 fan</span> • <span>4 followers</span>
+            </div>
+          </div>
+        </div>
+
         <nav className="my-nav__menu">
           <NavItem href="/onlyfans" label="Home" icon={<HomeIcon />} isActive={activeNav === 'home'} />
+          <NavItem href="/discover" label="Discover" icon={<SearchIcon />} isActive={false} />
           <NavItem
             href="/my/notifications"
             label="Notifications"
             icon={<BellIcon />}
+            badge="4"
             isActive={activeNav === 'notifications'}
           />
-          <NavItem href="/my/chats" label="Messages" icon={<ChatIcon />} isActive={activeNav === 'messages'} />
-          <NavItem
-            href="/my/collections"
-            label="Collections"
-            icon={<GridIcon />}
-            isActive={activeNav === 'collections'}
-          />
+          <NavItem href="/my/chats" label="Chats" icon={<ChatIcon />} isActive={activeNav === 'messages'} />
+          <NavItem href="/my/collections" label="Collections" icon={<GearIcon />} isActive={activeNav === 'collections'} />
           <NavItem
             href="/my/collections/user-lists/subscriptions/active"
             label="Subscriptions"
-            icon={<HeartIcon />}
+            icon={<BagIcon />}
             isActive={activeNav === 'subscriptions'}
           />
           <NavItem
             href="/my/payments/add_card"
-            label="Add card"
+            label="Wallet"
             icon={<CardIcon />}
+            trailing={<span className="wallet-pill">0.00</span>}
             isActive={activeNav === 'add-card'}
           />
-          <NavItem href="/aiko_mitsuri" label="My profile" icon={<UserIcon />} isActive={activeNav === 'profile'} />
-          <NavItem href="/my/settings" label="More" icon={<MoreIcon />} isActive={activeNav === 'more'} />
         </nav>
+
         <a className="my-nav__cta" href="/posts/create">
           <span className="my-nav__cta-icon">
             <PlusIcon />
           </span>
-          New post
+          New Post
         </a>
+
+        <div className="my-nav__secondary">
+          <NavItem href="/my/settings" label="Settings" icon={<GearIcon />} isActive={activeNav === 'more'} />
+          <NavItem href="/news" label="What’s new" icon={<StarIcon />} badge="1" isActive={false} />
+          <NavItem href="/logout" label="Log out" icon={<LogOutIcon />} isActive={false} />
+        </div>
       </aside>
 
       <main className="my-main">
@@ -2069,16 +2289,22 @@ function NavItem({
   label,
   icon,
   isActive,
+  badge,
+  trailing,
 }: {
   href: string;
   label: string;
   icon: ReactNode;
   isActive?: boolean;
+  badge?: string;
+  trailing?: ReactNode;
 }) {
   return (
     <a className={`my-nav-item${isActive ? ' is-active' : ''}`} href={href}>
       <span className="my-nav-item__icon">{icon}</span>
       <span className="my-nav-item__label">{label}</span>
+      {badge ? <span className="my-nav-item__badge">{badge}</span> : null}
+      {trailing ? <span className="my-nav-item__trailing">{trailing}</span> : null}
     </a>
   );
 }
@@ -2109,25 +2335,6 @@ function ChatIcon() {
   );
 }
 
-function GridIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="4" y="4" width="7" height="7" rx="1.5" />
-      <rect x="13" y="4" width="7" height="7" rx="1.5" />
-      <rect x="4" y="13" width="7" height="7" rx="1.5" />
-      <rect x="13" y="13" width="7" height="7" rx="1.5" />
-    </svg>
-  );
-}
-
-function HeartIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 20s-7-4.35-7-9.2A4.3 4.3 0 0 1 9.2 6c1.1 0 2.2.45 2.8 1.2A3.7 3.7 0 0 1 14.8 6 4.3 4.3 0 0 1 19 10.8C19 15.65 12 20 12 20z" />
-    </svg>
-  );
-}
-
 function CardIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2135,25 +2342,6 @@ function CardIcon() {
       <path d="M3 9h18" />
       <path d="M17 16h3" />
       <path d="M18.5 14.5v3" />
-    </svg>
-  );
-}
-
-function UserIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20a8 8 0 0 1 16 0" />
-    </svg>
-  );
-}
-
-function MoreIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="5" cy="12" r="1.5" />
-      <circle cx="12" cy="12" r="1.5" />
-      <circle cx="19" cy="12" r="1.5" />
     </svg>
   );
 }
@@ -2369,6 +2557,31 @@ function BagIcon() {
       <path d="M24 22v-4a8 8 0 0 1 16 0v4" />
       <circle cx="26" cy="30" r="2" />
       <circle cx="38" cy="30" r="2" />
+    </svg>
+  );
+}
+
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 3l2.39 4.84 5.34.78-3.86 3.76.91 5.32L12 15.9l-4.78 2.8.91-5.32L4.27 8.62l5.34-.78L12 3z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function LogOutIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <path d="M10 17 5 12l5-5" />
+      <path d="M5 12h11" />
     </svg>
   );
 }

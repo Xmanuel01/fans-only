@@ -2,18 +2,6 @@ export type RouteEntry = { route: string; file: string };
 
 export const ROUTES: RouteEntry[] = [
   { route: "/", file: "index.html" },
-  { route: "/2113555582/onlyfans", file: "2113555582/onlyfans.html" },
-  { route: "/2113555582/onlyfans/likes", file: "2113555582/onlyfans/likes.html" },
-  { route: "/2113587529/onlyfans", file: "2113587529/onlyfans.html" },
-  { route: "/2113587529/onlyfans/likes", file: "2113587529/onlyfans/likes.html" },
-  { route: "/2116129559/onlyfans", file: "2116129559/onlyfans.html" },
-  { route: "/2116129559/onlyfans/likes", file: "2116129559/onlyfans/likes.html" },
-  { route: "/2130573931/onlyfans", file: "2130573931/onlyfans.html" },
-  { route: "/2130573931/onlyfans/likes", file: "2130573931/onlyfans/likes.html" },
-  { route: "/2132768617/onlyfans", file: "2132768617/onlyfans.html" },
-  { route: "/2132768617/onlyfans/likes", file: "2132768617/onlyfans/likes.html" },
-  { route: "/2185296654/onlyfans", file: "2185296654/onlyfans.html" },
-  { route: "/2185296654/onlyfans/likes", file: "2185296654/onlyfans/likes.html" },
   { route: "/abbyrao2_0", file: "abbyrao2_0.html" },
   { route: "/about", file: "about.html" },
   { route: "/acceptable-use-policy", file: "acceptable-use-policy.html" },

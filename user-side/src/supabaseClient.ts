@@ -6,9 +6,14 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
 
+export type CreatorProfile = {
+  id: string
+  handle: string
+  display_name: string | null
+}
+
 const AGE_EVENT_RATE_LIMIT_MS = 10_000
 let lastAgeEventTs = 0
-let cachedIp: string | null = null
 
 export async function getCurrentSession(): Promise<Session | null> {
   if (!supabase) return null
@@ -68,13 +73,12 @@ export async function logAgeEvent(action: 'enter' | 'exit') {
   const session = await getCurrentSession()
   const userId = session?.user?.id
   const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown'
-  const ip = await getPublicIp()
 
   const { error } = await supabase.from('age_gate_events').insert({
     user_id: userId ?? null,
     action,
     user_agent: userAgent,
-    ip,
+    ip: null, // intentionally not collecting client IP without explicit consent
     created_at: new Date().toISOString(),
   })
 
@@ -154,15 +158,37 @@ export async function fetchPopularCreators(limit = 6): Promise<CreatorCard[]> {
   )
 }
 
-async function getPublicIp(): Promise<string | null> {
-  if (cachedIp) return cachedIp
-  try {
-    const res = await fetch('https://api.ipify.org?format=json')
-    if (!res.ok) return null
-    const json = (await res.json()) as { ip?: string }
-    cachedIp = json.ip ?? null
-    return cachedIp
-  } catch {
+export async function fetchCreatorProfile(userId: string): Promise<CreatorProfile | null> {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('creators')
+    .select('id, handle, display_name')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('Supabase creator fetch failed', error)
     return null
   }
+  return data ?? null
+}
+
+export async function createCreatorProfile({
+  userId,
+  handle,
+  displayName,
+}: {
+  userId: string
+  handle: string
+  displayName: string
+}): Promise<CreatorProfile | null> {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data, error } = await supabase
+    .from('creators')
+    .upsert({ id: userId, handle, display_name: displayName })
+    .select('id, handle, display_name')
+    .single()
+
+  if (error) throw error
+  return data
 }

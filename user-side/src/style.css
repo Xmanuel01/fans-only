@@ -309,6 +309,56 @@ body {
   border-radius: 16px;
 }
 
+.feed-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.creator-cta {
+  margin: 12px 0 20px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid #2c2c2c;
+  background: linear-gradient(120deg, rgba(63, 94, 251, 0.1), rgba(252, 70, 107, 0.08));
+}
+
+.creator-cta-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.creator-cta-body {
+  display: grid;
+  gap: 10px;
+}
+
+.creator-label {
+  display: grid;
+  gap: 6px;
+}
+
+.creator-label input {
+  background: #0f0f0f;
+  border: 1px solid #2f2f2f;
+  border-radius: 10px;
+  color: #f5f5f5;
+  padding: 10px 12px;
+}
+
+.creator-handle {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.creator-links {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .see-all {
   background: #292929;
   color: #f1f1f1;

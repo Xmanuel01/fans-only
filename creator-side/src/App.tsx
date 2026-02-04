@@ -1,7 +1,9 @@
 import { useEffect, type ComponentType } from 'react';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
+import { AuthGate } from './AuthGate';
 import { HtmlPage, normalizePath, resolveSnapshotFile } from './HtmlPage';
 import ProfileAiko from './pages/ProfileAiko';
+import { MyHome } from './pages/MyPages';
 import SettingsProfile from './pages/SettingsProfile';
 import {
   SettingsAccount,
@@ -27,6 +29,7 @@ import {
 } from './pages/MyPages';
 
 const REACT_ROUTES: Record<string, ComponentType> = {
+  '/': MyHome,
   '/aiko_mitsuri': ProfileAiko,
   '/my/settings/profile': SettingsProfile,
   '/my/settings': SettingsHome,
@@ -97,7 +100,9 @@ function RouteLoader() {
 export default function App() {
   return (
     <BrowserRouter>
-      <RouteLoader />
+      <AuthGate>
+        <RouteLoader />
+      </AuthGate>
     </BrowserRouter>
   );
 }

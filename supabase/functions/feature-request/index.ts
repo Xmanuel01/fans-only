@@ -4,6 +4,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { supabase } from "../_shared/client.ts";
+import { requireAgeConfirmed } from "../_shared/guards.ts";
 
 serve(async (req) => {
   if (req.method !== "POST") {
@@ -30,8 +31,14 @@ serve(async (req) => {
   const message = body.message?.trim();
   if (!message) return json({ error: "message is required" }, 400);
 
-  const user = await supabase.auth.getUser(req.headers.get("Authorization")?.replace("Bearer ", "") ?? "");
-  const userId = user.data?.user?.id ?? null;
+  // Optional auth: if bearer token present, require age confirmation; otherwise allow anonymous feedback
+  const authHeader = req.headers.get("Authorization");
+  let userId: string | null = null;
+  if (authHeader) {
+    const result = await requireAgeConfirmed(supabase, req);
+    if (result.errorResponse) return result.errorResponse;
+    userId = result.userId;
+  }
 
   const { error } = await supabase.from("feature_requests").insert({
     user_id: userId,

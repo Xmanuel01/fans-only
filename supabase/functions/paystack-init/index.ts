@@ -4,6 +4,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { supabase } from "../_shared/client.ts";
+import { requireAgeConfirmed } from "../_shared/guards.ts";
 
 const PAYSTACK_API = "https://api.paystack.co";
 const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
@@ -31,6 +32,10 @@ serve(async (req) => {
   if (!body.email || !body.amountNaira || !body.creator_id) {
     return json({ error: "email, amountNaira, creator_id required" }, 400);
   }
+
+  // Require authenticated + age-confirmed user to create a payment intent
+  const { userId, errorResponse } = await requireAgeConfirmed(supabase, req);
+  if (errorResponse) return errorResponse;
 
   const amountKobo = Math.round(body.amountNaira * 100);
   const callback_url =
@@ -74,6 +79,9 @@ serve(async (req) => {
       currency: payload.currency,
       status: "requires_action",
       creator_id: body.creator_id,
+      user_id: userId,
+      type: body.type,
+      metadata: payload.metadata ?? {},
     })
     .select()
     .single();

@@ -28,9 +28,13 @@ import {
   signInWithProvider,
   submitFeatureRequest,
   fetchPopularCreators,
+  fetchCreatorProfile,
+  createCreatorProfile,
+  type CreatorProfile,
   type CreatorCard,
 } from './supabaseClient'
 
+const CREATOR_APP_URL = import.meta.env.VITE_CREATOR_APP_URL ?? 'https://creator.example.com'
 function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
@@ -61,15 +65,6 @@ function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
       <p className="auth-lede">Sign in to your account</p>
 
       <div className="oauth-group">
-        <button
-          className="oauth-btn"
-          onClick={() => {
-            localStorage.setItem('guestMode', 'true')
-            window.location.reload()
-          }}
-        >
-          Proceed without login
-        </button>
         <button
           className="oauth-btn"
           onClick={async () => {
@@ -153,10 +148,12 @@ function ConsentBanner({ onAccept }: { onAccept: () => void }) {
 
 function AgeGate({
   open,
+  sessionPresent,
   onEnter,
   onExit,
 }: {
   open: boolean
+  sessionPresent: boolean
   onEnter: () => void
   onExit: () => void
 }) {
@@ -184,13 +181,16 @@ function AgeGate({
           <a href="/pages/acceptable-use-policy.html">Acceptable Use</a>
         </p>
         <div className="age-actions">
-          <button className="pill light full" onClick={onEnter}>
-            I’m 18 or older — enter
+          <button className="pill light full" onClick={onEnter} disabled={!sessionPresent}>
+            {sessionPresent ? 'I’m 18 or older — enter' : 'Sign in to continue'}
           </button>
           <button className="pill ghost full" onClick={onExit}>
             I’m under 18 — exit
           </button>
         </div>
+        <p className="muted small">
+          You must be signed in so we can keep an auditable record of age confirmation.
+        </p>
       </div>
     </div>
   )
@@ -1300,7 +1300,25 @@ function MembershipPage({
   )
 }
 
-function HomePage({ onSeeAll }: { onSeeAll: () => void }) {
+function HomePage({
+  onSeeAll,
+  session,
+  creatorProfile,
+  onCreateCreator,
+  creatorLoading,
+}: {
+  onSeeAll: () => void
+  session: any
+  creatorProfile: CreatorProfile | null
+  onCreateCreator: (handle: string) => void
+  creatorLoading: boolean
+}) {
+  const defaultHandle =
+    session?.user?.user_metadata?.username ??
+    session?.user?.email?.split('@')[0]?.replace(/[^a-zA-Z0-9_]/g, '') ??
+    ''
+  const [handle, setHandle] = useState(defaultHandle)
+
   return (
     <main className="feed">
       <header className="feed-header">
@@ -1311,10 +1329,71 @@ function HomePage({ onSeeAll }: { onSeeAll: () => void }) {
             <div className="muted">{textPost.date}</div>
           </div>
         </div>
-        <button className="see-all" onClick={onSeeAll}>
-          See all
-        </button>
+        <div className="feed-actions">
+          <button className="see-all" onClick={onSeeAll}>
+            See all
+          </button>
+          <a className="see-all" href={CREATOR_APP_URL} target="_blank" rel="noreferrer">
+            Creator dashboard
+          </a>
+        </div>
       </header>
+
+      {session && (
+        <section className="card creator-cta">
+          <div className="creator-cta-header">
+            <div>
+              <div className="muted small">Monetize</div>
+              <h3>{creatorProfile ? 'Creator profile ready' : 'Become a creator'}</h3>
+              <p className="muted">
+                Claim your handle to unlock the creator dashboard. You can update details later.
+              </p>
+            </div>
+            <a className="pill ghost" href={CREATOR_APP_URL} target="_blank" rel="noreferrer">
+              Open dashboard
+            </a>
+          </div>
+          {!creatorProfile ? (
+            <div className="creator-cta-body">
+              <label className="creator-label">
+                Handle
+                <input
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value.toLowerCase())}
+                  placeholder="your-handle"
+                  maxLength={30}
+                  pattern="^[a-z0-9_]+$"
+                />
+              </label>
+              <button
+                className="primary-btn"
+                onClick={() => onCreateCreator(handle)}
+                disabled={!handle || creatorLoading}
+              >
+                {creatorLoading ? 'Saving…' : 'Claim handle'}
+              </button>
+            </div>
+          ) : (
+            <div className="creator-cta-body">
+              <div className="muted">Handle</div>
+              <div className="creator-handle">@{creatorProfile.handle}</div>
+              <div className="creator-links">
+                <a className="primary-btn" href={CREATOR_APP_URL} target="_blank" rel="noreferrer">
+                  Open dashboard
+                </a>
+                <a
+                  className="ghost-btn"
+                  href={`/creator/${creatorProfile.handle}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View public profile
+                </a>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="card text-card">
         <div className="card-header">
@@ -1400,7 +1479,8 @@ export default function App() {
   const [consentAccepted, setConsentAccepted] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
   const [featureText, setFeatureText] = useState('')
-  const [guestMode, setGuestMode] = useState(false)
+  const [creatorProfile, setCreatorProfile] = useState<CreatorProfile | null>(null)
+  const [creatorLoading, setCreatorLoading] = useState(false)
 
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const connectedRef = useRef<HTMLDivElement | null>(null)
@@ -1417,9 +1497,17 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const stored = localStorage.getItem('ageConfirmed')
-    if (stored === 'true') setAgeConfirmed(true)
-  }, [])
+    if (!session?.user?.id) {
+      setCreatorProfile(null)
+      return
+    }
+    ;(async () => {
+      setCreatorLoading(true)
+      const prof = await fetchCreatorProfile(session.user.id)
+      setCreatorProfile(prof)
+      setCreatorLoading(false)
+    })()
+  }, [session])
 
   useEffect(() => {
     const consent = localStorage.getItem('cookieConsent')
@@ -1427,8 +1515,6 @@ export default function App() {
     const storedTheme = localStorage.getItem('theme')
     if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system')
       setTheme(storedTheme)
-    const guest = localStorage.getItem('guestMode')
-    if (guest === 'true') setGuestMode(true)
   }, [])
 
   useEffect(() => {
@@ -1437,7 +1523,6 @@ export default function App() {
       const remote = await fetchAgeConfirmation()
       if (remote) {
         setAgeConfirmed(true)
-        localStorage.setItem('ageConfirmed', 'true')
       }
     })()
   }, [ageConfirmed, session])
@@ -1459,7 +1544,7 @@ export default function App() {
   }
 
   const handleUpgradeClick = () => {
-    if (guestMode && !session) return setToast('Sign in to manage memberships')
+    if (!session) return setToast('Sign in to manage memberships')
     setPage('membership')
     setMembershipTab('Membership')
     setToast('Opening upgrade options')
@@ -1467,7 +1552,7 @@ export default function App() {
   }
 
   const handleGiftClick = () => {
-    if (guestMode && !session) return setToast('Sign in to send gifts')
+    if (!session) return setToast('Sign in to send gifts')
     setPage('membership')
     setMembershipTab('Gift Creator')
     setToast('Opening gift creator')
@@ -1475,7 +1560,7 @@ export default function App() {
   }
 
   const handlePaymentMethods = () => {
-    if (guestMode && !session) return setToast('Sign in to manage payment methods')
+    if (!session) return setToast('Sign in to manage payment methods')
     setPage('settings')
     setSettingsTab('More')
     setToast('Opening payment methods')
@@ -1483,7 +1568,7 @@ export default function App() {
   }
 
   const handleConnectedApp = (app: string) => {
-    if (guestMode && !session) return setToast('Sign in to connect apps')
+    if (!session) return setToast('Sign in to connect apps')
     setPage('settings')
     setSettingsTab('More')
     setToast(`Opening ${app} connect`)
@@ -1491,15 +1576,39 @@ export default function App() {
   }
 
   const handleMembershipEntry = () => {
-    if (guestMode && !session) return setToast('Sign in to view memberships')
+    if (!session) return setToast('Sign in to view memberships')
     setPage('membership')
     setMembershipTab('Membership')
     scrollToRef(upgradeRef)
     setToast('Opening memberships')
   }
 
+  const handleCreateCreator = async (handle: string) => {
+    if (!session?.user?.id) {
+      setToast('Sign in first')
+      return
+    }
+    const displayName =
+      session.user.user_metadata?.full_name ?? session.user.email?.split('@')[0] ?? 'Creator'
+    try {
+      setCreatorLoading(true)
+      const created = await createCreatorProfile({
+        userId: session.user.id,
+        handle,
+        displayName,
+      })
+      setCreatorProfile(created)
+      setToast('Creator profile created. Open dashboard to continue.')
+    } catch (err) {
+      console.error(err)
+      setToast('Handle already taken or invalid. Try another.')
+    } finally {
+      setCreatorLoading(false)
+    }
+  }
+
   const handleVisitedClick = (name: string) => {
-    if (guestMode && !session) return setToast('Sign in to view creator details')
+    if (!session) return setToast('Sign in to view creator details')
     setPage('membership')
     setToast(`Opening ${name}`)
     scrollToRef(upgradeRef)
@@ -1507,10 +1616,8 @@ export default function App() {
 
   const handleGetApp = () => setToast('Opening app download')
 
-  const handleCreatorCTA = () => handleUpgradeClick()
 
   const handleLogout = async () => {
-    localStorage.removeItem('guestMode')
     await signOut()
     setSession(null)
     setAgeConfirmed(false)
@@ -1526,7 +1633,7 @@ export default function App() {
     )
   }
 
-  if (!session && !guestMode) {
+  if (!session) {
     return (
       <div className="auth-shell">
         <AuthPrompt onLinkSent={() => setToast('Check your email for a sign-in link')} />
@@ -1540,9 +1647,13 @@ export default function App() {
     <div className="app">
       <AgeGate
         open={!ageConfirmed}
+        sessionPresent={Boolean(session)}
         onEnter={() => {
+          if (!session) {
+            setToast('Sign in to confirm age')
+            return
+          }
           setAgeConfirmed(true)
-          localStorage.setItem('ageConfirmed', 'true')
           markAgeConfirmed()
           logAgeEvent('enter')
         }}
@@ -1559,17 +1670,17 @@ export default function App() {
           {sidebarNav.map((item) => {
             const Icon = item.icon
             const active = page === item.key
-            const gated = guestMode && !session && ['chats', 'notifications', 'settings', 'membership'].includes(item.key)
+            const gated = !session && ['chats', 'notifications', 'settings', 'membership'].includes(item.key)
             return (
               <button
                 key={item.label}
                 className={`nav-item ${active ? 'active' : ''} ${gated ? 'disabled' : ''}`}
                 disabled={gated}
                 onClick={() => {
-                  if (gated) {
-                    setToast('Sign in to access this section')
-                    return
-                  }
+          if (gated) {
+            setToast('Sign in to access this section')
+            return
+          }
                   setShowProfileMenu(false)
                   setPage(item.key as typeof page)
                 }}
@@ -1611,15 +1722,6 @@ export default function App() {
           <button className="pill full" onClick={handleGetApp}>
             Get app
           </button>
-        </div>
-
-          <div className={`creator-cta ${guestMode && !session ? 'disabled' : ''}`} onClick={handleCreatorCTA}>
-            <div className="cta-header">
-              <span>Become a creator</span>
-              <FiMoreHorizontal />
-            </div>
-            <p>Build a membership for your fans and get paid to create on your own terms.</p>
-          <button onClick={() => setPage('membership')}>Get started</button>
         </div>
 
         <div className="profile">
@@ -1692,7 +1794,15 @@ export default function App() {
       </aside>
 
       <div className="main-area">
-        {page === 'home' && <HomePage onSeeAll={() => setPage('explore')} />}
+        {page === 'home' && (
+          <HomePage
+            onSeeAll={() => setPage('explore')}
+            session={session}
+            creatorProfile={creatorProfile}
+            onCreateCreator={handleCreateCreator}
+            creatorLoading={creatorLoading}
+          />
+        )}
         {page === 'explore' && <ExplorePage filter={filter} onSelectFilter={setFilter} />}
         {page === 'chats' && <ChatsPage />}
         {page === 'notifications' && <NotificationsPage />}
@@ -1785,7 +1895,7 @@ export default function App() {
           }}
         />
       )}
-      {guestMode && !session && <div className="guest-badge">Guest mode: limited features</div>}
+      {/* Guest mode removed: sign-in required for content */}
     </div>
   )
 }
