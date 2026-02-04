@@ -100,6 +100,24 @@ export async function sendMagicLink(email: string) {
   if (error) throw error
 }
 
+export async function signInWithPassword(email: string, password: string) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error) throw error
+  return data
+}
+
+export async function signUpWithPassword(email: string, password: string) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: window.location.origin },
+  })
+  if (error) throw error
+  return data
+}
+
 export async function signOut() {
   if (!supabase) return
   const { error } = await supabase.auth.signOut()

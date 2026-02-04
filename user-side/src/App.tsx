@@ -23,13 +23,14 @@ import {
   logAgeExit,
   logAgeEvent,
   getCurrentSession,
-  sendMagicLink,
   signOut,
   signInWithProvider,
   submitFeatureRequest,
   fetchPopularCreators,
   fetchCreatorProfile,
   createCreatorProfile,
+  signInWithPassword,
+  signUpWithPassword,
   type CreatorProfile,
   type CreatorCard,
 } from './supabaseClient'
@@ -37,20 +38,34 @@ import {
 const CREATOR_APP_URL = import.meta.env.VITE_CREATOR_APP_URL ?? 'https://creator.example.com'
 function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
   const [email, setEmail] = useState('')
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [password, setPassword] = useState('')
+  const [status, setStatus] = useState<'idle' | 'signing-in' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
 
-  const handleSend = async () => {
-    if (!email) return
-    setStatus('sending')
+  const handleSignIn = async () => {
+    if (!email || !password) return
+    setStatus('signing-in')
     setError(null)
     try {
-      await sendMagicLink(email)
-      setStatus('sent')
+      await signInWithPassword(email, password)
       onLinkSent()
     } catch (err) {
       console.error(err)
-      setError('Could not send sign-in link. Try again.')
+      setError('Could not sign in with email and password. Check your credentials.')
+      setStatus('error')
+    }
+  }
+
+  const handleSignUp = async () => {
+    if (!email || !password) return
+    setStatus('signing-in')
+    setError(null)
+    try {
+      await signUpWithPassword(email, password)
+      onLinkSent()
+    } catch (err) {
+      console.error(err)
+      setError('Could not create account. Try a different email or password.')
       setStatus('error')
     }
   }
@@ -58,8 +73,10 @@ function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
   return (
     <div className="auth-panel">
       <div className="auth-brand">
-        <img src="/logo.png" alt="Logo" className="brand-logo" />
-        <span>supabase</span>
+        <div className="brand-stack">
+          <span className="brand-wordmark">The Bold Chic</span>
+          <span className="brand-tagline">Lace and pleasure Haven</span>
+        </div>
       </div>
       <h1>Welcome back</h1>
       <p className="auth-lede">Sign in to your account</p>
@@ -87,7 +104,7 @@ function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
       </div>
 
       <label className="auth-label">
-        Email for magic link
+        Email
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -95,13 +112,25 @@ function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
           placeholder="you@example.com"
         />
       </label>
-      <button className="auth-btn primary" onClick={handleSend} disabled={status === 'sending'}>
-        {status === 'sending' ? 'Sending…' : status === 'sent' ? 'Link sent!' : 'Send magic link'}
+      <label className="auth-label">
+        Password
+        <input
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          type="password"
+          placeholder="••••••••"
+        />
+      </label>
+      <button className="auth-btn primary" onClick={handleSignIn} disabled={status === 'signing-in'}>
+        {status === 'signing-in' ? 'Signing in…' : 'Sign in'}
+      </button>
+      <button className="auth-btn ghost" onClick={handleSignUp} disabled={status === 'signing-in'}>
+        Create account
       </button>
       {error && <div className="auth-error">{error}</div>}
 
       <ul className="auth-notes">
-        <li>Use the Supabase-hosted auth page or your embedded login flow.</li>
+        <li>Use your email and password to access your account.</li>
         <li>After sign-in, return here to view content.</li>
       </ul>
     </div>
@@ -111,22 +140,7 @@ function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
 function AuthHero() {
   return (
     <div className="auth-hero">
-      <div className="hero-quote">
-        “Loving Supabase. The auth and database just work, letting us ship faster.”
-      </div>
-      <div className="hero-meta">
-        <img
-          src="https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=120&q=80"
-          alt="Avatar"
-        />
-        <div>
-          <div className="hero-name">@creator</div>
-          <div className="hero-role">Product Designer</div>
-        </div>
-      </div>
-      <a className="doc-link" href="https://supabase.com/docs" target="_blank" rel="noreferrer">
-        Documentation
-      </a>
+      <img src="/logo.png" alt="Bold Chic" className="hero-logo" />
     </div>
   )
 }
@@ -1637,7 +1651,7 @@ export default function App() {
     return (
       <div className="auth-shell">
         <AuthPrompt onLinkSent={() => setToast('Check your email for a sign-in link')} />
-        <AuthHero />
+      <AuthHero />
         {toast && <div className="toast">{toast}</div>}
       </div>
     )
