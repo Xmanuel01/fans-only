@@ -110,6 +110,8 @@ alter table public.audit_log enable row level security;
 
 -- Drop permissive public select and replace with age-verified access
 drop policy if exists "Creators: public select" on public.creators;
+drop policy if exists "Creators: self upsert" on public.creators;
+drop policy if exists "Creators: self update" on public.creators;
 
 create policy "Creators: age-verified select"
   on public.creators
