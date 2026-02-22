@@ -1,20 +1,91 @@
 import React, { useEffect, useState } from 'react';
-import { supabase, getSession, signInWithMagicLink, signInWithOAuth, signOut } from './supabaseClient';
+import {
+  supabase,
+  getSession,
+  signInWithOAuth,
+  signOut,
+  signInWithPassword,
+  signUpWithPassword,
+} from './supabaseClient';
+import { env } from './env';
+import './auth.css';
 
 type GateState = 'loading' | 'unauthenticated' | 'no-creator' | 'ready';
 
-const CONSUMER_APP_URL = import.meta.env.VITE_CONSUMER_APP_URL ?? 'https://app.example.com';
+const CONSUMER_APP_URL = env.consumerAppUrl;
+const DEMO_MODE_ENABLED = env.enableDemoMode;
+const FORCE_AUTH_SCREEN_ON_DEV_BOOT = env.forceAuthScreenOnDevBoot;
+
+const safeStorage = {
+  getItem(key: string) {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  setItem(key: string, value: string) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Ignore storage write errors (private mode, quota, etc).
+    }
+  },
+  removeItem(key: string) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Ignore storage removal errors.
+    }
+  },
+};
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GateState>('loading');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<'idle' | 'signing-in' | 'error'>('idle');
   const [creatorHandle, setCreatorHandle] = useState<string | null>(null);
 
   useEffect(() => {
     let unsub = () => {};
 
     async function boot() {
+      if (FORCE_AUTH_SCREEN_ON_DEV_BOOT) {
+        safeStorage.removeItem('demoModeCreator');
+
+        if (supabase) {
+          try {
+            await signOut();
+          } catch {
+            // Ignore sign-out errors while forcing auth screen in dev.
+          }
+
+          const {
+            data: { subscription },
+          } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+            if (!nextSession?.user) {
+              setState('unauthenticated');
+              return;
+            }
+            await ensureCreator(nextSession.user.id);
+          });
+
+          unsub = () => subscription.unsubscribe();
+        }
+
+        setState('unauthenticated');
+        return;
+      }
+
+      const demo = DEMO_MODE_ENABLED && safeStorage.getItem('demoModeCreator') === 'true';
+      if (demo) {
+        setState('ready');
+        return;
+      }
+      safeStorage.removeItem('demoModeCreator');
+
       if (!supabase) {
         setError('Supabase environment variables are not configured.');
         setState('unauthenticated');
@@ -46,7 +117,13 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function ensureCreator(userId: string) {
-    const { data, error: fetchError } = await supabase!
+    if (!supabase) {
+      setError('Supabase environment variables are not configured.');
+      setState('unauthenticated');
+      return;
+    }
+
+    const { data, error: fetchError } = await supabase
       .from('creators')
       .select('id, handle')
       .eq('id', userId)
@@ -68,42 +145,107 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function handleMagicLink() {
-    if (!email) return;
-    try {
-      setError(null);
-      await signInWithMagicLink(email);
-    } catch (err) {
-      console.error(err);
-      setError('Could not send magic link. Check the email and try again.');
-    }
-  }
-
   if (state === 'loading') {
-    return <ScreenShell title="Checking account…">Hold tight while we verify your session.</ScreenShell>;
+    return <ScreenShell title="Checking account...">Hold tight while we verify your session.</ScreenShell>;
   }
 
   if (state === 'unauthenticated') {
     return (
-      <ScreenShell title="Sign in to manage your creator account">
-        <div className="auth-card">
-          <label className="auth-label">
-            Work email
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
-          </label>
-          <button className="primary-btn" onClick={handleMagicLink}>
-            Send magic link
-          </button>
-          <button className="ghost-btn" onClick={() => signInWithOAuth('google')}>
-            Continue with Google
-          </button>
-          {error && <div className="auth-error">{error}</div>}
-          <p className="muted small">
-            Need to create a creator profile first? Head to <a href={CONSUMER_APP_URL}>the consumer app</a> and choose
-            “Become a creator.”
-          </p>
+      <div className="auth-shell">
+        <div className="auth-panel">
+          <div className="auth-brand">
+            <div className="brand-stack">
+              <span className="brand-wordmark">The Bold Chic</span>
+              <span className="brand-tagline">Lace and pleasure Haven</span>
+            </div>
+          </div>
+
+          <h1>Welcome back</h1>
+          <p className="auth-lede">Sign in to your account</p>
+
+          <div className="auth-card">
+            <div className="oauth-group">
+              <button className="oauth-btn" onClick={() => signInWithOAuth('google')}>
+                Continue with Google
+              </button>
+            </div>
+            <div className="divider-row">
+              <span className="line" />
+              <span className="or">or</span>
+              <span className="line" />
+            </div>
+            <label className="auth-label">
+              Email
+              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" />
+            </label>
+            <label className="auth-label">
+              Password
+              <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="********" type="password" />
+            </label>
+            <div className="auth-actions">
+              <button
+                className="primary-btn"
+                onClick={async () => {
+                  if (!email || !password) return;
+                  setStatus('signing-in');
+                  setError(null);
+                  try {
+                    await signInWithPassword(email, password);
+                  } catch (err) {
+                    console.error(err);
+                    setError('Could not sign in. Check your credentials.');
+                    setStatus('error');
+                  } finally {
+                    setStatus('idle');
+                  }
+                }}
+                disabled={status === 'signing-in'}
+              >
+                {status === 'signing-in' ? 'Signing in...' : 'Sign in'}
+              </button>
+              <button
+                className="ghost-btn"
+                onClick={async () => {
+                  if (!email || !password) return;
+                  setStatus('signing-in');
+                  setError(null);
+                  try {
+                    await signUpWithPassword(email, password);
+                  } catch (err) {
+                    console.error(err);
+                    setError('Could not create account. Try different credentials.');
+                    setStatus('error');
+                  } finally {
+                    setStatus('idle');
+                  }
+                }}
+                disabled={status === 'signing-in'}
+              >
+                Create account
+              </button>
+              {DEMO_MODE_ENABLED && (
+                <button
+                  className="ghost-btn"
+                  onClick={() => {
+                    safeStorage.setItem('demoModeCreator', 'true');
+                    setState('ready');
+                  }}
+                >
+                  Continue as demo
+                </button>
+              )}
+            </div>
+            {error && <div className="auth-error">{error}</div>}
+            <p className="auth-lede">
+              Use your email and password to access your account. Need a profile first? Go to{' '}
+              <a href={CONSUMER_APP_URL}>the consumer app</a> and choose "Become a creator."
+            </p>
+          </div>
         </div>
-      </ScreenShell>
+        <div className="auth-hero">
+          <img src="/logo.png" alt="The Bold Chic" className="hero-logo" />
+        </div>
+      </div>
     );
   }
 
@@ -162,7 +304,7 @@ function TopLinks({ consumerUrl, handle }: { consumerUrl: string; handle: string
       style={{
         width: '100%',
         background: '#0f172a',
-        color: 'white',
+        color: '#e8edf5',
         padding: '10px 16px',
         display: 'flex',
         justifyContent: 'space-between',
@@ -173,16 +315,26 @@ function TopLinks({ consumerUrl, handle }: { consumerUrl: string; handle: string
     >
       <span>Creator dashboard</span>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <a href={consumerUrl} target="_blank" rel="noreferrer" style={{ color: 'white' }}>
+        <a href={consumerUrl} target="_blank" rel="noreferrer" style={{ color: '#e8edf5' }}>
           Consumer app
         </a>
-        <a href={profileUrl} target="_blank" rel="noreferrer" style={{ color: 'white' }}>
+        <a href={profileUrl} target="_blank" rel="noreferrer" style={{ color: '#e8edf5' }}>
           View public profile
         </a>
-        <button onClick={signOut} style={{ background: '#1e293b', color: 'white', border: '1px solid #334155', padding: '6px 12px', borderRadius: 8 }}>
+        <button
+          onClick={signOut}
+          style={{
+            background: '#12263a',
+            color: '#e8edf5',
+            border: '1px solid #3e63ff',
+            padding: '6px 12px',
+            borderRadius: 8,
+          }}
+        >
           Sign out
         </button>
       </div>
     </div>
   );
 }
+

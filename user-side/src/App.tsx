@@ -26,6 +26,7 @@ import {
   signOut,
   signInWithProvider,
   submitFeatureRequest,
+  initiatePaystackPayment,
   fetchPopularCreators,
   fetchCreatorProfile,
   createCreatorProfile,
@@ -36,7 +37,12 @@ import {
 } from './supabaseClient'
 
 const CREATOR_APP_URL = import.meta.env.VITE_CREATOR_APP_URL ?? 'https://creator.example.com'
-function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
+const FEATURED_CREATOR_ID = import.meta.env.VITE_GIFT_CREATOR_ID ?? ''
+const parsedGiftAmount = Number(import.meta.env.VITE_GIFT_AMOUNT_MAJOR ?? '1000')
+const DEFAULT_GIFT_AMOUNT_MAJOR = Number.isFinite(parsedGiftAmount) && parsedGiftAmount > 0 ? parsedGiftAmount : 1000
+const DEMO_MODE_ENABLED =
+  !import.meta.env.PROD && import.meta.env.VITE_ENABLE_DEMO_MODE !== 'false'
+function AuthPrompt({ onLinkSent, onDemo }: { onLinkSent: () => void; onDemo: () => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<'idle' | 'signing-in' | 'error'>('idle')
@@ -96,6 +102,18 @@ function AuthPrompt({ onLinkSent }: { onLinkSent: () => void }) {
           Continue with Google
         </button>
       </div>
+
+      {DEMO_MODE_ENABLED && (
+        <button
+          className="auth-btn ghost"
+          onClick={() => {
+            localStorage.setItem('demoMode', 'true')
+            onDemo()
+          }}
+        >
+          Continue as demo (no sign-up)
+        </button>
+      )}
 
       <div className="divider-row">
         <span className="line" />
@@ -1495,6 +1513,8 @@ export default function App() {
   const [featureText, setFeatureText] = useState('')
   const [creatorProfile, setCreatorProfile] = useState<CreatorProfile | null>(null)
   const [creatorLoading, setCreatorLoading] = useState(false)
+  const [demoMode, setDemoMode] = useState(false)
+  const isAuthed = demoMode || Boolean(session)
 
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const connectedRef = useRef<HTMLDivElement | null>(null)
@@ -1503,6 +1523,14 @@ export default function App() {
   const giftRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
+    const demo = DEMO_MODE_ENABLED && localStorage.getItem('demoMode') === 'true'
+    if (demo) {
+      setDemoMode(true)
+      setSessionChecked(true)
+      setAgeConfirmed(true)
+      return
+    }
+    localStorage.removeItem('demoMode')
     ;(async () => {
       const s = await getCurrentSession()
       setSession(s)
@@ -1532,7 +1560,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (ageConfirmed || !session) return
+    if (ageConfirmed || (!session && !demoMode)) return
     ;(async () => {
       const remote = await fetchAgeConfirmation()
       if (remote) {
@@ -1558,7 +1586,7 @@ export default function App() {
   }
 
   const handleUpgradeClick = () => {
-    if (!session) return setToast('Sign in to manage memberships')
+    if (!isAuthed) return setToast('Sign in to manage memberships')
     setPage('membership')
     setMembershipTab('Membership')
     setToast('Opening upgrade options')
@@ -1566,7 +1594,7 @@ export default function App() {
   }
 
   const handleGiftClick = () => {
-    if (!session) return setToast('Sign in to send gifts')
+    if (!isAuthed) return setToast('Sign in to send gifts')
     setPage('membership')
     setMembershipTab('Gift Creator')
     setToast('Opening gift creator')
@@ -1574,15 +1602,47 @@ export default function App() {
   }
 
   const handlePaymentMethods = () => {
-    if (!session) return setToast('Sign in to manage payment methods')
+    if (!isAuthed) return setToast('Sign in to manage payment methods')
     setPage('settings')
     setSettingsTab('More')
     setToast('Opening payment methods')
     scrollToRef(paymentRef)
   }
 
+  const handleGiftCheckout = async () => {
+    if (!session?.user?.email) {
+      setToast('Sign in to continue to payment')
+      return
+    }
+    if (!FEATURED_CREATOR_ID) {
+      setToast('Payment is not configured: missing creator id')
+      return
+    }
+
+    try {
+      setToast('Preparing secure checkout...')
+      const result = await initiatePaystackPayment({
+        email: session.user.email,
+        creatorId: FEATURED_CREATOR_ID,
+        amountMajor: DEFAULT_GIFT_AMOUNT_MAJOR,
+        currency: 'KES',
+        type: 'tip',
+        metadata: {
+          source: 'gift_creator',
+        },
+      })
+      if (!result.authorization_url) {
+        throw new Error('Checkout URL missing')
+      }
+      window.location.href = result.authorization_url
+    } catch (err) {
+      console.error(err)
+      setToast('Could not start payment. Try again in a moment.')
+    }
+  }
+
   const handleConnectedApp = (app: string) => {
-    if (!session) return setToast('Sign in to connect apps')
+    if (!isAuthed) return setToast('Sign in to connect apps')
     setPage('settings')
     setSettingsTab('More')
     setToast(`Opening ${app} connect`)
@@ -1590,7 +1650,7 @@ export default function App() {
   }
 
   const handleMembershipEntry = () => {
-    if (!session) return setToast('Sign in to view memberships')
+    if (!isAuthed) return setToast('Sign in to view memberships')
     setPage('membership')
     setMembershipTab('Membership')
     scrollToRef(upgradeRef)
@@ -1647,10 +1707,19 @@ export default function App() {
     )
   }
 
-  if (!session) {
-    return (
-      <div className="auth-shell">
-        <AuthPrompt onLinkSent={() => setToast('Check your email for a sign-in link')} />
+    if (!session && !demoMode) {
+      return (
+        <div className="auth-shell">
+        <AuthPrompt
+          onLinkSent={() => setToast('Check your email for a sign-in link')}
+          onDemo={() => {
+            if (!DEMO_MODE_ENABLED) return
+            localStorage.setItem('demoMode', 'true')
+            setDemoMode(true)
+            setAgeConfirmed(true)
+            setSessionChecked(true)
+          }}
+        />
       <AuthHero />
         {toast && <div className="toast">{toast}</div>}
       </div>
@@ -1684,7 +1753,7 @@ export default function App() {
           {sidebarNav.map((item) => {
             const Icon = item.icon
             const active = page === item.key
-            const gated = !session && ['chats', 'notifications', 'settings', 'membership'].includes(item.key)
+            const gated = !isAuthed && ['chats', 'notifications', 'settings', 'membership'].includes(item.key)
             return (
               <button
                 key={item.label}
@@ -1897,7 +1966,7 @@ export default function App() {
             giftRef={giftRef}
             onUpgrade={handleUpgradeClick}
             onGift={handleGiftClick}
-            onGoPayment={handlePaymentMethods}
+            onGoPayment={handleGiftCheckout}
           />
         )}
       </div>

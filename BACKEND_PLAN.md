@@ -4,7 +4,7 @@ Scope: outline minimal backend to support non-public mutations (tips/payments, a
 
 ## Stack choices
 - **Supabase**: Postgres, Auth, Storage, Edge Functions (Deno). RLS for all tables.
-- **Edge Functions**: handle payment intents, webhooks, and any privileged writes using the `service_role` key (never exposed to the client). Paystack and Stripe both supported via separate functions.
+- **Edge Functions**: handle payment initialization, webhooks, and any privileged writes using the `service_role` key (never exposed to the client). Paystack is the only payment provider.
 - **Client**: calls public selects via anon key; all writes that need trust go through Edge Functions.
 
 ## Migration workflow
@@ -32,7 +32,7 @@ Scope: outline minimal backend to support non-public mutations (tips/payments, a
 - Indexes: posts (creator_id, created_at desc), subscriptions (subscriber_id, creator_id unique), notifications (user_id, read_at nulls first, created_at desc), media_assets (post_id).
 
 ### payments & tips
-- `payments` (id bigserial PK, user_id uuid FK -> profiles, creator_id uuid FK -> creators, amount_cents int, currency text(3), status text check in ('requires_payment_method','requires_action','succeeded','canceled','refunded'), provider text default 'stripe', provider_intent_id text unique, created_at timestamptz).
+- `payments` (id bigserial PK, user_id uuid FK -> profiles, creator_id uuid FK -> creators, amount_cents int, currency text(3), status text check in ('requires_payment_method','requires_action','succeeded','canceled','refunded'), provider text default 'paystack', provider_intent_id text unique, created_at timestamptz).
 - `tips` (id bigserial PK, from_user uuid FK -> profiles, to_creator uuid FK -> creators, amount_cents int, currency text(3), message text, payment_id bigint FK -> payments, created_at timestamptz).
 - Indexes: payments (user_id, created_at desc), payments (provider_intent_id unique), tips (to_creator, created_at desc).
 
@@ -53,10 +53,11 @@ Scope: outline minimal backend to support non-public mutations (tips/payments, a
 - `audit_log`: insert only via service role; no select for clients.
 
 ## Edge Functions / serverless endpoints
-- `create-payment-intent`: Stripe path — input (creator_id, amount, type=tips|subscription); calls Stripe, stores pending row in `payments`, returns client secret.
-- `stripe-webhook`: verifies signature, updates `payments` status, creates `subscriptions` or `tips` records, enqueues notifications.
 - `paystack-init`: initializes Paystack transaction (NGN), records pending `payments` row (provider=paystack).
 - `paystack-webhook`: validates signature, marks payments succeeded, and spawns subscriptions/tips based on metadata.
+- `upsert-mpesa-payout-account`: creates/updates creator payout recipient with KYC status.
+- `request-creator-payout`: queues and submits payout transfer to creator destination.
+- `process-payout-queue`: cron worker for retry/backoff on queued payout transfers.
 - `mark-age-confirmed`: server-side update of `profiles.age_confirmed_at` for consistency with audit logging.
 - `notify`: queues notifications; can be reused for system events.
 

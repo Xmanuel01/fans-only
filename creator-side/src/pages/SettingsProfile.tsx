@@ -87,7 +87,7 @@ export default function SettingsProfile() {
                 <CheckIcon />
               </span>
             </div>
-            <small>https://onlyfans.com/aiko.mitsuri</small>
+            <small>https://creator.example.com/aiko.mitsuri</small>
           </label>
 
           <label className="field">

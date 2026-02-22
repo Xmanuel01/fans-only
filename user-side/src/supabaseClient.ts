@@ -144,6 +144,36 @@ export async function submitFeatureRequest(message: string) {
   return data
 }
 
+export async function initiatePaystackPayment({
+  email,
+  creatorId,
+  amountMajor,
+  currency = 'KES',
+  type = 'tip',
+  metadata = {},
+}: {
+  email: string
+  creatorId: string
+  amountMajor: number
+  currency?: string
+  type?: 'tip' | 'subscription'
+  metadata?: Record<string, unknown>
+}) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data, error } = await supabase.functions.invoke('paystack-init', {
+    body: {
+      email,
+      creator_id: creatorId,
+      amountMajor,
+      currency,
+      type,
+      metadata,
+    },
+  })
+  if (error) throw error
+  return data as { authorization_url?: string; reference?: string }
+}
+
 export type CreatorCard = {
   id: string
   handle: string

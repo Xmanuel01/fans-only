@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  fetchPayoutAccount,
+  fetchPayoutSummary,
+  fetchPayoutTransfers,
+  requestCreatorPayout,
+  upsertMpesaPayoutAccount,
+} from '../supabaseClient';
 import './MyPages.css';
 
 type NavKey =
@@ -19,6 +26,7 @@ type MyLayoutProps = {
   headerActions?: ReactNode;
   header?: ReactNode | null;
   aside?: ReactNode;
+  gridClassName?: string;
   contentClassName?: string;
   children: ReactNode;
 };
@@ -62,6 +70,30 @@ type PaymentItem = {
   date: string;
   amount: string;
   status: 'paid' | 'pending' | 'failed';
+};
+
+type HomePost = {
+  id: string;
+  author: string;
+  handle: string;
+  avatar: string;
+  time: string;
+  caption: string;
+  type: 'photo' | 'video' | 'text';
+  media?: string[];
+  video?: {
+    src: string;
+    poster: string;
+  };
+  likes: number;
+  comments: number;
+};
+
+type StoryItem = {
+  id: string;
+  name: string;
+  image: string;
+  isLive?: boolean;
 };
 
 const NOTIFICATION_TABS: Array<{ key: NotificationTab; label: string }> = [
@@ -189,34 +221,414 @@ const PAYMENTS: PaymentItem[] = [
   { id: 'p-4', label: 'Chargeback', date: 'Dec 29', amount: '-$42.00', status: 'failed' },
 ];
 
+const HOME_POSTS: HomePost[] = [
+  {
+    id: 'hp-1',
+    author: 'OnlyFans',
+    handle: '@onlyfans',
+    avatar: 'https://i.pravatar.cc/80?img=32',
+    time: '3 hours ago',
+    caption:
+      'Weekend trip diary from Puerto Vallarta. New sunset set just dropped for subscribers.',
+    type: 'photo',
+    media: ['https://dummyimage.com/1080x680/1a2b44/e8edf5&text=Puerto+Vallarta+Set'],
+    likes: 1842,
+    comments: 221,
+  },
+  {
+    id: 'hp-2',
+    author: 'Emily Frame',
+    handle: '@emily_frame',
+    avatar: 'https://i.pravatar.cc/80?img=47',
+    time: '6 hours ago',
+    caption:
+      'Quick behind-the-scenes clip before tonight live stream. Full video is in my vault.',
+    type: 'video',
+    video: {
+      src: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+      poster: 'https://dummyimage.com/1080x680/2a1838/e8edf5&text=Behind+The+Scenes',
+    },
+    likes: 1290,
+    comments: 104,
+  },
+  {
+    id: 'hp-3',
+    author: 'Cherry',
+    handle: '@urcherryx',
+    avatar: 'https://i.pravatar.cc/80?img=12',
+    time: 'yesterday',
+    caption:
+      'Late night thoughts: consistency beats motivation. Posting schedule is now Mon, Wed, Fri.',
+    type: 'text',
+    likes: 932,
+    comments: 88,
+  },
+  {
+    id: 'hp-4',
+    author: 'Mia Nowak',
+    handle: '@liospark',
+    avatar: 'https://i.pravatar.cc/80?img=20',
+    time: '2 days ago',
+    caption: 'Fresh photoset from the neon studio. Which look should I expand next?',
+    type: 'photo',
+    media: ['https://dummyimage.com/1080x680/22314a/e8edf5&text=Neon+Studio+Set'],
+    likes: 1544,
+    comments: 197,
+  },
+];
+
+const HOME_STORIES: StoryItem[] = [
+  { id: 'st-1', name: 'Aiko', image: 'https://i.pravatar.cc/96?img=21', isLive: true },
+  { id: 'st-2', name: 'Emily', image: 'https://i.pravatar.cc/96?img=47' },
+  { id: 'st-3', name: 'Cherry', image: 'https://i.pravatar.cc/96?img=12' },
+  { id: 'st-4', name: 'Mia', image: 'https://i.pravatar.cc/96?img=20' },
+  { id: 'st-5', name: 'Saya', image: 'https://i.pravatar.cc/96?img=14' },
+  { id: 'st-6', name: 'Fitness', image: 'https://i.pravatar.cc/96?img=26' },
+  { id: 'st-7', name: 'Nora', image: 'https://i.pravatar.cc/96?img=39' },
+  { id: 'st-8', name: 'Alex', image: 'https://i.pravatar.cc/96?img=33' },
+];
+
 export function MyHome() {
-  return (
-    <MyLayout title="Home" activeNav="home" contentClassName="my-home">
-      <div className="home-hero">
-        <div className="home-hero__title">Welcome back, Aiko</div>
-        <div className="home-hero__subtitle">Jump into your chats or create a new post.</div>
-        <div className="home-hero__actions">
-          <a className="pill bright" href="/posts/create">
-            New Post
-          </a>
-          <a className="pill ghost" href="/my/chats">
-            Go to Chats
-          </a>
+  const [activeFilter, setActiveFilter] = useState<'all' | 'photos' | 'videos' | 'texts'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [suggestions, setSuggestions] = useState(SUGGESTIONS);
+  const [followedIds, setFollowedIds] = useState<string[]>([]);
+  const storiesScrollerRef = useRef<HTMLDivElement | null>(null);
+  const storyRail = useMemo(() => [...HOME_STORIES, ...HOME_STORIES, ...HOME_STORIES], []);
+
+  useEffect(() => {
+    const node = storiesScrollerRef.current;
+    if (!node) {
+      return;
+    }
+    const segmentWidth = node.scrollWidth / 3;
+    node.scrollLeft = segmentWidth;
+  }, [storyRail]);
+
+  const handleStoriesScroll = () => {
+    const node = storiesScrollerRef.current;
+    if (!node) {
+      return;
+    }
+
+    const segmentWidth = node.scrollWidth / 3;
+    if (!segmentWidth) {
+      return;
+    }
+
+    if (node.scrollLeft <= segmentWidth * 0.25) {
+      node.scrollLeft += segmentWidth;
+      return;
+    }
+
+    if (node.scrollLeft >= segmentWidth * 1.75) {
+      node.scrollLeft -= segmentWidth;
+    }
+  };
+
+  const filteredPosts = useMemo(() => {
+    return HOME_POSTS.filter((post) => {
+      const matchesFilter =
+        activeFilter === 'all' ||
+        (activeFilter === 'photos' && post.type === 'photo') ||
+        (activeFilter === 'videos' && post.type === 'video') ||
+        (activeFilter === 'texts' && post.type === 'text');
+
+      const term = searchTerm.trim().toLowerCase();
+      const matchesSearch =
+        !term ||
+        post.author.toLowerCase().includes(term) ||
+        post.handle.toLowerCase().includes(term) ||
+        post.caption.toLowerCase().includes(term);
+
+      return matchesFilter && matchesSearch;
+    });
+  }, [activeFilter, searchTerm]);
+
+  const filteredSuggestions = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) {
+      return suggestions;
+    }
+    return suggestions.filter(
+      (item) =>
+        item.name.toLowerCase().includes(term) || item.handle.toLowerCase().includes(term)
+    );
+  }, [searchTerm, suggestions]);
+
+  const dotCount = 12;
+
+  const shuffleSuggestions = () => {
+    setSuggestions((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [next[i], next[j]] = [next[j], next[i]];
+      }
+      return next;
+    });
+    setSuggestionIndex(0);
+  };
+
+  const resetSuggestions = () => {
+    setSearchTerm('');
+    setSuggestions(SUGGESTIONS);
+    setSuggestionIndex(0);
+  };
+
+  const cycleSuggestions = (direction: 'next' | 'prev') => {
+    setSuggestions((prev) => {
+      if (!prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      if (direction === 'next') {
+        const first = next.shift();
+        if (first) {
+          next.push(first);
+        }
+      } else {
+        const last = next.pop();
+        if (last) {
+          next.unshift(last);
+        }
+      }
+      return next;
+    });
+
+    setSuggestionIndex((prev) => {
+      if (direction === 'next') {
+        return (prev + 1) % dotCount;
+      }
+      return (prev - 1 + dotCount) % dotCount;
+    });
+  };
+
+  const toggleFollow = (id: string) => {
+    setFollowedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const aside = (
+    <div className="notif-sidebar">
+      <div className="notif-search-card">
+        <div className="notif-search">
+          <input
+            className="notif-search-input"
+            type="search"
+            placeholder="Search posts"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+          />
+          <span className="notif-search-icon">
+            <SearchIcon />
+          </span>
         </div>
       </div>
-      <div className="home-grid">
-        <div className="home-card">
-          <div className="card-title">Quick links</div>
-          <div className="home-links">
-            <a href="/my/notifications">Notifications</a>
-            <a href="/my/collections/user-lists/subscriptions/active">Earnings & payouts</a>
-            <a href="/my/payments/add_card">Wallet</a>
-            <a href="/my/settings">Settings</a>
+
+      <div className="notif-suggestions">
+        <div className="notif-suggestions__header">
+          <span>Suggestions</span>
+          <div className="notif-suggestions__actions">
+            <button
+              className="notif-icon-button small"
+              type="button"
+              aria-label="Shuffle suggestions"
+              onClick={shuffleSuggestions}
+            >
+              <ShuffleIcon />
+            </button>
+            <button
+              className="notif-icon-button small"
+              type="button"
+              aria-label="Refresh suggestions"
+              onClick={resetSuggestions}
+            >
+              <RefreshIcon />
+            </button>
+            <button
+              className="notif-icon-button small"
+              type="button"
+              aria-label="Previous suggestions"
+              onClick={() => cycleSuggestions('prev')}
+            >
+              <ChevronLeftIcon />
+            </button>
+            <button
+              className="notif-icon-button small"
+              type="button"
+              aria-label="Next suggestions"
+              onClick={() => cycleSuggestions('next')}
+            >
+              <ChevronRightIcon />
+            </button>
           </div>
         </div>
-        <div className="home-card">
-          <div className="card-title">Tips</div>
-          <p className="muted">Set up auto-renew offers to keep fans engaged.</p>
+        <div className="notif-suggestions__list">
+          {filteredSuggestions.map((item) => {
+            const isFollowing = followedIds.includes(item.id);
+            return (
+              <button
+                key={item.id}
+                className={`suggestion-card${isFollowing ? ' is-following' : ''}`}
+                type="button"
+                style={{ backgroundImage: item.gradient }}
+                onClick={() => toggleFollow(item.id)}
+              >
+                {item.badge ? (
+                  <span className="suggestion-card__badge">{item.badge}</span>
+                ) : null}
+                <span className="suggestion-card__menu">
+                  <MoreVerticalIcon />
+                </span>
+                {isFollowing ? (
+                  <span className="suggestion-card__follow">Following</span>
+                ) : null}
+                <div className="suggestion-card__avatar" aria-hidden="true" />
+                <div className="suggestion-card__meta">
+                  <div className="suggestion-card__name">
+                    {item.name}
+                    <VerifiedIcon />
+                  </div>
+                  <div className="suggestion-card__handle">{item.handle}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="suggestion-dots" aria-hidden="true">
+          {Array.from({ length: dotCount }).map((_, index) => (
+            <span
+              key={`home-dot-${index}`}
+              className={`suggestion-dot${index === suggestionIndex ? ' is-active' : ''}`}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="notif-footer">
+        <a href="/privacy">Privacy</a>
+        <span>|</span>
+        <a href="/cookies">Cookie Notice</a>
+        <span>|</span>
+        <a href="/terms">Terms of Service</a>
+      </div>
+    </div>
+  );
+
+  return (
+    <MyLayout
+      title="Home"
+      activeNav="home"
+      header={null}
+      contentClassName="my-home home-feed-page"
+      gridClassName="home-feed-grid"
+      aside={aside}
+    >
+      <div className="home-feed">
+        <div className="home-feed__sticky">
+          <section className="home-stories">
+            <div className="home-stories__title">Home</div>
+            <div
+              ref={storiesScrollerRef}
+              className="home-stories__scroller"
+              onScroll={handleStoriesScroll}
+            >
+              <div className="home-stories__track">
+                {storyRail.map((story, index) => (
+                  <button
+                    key={`${story.id}-${index}`}
+                    className="home-story"
+                    type="button"
+                    aria-label={`Open ${story.name} story`}
+                  >
+                    <span className="home-story__ring">
+                      <img src={story.image} alt={story.name} />
+                    </span>
+                    <span className="home-story__name">{story.name}</span>
+                    {story.isLive ? <span className="home-story__live">Live</span> : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="home-feed__filters">
+              <button
+                className={`home-feed__filter${activeFilter === 'all' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setActiveFilter('all')}
+              >
+                All
+              </button>
+              <button
+                className={`home-feed__filter${activeFilter === 'photos' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setActiveFilter('photos')}
+              >
+                Photos
+              </button>
+              <button
+                className={`home-feed__filter${activeFilter === 'videos' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setActiveFilter('videos')}
+              >
+                Videos
+              </button>
+              <button
+                className={`home-feed__filter${activeFilter === 'texts' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setActiveFilter('texts')}
+              >
+                Texts
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <div className="home-feed__posts">
+          {filteredPosts.map((post) => (
+            <article key={post.id} className="home-post">
+              <header className="home-post__header">
+                <div className="home-post__author">
+                  <img className="home-post__avatar" src={post.avatar} alt={post.author} />
+                  <div>
+                    <div className="home-post__name">
+                      {post.author} <VerifiedIcon />
+                    </div>
+                    <div className="home-post__handle">
+                      {post.handle} · {post.time}
+                    </div>
+                  </div>
+                </div>
+                <button className="home-post__menu" type="button" aria-label="More options">
+                  <MoreVerticalIcon />
+                </button>
+              </header>
+
+              <p className="home-post__caption">{post.caption}</p>
+
+              {post.type === 'photo' && post.media?.length ? (
+                <img className="home-post__media" src={post.media[0]} alt={`${post.author} post`} />
+              ) : null}
+
+              {post.type === 'video' && post.video ? (
+                <video className="home-post__media" controls preload="metadata" poster={post.video.poster}>
+                  <source src={post.video.src} type="video/mp4" />
+                </video>
+              ) : null}
+
+              <footer className="home-post__footer">
+                <span>{post.likes.toLocaleString()} likes</span>
+                <span>{post.comments.toLocaleString()} comments</span>
+              </footer>
+            </article>
+          ))}
+
+          {!filteredPosts.length ? (
+            <div className="home-feed__empty">No posts match your current filter/search.</div>
+          ) : null}
         </div>
       </div>
     </MyLayout>
@@ -1290,18 +1702,65 @@ export function MySubscribersActive() {
 export function MyPayments() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid'>('all');
   const [showRequest, setShowRequest] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [requesting, setRequesting] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [summary, setSummary] = useState<{
+    currency: string;
+    available_amount_minor: number;
+    pending_amount_minor: number;
+  } | null>(null);
+  const [transferRows, setTransferRows] = useState<PaymentItem[]>([]);
+
+  const formatMoney = (amountMinor: number, currency: string) =>
+    new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amountMinor / 100);
+
+  const loadPayments = async () => {
+    try {
+      setLoading(true);
+      setErrorText(null);
+      const [nextSummary, transfers] = await Promise.all([
+        fetchPayoutSummary(),
+        fetchPayoutTransfers(30),
+      ]);
+      setSummary(nextSummary);
+      setTransferRows(
+        transfers.map((transfer) => ({
+          id: `t-${transfer.id}`,
+          label: 'Payout transfer',
+          date: new Date(transfer.created_at).toLocaleDateString(),
+          amount: formatMoney(transfer.amount_minor, transfer.currency),
+          status:
+            transfer.status === 'success'
+              ? 'paid'
+              : transfer.status === 'failed' || transfer.status === 'reversed'
+                ? 'failed'
+                : 'pending',
+        })),
+      );
+    } catch (err) {
+      console.error(err);
+      setErrorText('Could not load payout data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadPayments();
+  }, []);
 
   const filtered = useMemo(() => {
     if (filter === 'all') {
-      return PAYMENTS;
+      return transferRows.length ? transferRows : PAYMENTS;
     }
 
     if (filter === 'paid') {
-      return PAYMENTS.filter((item) => item.status === 'paid');
+      return (transferRows.length ? transferRows : PAYMENTS).filter((item) => item.status === 'paid');
     }
 
-    return PAYMENTS.filter((item) => item.status === 'pending');
-  }, [filter]);
+    return (transferRows.length ? transferRows : PAYMENTS).filter((item) => item.status === 'pending');
+  }, [filter, transferRows]);
 
   return (
     <MyLayout
@@ -1309,7 +1768,36 @@ export function MyPayments() {
       subtitle="Track payouts, tips, and statements"
       activeNav="more"
       headerActions={
-        <button className="my-button" type="button" onClick={() => setShowRequest(true)}>
+        <button
+          className="my-button"
+          type="button"
+          disabled={requesting}
+          onClick={async () => {
+            try {
+              setRequesting(true);
+              setErrorText(null);
+              const amountInput = window.prompt('Enter payout amount in major units (leave blank for full balance):');
+              const normalized = amountInput?.trim() ?? '';
+              const amountMinor =
+                normalized.length > 0 ? Math.round(Number(normalized) * 100) : undefined;
+              if (normalized.length > 0 && (!Number.isFinite(amountMinor) || amountMinor! <= 0)) {
+                setErrorText('Invalid payout amount');
+                return;
+              }
+              await requestCreatorPayout({
+                amountMinor,
+                reason: 'Creator initiated payout',
+              });
+              setShowRequest(true);
+              await loadPayments();
+            } catch (err) {
+              console.error(err);
+              setErrorText('Payout request failed. Confirm payout destination and available balance.');
+            } finally {
+              setRequesting(false);
+            }
+          }}
+        >
           Request payout
         </button>
       }
@@ -1317,21 +1805,27 @@ export function MyPayments() {
       <div className="my-stat-grid">
         <div className="my-stat">
           <div className="my-muted">Available balance</div>
-          <div className="my-chat-name">$3,420.55</div>
+          <div className="my-chat-name">
+            {summary ? formatMoney(summary.available_amount_minor, summary.currency) : '$0.00'}
+          </div>
         </div>
         <div className="my-stat">
           <div className="my-muted">Pending payout</div>
-          <div className="my-chat-name">$1,280.00</div>
+          <div className="my-chat-name">
+            {summary ? formatMoney(summary.pending_amount_minor, summary.currency) : '$0.00'}
+          </div>
         </div>
         <div className="my-stat">
-          <div className="my-muted">Tips this week</div>
-          <div className="my-chat-name">$215.00</div>
+          <div className="my-muted">Transfer count</div>
+          <div className="my-chat-name">{transferRows.length}</div>
         </div>
       </div>
 
       {showRequest ? (
         <div className="my-alert">Payout requested. Processing within 24 hours.</div>
       ) : null}
+      {errorText ? <div className="my-alert">{errorText}</div> : null}
+      {loading ? <div className="my-muted">Loading payout data...</div> : null}
 
       <div className="my-card">
         <div className="my-row">
@@ -1965,18 +2459,92 @@ export function MyBanking() {
   const [autoPayout, setAutoPayout] = useState(true);
   const [schedule, setSchedule] = useState('weekly');
   const [transferRequested, setTransferRequested] = useState(false);
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [bankCode, setBankCode] = useState('MPESA');
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [bankingError, setBankingError] = useState<string | null>(null);
+  const [savedDestination, setSavedDestination] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const account = await fetchPayoutAccount();
+        if (!account) return;
+        setAccountName(account.account_name);
+        setBankCode(account.bank_code);
+        setSavedDestination(`****${account.account_number_last4}`);
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+  }, []);
 
   return (
     <MyLayout title="Banking" subtitle="Manage payout destinations" activeNav="more">
       <div className="my-card">
         <div className="my-row">
           <div>
-            <div className="my-chat-name">Bank account</div>
-            <div className="my-muted">Chase **** 2910</div>
+            <div className="my-chat-name">M-PESA payout account</div>
+            <div className="my-muted">
+              {savedDestination ? `Active destination ${savedDestination}` : 'No payout destination set'}
+            </div>
           </div>
-          <button className="my-button secondary" type="button">
-            Update
+          <button
+            className="my-button secondary"
+            type="button"
+            disabled={savingAccount}
+            onClick={async () => {
+              if (!accountNumber || !accountName) {
+                setBankingError('Enter M-PESA number and account name');
+                return;
+              }
+              try {
+                setSavingAccount(true);
+                setBankingError(null);
+                const response = await upsertMpesaPayoutAccount({
+                  accountNumber,
+                  accountName,
+                  bankCode,
+                  currency: 'KES',
+                });
+                const masked = response?.payoutAccount?.accountNumberMasked ?? `****${accountNumber.slice(-4)}`;
+                setSavedDestination(masked);
+                setTransferRequested(false);
+              } catch (err) {
+                console.error(err);
+                setBankingError('Could not save payout destination.');
+              } finally {
+                setSavingAccount(false);
+              }
+            }}
+          >
+            {savingAccount ? 'Saving...' : 'Save'}
           </button>
+        </div>
+        <div className="my-divider" />
+        <div className="my-form">
+          <label className="my-muted">M-PESA number</label>
+          <input
+            className="my-input"
+            value={accountNumber}
+            onChange={(event) => setAccountNumber(event.target.value)}
+            placeholder="2547XXXXXXXX"
+          />
+          <label className="my-muted">Account name</label>
+          <input
+            className="my-input"
+            value={accountName}
+            onChange={(event) => setAccountName(event.target.value)}
+            placeholder="Creator full name"
+          />
+          <label className="my-muted">Bank code</label>
+          <input
+            className="my-input"
+            value={bankCode}
+            onChange={(event) => setBankCode(event.target.value.toUpperCase())}
+            placeholder="MPESA"
+          />
         </div>
         <div className="my-divider" />
         <div className="my-row">
@@ -2011,7 +2579,16 @@ export function MyBanking() {
         <button
           className="my-button"
           type="button"
-          onClick={() => setTransferRequested(true)}
+          onClick={async () => {
+            try {
+              setBankingError(null);
+              await requestCreatorPayout({ reason: 'Manual transfer now' });
+              setTransferRequested(true);
+            } catch (err) {
+              console.error(err);
+              setBankingError('Transfer request failed.');
+            }
+          }}
         >
           Transfer now
         </button>
@@ -2019,6 +2596,7 @@ export function MyBanking() {
       {transferRequested ? (
         <div className="my-alert">Transfer request sent to your bank.</div>
       ) : null}
+      {bankingError ? <div className="my-alert">{bankingError}</div> : null}
     </MyLayout>
   );
 }
@@ -2179,6 +2757,7 @@ function MyLayout({
   headerActions,
   header,
   aside,
+  gridClassName,
   contentClassName,
   children,
 }: MyLayoutProps) {
@@ -2208,8 +2787,7 @@ function MyLayout({
         </div>
 
         <nav className="my-nav__menu">
-          <NavItem href="/onlyfans" label="Home" icon={<HomeIcon />} isActive={activeNav === 'home'} />
-          <NavItem href="/discover" label="Discover" icon={<SearchIcon />} isActive={false} />
+          <NavItem href="/" label="Home" icon={<HomeIcon />} isActive={activeNav === 'home'} />
           <NavItem
             href="/my/notifications"
             label="Notifications"
@@ -2264,7 +2842,7 @@ function MyLayout({
         )}
 
         {aside ? (
-          <div className="my-main__grid">
+          <div className={`my-main__grid${gridClassName ? ` ${gridClassName}` : ''}`}>
             <div
               className={`my-main__content${contentClassName ? ` ${contentClassName}` : ''}`}
             >

@@ -1,6 +1,7 @@
 import { useEffect, type ComponentType } from 'react';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
 import { AuthGate } from './AuthGate';
+import { ErrorBoundary } from './ErrorBoundary';
 import { HtmlPage, normalizePath, resolveSnapshotFile } from './HtmlPage';
 import ProfileAiko from './pages/ProfileAiko';
 import { MyHome } from './pages/MyPages';
@@ -100,9 +101,11 @@ function RouteLoader() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthGate>
-        <RouteLoader />
-      </AuthGate>
+      <ErrorBoundary>
+        <AuthGate>
+          <RouteLoader />
+        </AuthGate>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }
@@ -160,7 +163,13 @@ function LinkInterceptor() {
         return;
       }
 
-      const url = new URL(href, window.location.href);
+      let url: URL;
+
+      try {
+        url = new URL(href, window.location.href);
+      } catch {
+        return;
+      }
 
       if (url.origin !== window.location.origin) {
         return;

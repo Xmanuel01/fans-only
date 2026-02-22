@@ -8,6 +8,7 @@ import { supabase } from "../_shared/client.ts";
 const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
 
 serve(async (req) => {
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   if (!supabase) return json({ error: "Supabase not configured" }, 500);
   if (!secret) return json({ error: "PAYSTACK_SECRET_KEY missing" }, 500);
 
@@ -16,7 +17,7 @@ serve(async (req) => {
   if (!signature) return json({ error: "Missing signature" }, 400);
 
   const hash = await hmacSHA512(bodyText, secret);
-  if (hash !== signature) return json({ error: "Invalid signature" }, 400);
+  if (hash !== signature.toLowerCase()) return json({ error: "Invalid signature" }, 400);
 
   let event: { event?: string; data?: any };
   try {
@@ -28,41 +29,175 @@ serve(async (req) => {
   const eventType = event?.event;
   const data = event?.data;
   if (!eventType || !data) return json({ error: "Malformed payload" }, 400);
+  const providerEventId = data.id?.toString?.();
+  if (!providerEventId) return json({ error: "Missing event id" }, 400);
 
-  const reference: string | undefined = data.reference;
-  if (!reference) return json({ error: "Missing reference" }, 400);
-
-  // Idempotency: bail if already succeeded
-  const { data: paymentRow, error: fetchErr } = await supabase
-    .from("payments")
-    .select("id, status, type, creator_id, user_id")
-    .eq("provider", "paystack")
-    .eq("provider_intent_id", reference)
-    .maybeSingle();
-
-  if (fetchErr) return json({ error: "DB fetch error" }, 500);
-  if (!paymentRow) return json({ error: "Unknown payment reference" }, 404);
-  if (paymentRow.status === "succeeded") return json({ ok: true, already_processed: true });
+  // Idempotency by provider event id
+  const { error: eventInsertErr } = await supabase.from("provider_webhook_events").insert({
+    provider: "paystack",
+    provider_event_id: providerEventId,
+    event_type: eventType,
+    payload: event,
+  });
+  if (eventInsertErr) {
+    if (eventInsertErr.code === "23505") {
+      return json({ ok: true, already_processed: true });
+    }
+    return json({ error: "Webhook event persistence failed" }, 500);
+  }
 
   if (eventType === "charge.success") {
-    const amount = data.amount; // kobo
-    const currency = data.currency ?? "NGN";
+    const reference: string | undefined = data.reference;
+    if (!reference) return json({ error: "Missing reference" }, 400);
 
-    const { error: updateErr } = await supabase
+    // Idempotency: bail if already succeeded
+    const { data: paymentRow, error: fetchErr } = await supabase
       .from("payments")
-      .update({
-        status: "succeeded",
+      .select("id, status, type, creator_id, user_id, amount_cents, currency")
+      .eq("provider", "paystack")
+      .eq("provider_intent_id", reference)
+      .maybeSingle();
+
+    if (fetchErr) return json({ error: "DB fetch error" }, 500);
+    const amount = data.amount; // minor unit
+    const currency = (data.currency ?? paymentRow?.currency ?? "KES").toUpperCase();
+    if (!Number.isFinite(amount) || amount <= 0) return json({ error: "Invalid amount" }, 400);
+
+    let resolvedPayment = paymentRow;
+    if (!resolvedPayment) {
+      const metadata = data.metadata ?? {};
+      const creatorId = metadata.creator_id?.toString?.();
+      const payerUserId = metadata.payer_user_id?.toString?.() ?? null;
+      const paymentType = metadata.type === "subscription" ? "subscription" : "tip";
+      if (!creatorId) return json({ error: "Unknown payment reference and missing creator metadata" }, 404);
+
+      const { data: recoveredPayment, error: recoverErr } = await supabase
+        .from("payments")
+        .upsert(
+          {
+            provider: "paystack",
+            provider_intent_id: reference,
+            provider_event_id: providerEventId,
+            amount_cents: amount,
+            currency,
+            status: "succeeded",
+            creator_id: creatorId,
+            user_id: payerUserId,
+            type: paymentType,
+            metadata,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "provider_intent_id" },
+        )
+        .select("id, status, type, creator_id, user_id, amount_cents, currency")
+        .single();
+      if (recoverErr) return json({ error: "Payment recovery failed" }, 500);
+      resolvedPayment = recoveredPayment;
+    }
+
+    if (resolvedPayment.status === "succeeded" && paymentRow) return json({ ok: true, already_processed: true });
+
+    if (resolvedPayment.status !== "succeeded") {
+      const { error: updateErr } = await supabase
+        .from("payments")
+        .update({
+          status: "succeeded",
+          amount_cents: amount,
+          currency,
+          provider_event_id: data.id?.toString() ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("provider", "paystack")
+        .eq("provider_intent_id", reference);
+      if (updateErr) return json({ error: "Update failed" }, 500);
+    }
+
+    if (resolvedPayment.type === "tip") {
+      const { error: tipErr } = await supabase.from("tips").insert({
+        from_user: resolvedPayment.user_id,
+        to_creator: resolvedPayment.creator_id,
         amount_cents: amount,
         currency,
-        provider_event_id: data.id?.toString() ?? null,
+        payment_id: resolvedPayment.id,
+      });
+      if (tipErr && tipErr.code !== "23505") return json({ error: "Tip create failed" }, 500);
+    }
+
+    if (resolvedPayment.type === "subscription") {
+      const now = new Date();
+      const periodEnd = new Date(now.getTime());
+      periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+      const { error: subErr } = await supabase.from("subscriptions").upsert(
+        {
+          subscriber_id: resolvedPayment.user_id,
+          creator_id: resolvedPayment.creator_id,
+          status: "active",
+          current_period_end: periodEnd.toISOString(),
+          payment_id: resolvedPayment.id,
+          updated_at: now.toISOString(),
+        },
+        { onConflict: "subscriber_id,creator_id" },
+      );
+      if (subErr) return json({ error: "Subscription upsert failed" }, 500);
+    }
+
+    const { error: creditErr } = await supabase.rpc("credit_creator_balance", {
+      p_creator_id: resolvedPayment.creator_id,
+      p_amount_minor: amount,
+      p_currency: currency,
+      p_payment_id: resolvedPayment.id,
+      p_metadata: { source: "paystack.charge.success", reference },
+    });
+    if (creditErr) return json({ error: "Creator balance credit failed" }, 500);
+    return json({ ok: true });
+  }
+
+  if (eventType === "transfer.success" || eventType === "transfer.failed" || eventType === "transfer.reversed") {
+    const paystackTransferId = data.id?.toString?.() ?? null;
+    const transferCode = data.transfer_code ?? null;
+    const payoutLookupFilters = [
+      paystackTransferId ? `paystack_transfer_id.eq.${paystackTransferId}` : null,
+      transferCode ? `paystack_transfer_code.eq.${transferCode}` : null,
+    ].filter(Boolean);
+    if (!payoutLookupFilters.length) {
+      return json({ error: "Missing transfer identifiers" }, 400);
+    }
+
+    const query = supabase
+      .from("payout_transfers")
+      .select("id")
+      .or(payoutLookupFilters.join(","))
+      .limit(1)
+      .maybeSingle();
+    const { data: payoutRow, error: payoutFetchErr } = await query;
+    if (payoutFetchErr) return json({ error: "Payout fetch failed" }, 500);
+    if (!payoutRow) return json({ error: "Unknown payout transfer" }, 404);
+
+    const statusMap: Record<string, "success" | "failed" | "reversed"> = {
+      "transfer.success": "success",
+      "transfer.failed": "failed",
+      "transfer.reversed": "reversed",
+    };
+
+    const { error: markErr } = await supabase.rpc("mark_payout_result", {
+      p_transfer_id: payoutRow.id,
+      p_status: statusMap[eventType],
+      p_paystack_transfer_code: transferCode,
+      p_paystack_transfer_id: paystackTransferId,
+      p_failure_reason: data.complete_message ?? data.reason ?? null,
+      p_metadata: { source: eventType },
+    });
+    if (markErr) return json({ error: "Payout state update failed" }, 500);
+
+    await supabase
+      .from("payout_transfers")
+      .update({
+        last_attempt_at: new Date().toISOString(),
+        locked_at: null,
         updated_at: new Date().toISOString(),
       })
-      .eq("provider", "paystack")
-      .eq("provider_intent_id", reference);
-
-    if (updateErr) return json({ error: "Update failed" }, 500);
-
-    // TODO: create subscriptions or tips based on type once flows are wired.
+      .eq("id", payoutRow.id);
   }
 
   return json({ ok: true });

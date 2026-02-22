@@ -4,39 +4,38 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { supabase } from "../_shared/client.ts";
+import { corsHeaders, jsonWithCors, withCors } from "../_shared/cors.ts";
 import { requireAgeConfirmed } from "../_shared/guards.ts";
 
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonWithCors({ error: "Method not allowed" }, 405);
   }
 
   if (!supabase) {
-    return new Response(JSON.stringify({ error: "Supabase not configured" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonWithCors({ error: "Supabase not configured" }, 500);
   }
 
   let body: { message?: string };
   try {
     body = await req.json();
   } catch {
-    return json({ error: "Invalid JSON" }, 400);
+    return jsonWithCors({ error: "Invalid JSON" }, 400);
   }
 
   const message = body.message?.trim();
-  if (!message) return json({ error: "message is required" }, 400);
+  if (!message) return jsonWithCors({ error: "message is required" }, 400);
 
   // Optional auth: if bearer token present, require age confirmation; otherwise allow anonymous feedback
   const authHeader = req.headers.get("Authorization");
   let userId: string | null = null;
   if (authHeader) {
     const result = await requireAgeConfirmed(supabase, req);
-    if (result.errorResponse) return result.errorResponse;
+    if (result.errorResponse) return withCors(result.errorResponse);
     userId = result.userId;
   }
 
@@ -45,14 +44,7 @@ serve(async (req) => {
     message,
   });
 
-  if (error) return json({ error: "Insert failed" }, 500);
+  if (error) return jsonWithCors({ error: "Insert failed" }, 500);
 
-  return json({ ok: true });
+  return jsonWithCors({ ok: true });
 });
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}

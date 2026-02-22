@@ -1,4 +1,5 @@
-ï»¿import { useEffect, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import './MyPages.css';
 import './SettingsProfile.css';
 
 type SettingsItemKey =
@@ -61,28 +62,53 @@ export default function SettingsShell({
 
   return (
     <div className="settings-shell">
-      <aside className="settings-nav">
-        <div className="settings-nav__avatar" aria-label="Profile avatar" />
-        <nav className="settings-nav__menu">
-          <NavItem href="/onlyfans" label="Home" icon={<HomeIcon />} />
-          <NavItem href="/my/notifications" label="Notifications" icon={<BellIcon />} />
-          <NavItem href="/my/chats" label="Messages" icon={<ChatIcon />} />
-          <NavItem href="/my/collections" label="Collections" icon={<GridIcon />} />
+      <aside className="my-nav my-nav--dark">
+        <div className="my-nav__profile">
+          <img className="my-nav__avatar" src="https://i.pravatar.cc/120?img=21" alt="Profile avatar" />
+          <div className="my-nav__identity">
+            <div className="name">Aiko Mitsuri</div>
+            <div className="handle">{userHandle}</div>
+            <div className="meta">
+              <span>1 fan</span> · <span>4 followers</span>
+            </div>
+          </div>
+        </div>
+
+        <nav className="my-nav__menu">
+          <NavItem href="/" label="Home" icon={<HomeIcon />} />
+          <NavItem
+            href="/my/notifications"
+            label="Notifications"
+            icon={<BellIcon />}
+            badge="4"
+          />
+          <NavItem href="/my/chats" label="Chats" icon={<ChatIcon />} />
+          <NavItem href="/my/collections" label="Collections" icon={<GearIcon />} />
           <NavItem
             href="/my/collections/user-lists/subscriptions/active"
             label="Subscriptions"
-            icon={<HeartIcon />}
+            icon={<BagIcon />}
           />
-          <NavItem href="/my/payments/add_card" label="Add card" icon={<CardIcon />} />
-          <NavItem href="/aiko_mitsuri" label="My profile" icon={<UserIcon />} />
-          <NavItem href="/my/settings" label="More" icon={<MoreIcon />} />
+          <NavItem
+            href="/my/payments/add_card"
+            label="Wallet"
+            icon={<CardIcon />}
+            trailing={<span className="wallet-pill">0.00</span>}
+          />
         </nav>
-        <a className="settings-nav__cta" href="/posts/create">
-          <span className="settings-nav__cta-icon">
+
+        <a className="my-nav__cta" href="/posts/create">
+          <span className="my-nav__cta-icon">
             <PlusIcon />
           </span>
-          New post
+          New Post
         </a>
+
+        <div className="my-nav__secondary">
+          <NavItem href="/my/settings" label="Settings" icon={<GearIcon />} isActive />
+          <NavItem href="/news" label="What's new" icon={<StarIcon />} badge="1" />
+          <NavItem href="/logout" label="Log out" icon={<LogOutIcon />} />
+        </div>
       </aside>
 
       <section className="settings-menu">
@@ -134,15 +160,23 @@ function NavItem({
   href,
   label,
   icon,
+  isActive,
+  badge,
+  trailing,
 }: {
   href: string;
   label: string;
   icon: ReactNode;
+  isActive?: boolean;
+  badge?: string;
+  trailing?: ReactNode;
 }) {
   return (
-    <a className="nav-item" href={href}>
-      <span className="nav-item__icon">{icon}</span>
-      <span className="nav-item__label">{label}</span>
+    <a className={`my-nav-item${isActive ? ' is-active' : ''}`} href={href}>
+      <span className="my-nav-item__icon">{icon}</span>
+      <span className="my-nav-item__label">{label}</span>
+      {badge ? <span className="my-nav-item__badge">{badge}</span> : null}
+      {trailing ? <span className="my-nav-item__trailing">{trailing}</span> : null}
     </a>
   );
 }
@@ -173,25 +207,6 @@ function ChatIcon() {
   );
 }
 
-function GridIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="4" y="4" width="7" height="7" rx="1.5" />
-      <rect x="13" y="4" width="7" height="7" rx="1.5" />
-      <rect x="4" y="13" width="7" height="7" rx="1.5" />
-      <rect x="13" y="13" width="7" height="7" rx="1.5" />
-    </svg>
-  );
-}
-
-function HeartIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 20s-7-4.35-7-9.2A4.3 4.3 0 0 1 9.2 6c1.1 0 2.2.45 2.8 1.2A3.7 3.7 0 0 1 14.8 6 4.3 4.3 0 0 1 19 10.8C19 15.65 12 20 12 20z" />
-    </svg>
-  );
-}
-
 function CardIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -199,25 +214,6 @@ function CardIcon() {
       <path d="M3 9h18" />
       <path d="M17 16h3" />
       <path d="M18.5 14.5v3" />
-    </svg>
-  );
-}
-
-function UserIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20a8 8 0 0 1 16 0" />
-    </svg>
-  );
-}
-
-function MoreIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="5" cy="12" r="1.5" />
-      <circle cx="12" cy="12" r="1.5" />
-      <circle cx="19" cy="12" r="1.5" />
     </svg>
   );
 }
@@ -247,3 +243,54 @@ function ChevronRightIcon() {
   );
 }
 
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 2v3" />
+      <path d="M12 19v3" />
+      <path d="M4.9 4.9l2.2 2.2" />
+      <path d="M16.9 16.9l2.2 2.2" />
+      <path d="M2 12h3" />
+      <path d="M19 12h3" />
+      <path d="M4.9 19.1l2.2-2.2" />
+      <path d="M16.9 7.1l2.2-2.2" />
+    </svg>
+  );
+}
+
+function BagIcon() {
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <rect x="16" y="22" width="32" height="28" rx="4" />
+      <path d="M24 22v-4a8 8 0 0 1 16 0v4" />
+      <circle cx="26" cy="30" r="2" />
+      <circle cx="38" cy="30" r="2" />
+    </svg>
+  );
+}
+
+function StarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 3l2.39 4.84 5.34.78-3.86 3.76.91 5.32L12 15.9l-4.78 2.8.91-5.32L4.27 8.62l5.34-.78L12 3z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function LogOutIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <path d="M10 17 5 12l5-5" />
+      <path d="M5 12h11" />
+    </svg>
+  );
+}

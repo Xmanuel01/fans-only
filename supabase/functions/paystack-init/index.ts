@@ -4,6 +4,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { supabase } from "../_shared/client.ts";
+import { corsHeaders, jsonWithCors, withCors } from "../_shared/cors.ts";
 import { requireAgeConfirmed } from "../_shared/guards.ts";
 
 const PAYSTACK_API = "https://api.paystack.co";
@@ -11,45 +12,66 @@ const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
 
 type InitRequest = {
   email: string;
-  amountNaira: number; // amount in NGN (naira)
-  currency?: string; // default NGN
+  amountMajor?: number; // major units e.g. KES
+  amountNaira?: number; // backward compatibility; treated as amountMajor
+  currency?: string; // default KES
   metadata?: Record<string, unknown>;
   creator_id: string;
   type: "tip" | "subscription";
+  channels?: string[];
 };
 
 serve(async (req) => {
-  if (!supabase) return json({ error: "Supabase not configured" }, 500);
-  if (!secret) return json({ error: "PAYSTACK_SECRET_KEY missing" }, 500);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return jsonWithCors({ error: "Method not allowed" }, 405);
+  if (!supabase) return jsonWithCors({ error: "Supabase not configured" }, 500);
+  if (!secret) return jsonWithCors({ error: "PAYSTACK_SECRET_KEY missing" }, 500);
 
   let body: InitRequest;
   try {
     body = await req.json();
   } catch {
-    return json({ error: "Invalid JSON" }, 400);
+    return jsonWithCors({ error: "Invalid JSON" }, 400);
   }
 
-  if (!body.email || !body.amountNaira || !body.creator_id) {
-    return json({ error: "email, amountNaira, creator_id required" }, 400);
+  const amountMajor = Number(body.amountMajor ?? body.amountNaira ?? 0);
+  if (!body.email || !amountMajor || !body.creator_id || !body.type) {
+    return jsonWithCors({ error: "email, amountMajor, creator_id, type required" }, 400);
+  }
+  if (!Number.isFinite(amountMajor) || amountMajor <= 0) {
+    return jsonWithCors({ error: "amountMajor must be a positive number" }, 400);
   }
 
   // Require authenticated + age-confirmed user to create a payment intent
   const { userId, errorResponse } = await requireAgeConfirmed(supabase, req);
-  if (errorResponse) return errorResponse;
+  if (errorResponse) return withCors(errorResponse);
 
-  const amountKobo = Math.round(body.amountNaira * 100);
+  const { data: creatorRow, error: creatorErr } = await supabase
+    .from("creators")
+    .select("id")
+    .eq("id", body.creator_id)
+    .maybeSingle();
+  if (creatorErr) return jsonWithCors({ error: "Creator lookup failed" }, 500);
+  if (!creatorRow) return jsonWithCors({ error: "Unknown creator_id" }, 400);
+
+  const amountMinor = Math.round(amountMajor * 100);
+  const currency = (body.currency ?? "KES").toUpperCase();
+  const reference = `pay_${userId.slice(0, 8)}_${body.creator_id.slice(0, 8)}_${Date.now()}`;
   const callback_url =
     Deno.env.get("PAYSTACK_CALLBACK_URL") ??
     new URL("/paystack/callback", req.url).toString();
 
   const payload = {
     email: body.email,
-    amount: amountKobo,
-    currency: body.currency ?? "NGN",
+    amount: amountMinor,
+    currency,
+    reference,
     callback_url,
+    channels: body.channels?.length ? body.channels : ["mobile_money"],
     metadata: {
       type: body.type,
       creator_id: body.creator_id,
+      payer_user_id: userId,
       ...body.metadata,
     },
   };
@@ -65,17 +87,18 @@ serve(async (req) => {
 
   const initJson = await initRes.json();
   if (!initRes.ok) {
-    return json({ error: "Paystack init failed", details: initJson }, initRes.status);
+    return jsonWithCors({ error: "Paystack init failed", details: initJson }, initRes.status);
   }
 
   // Record pending payment (service role context)
   const { data: payData } = initJson;
-  await supabase
+  const providerReference = payData?.reference ?? reference;
+  const { error: insertErr } = await supabase
     .from("payments")
     .insert({
       provider: "paystack",
-      provider_intent_id: payData.reference,
-      amount_cents: amountKobo, // kobo is NGN*100; treating as "cents" equivalent
+      provider_intent_id: providerReference,
+      amount_cents: amountMinor,
       currency: payload.currency,
       status: "requires_action",
       creator_id: body.creator_id,
@@ -85,13 +108,9 @@ serve(async (req) => {
     })
     .select()
     .single();
+  if (insertErr) {
+    return jsonWithCors({ error: "Payment persistence failed" }, 500);
+  }
 
-  return json({ authorization_url: payData.authorization_url, reference: payData.reference });
+  return jsonWithCors({ authorization_url: payData.authorization_url, reference: providerReference });
 });
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}

@@ -150,7 +150,7 @@ export default function ProfileAiko() {
       <aside className="profile-nav">
         <div className="profile-nav__avatar" aria-label="Profile avatar" />
         <nav className="profile-nav__menu">
-          <NavItem href="/onlyfans" label="Home" icon={<HomeIcon />} />
+          <NavItem href="/" label="Home" icon={<HomeIcon />} />
           <NavItem
             href="/my/notifications"
             label="Notifications"

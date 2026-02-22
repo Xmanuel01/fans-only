@@ -2,16 +2,25 @@
 // Expects env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { supabase } from "../_shared/client.ts";
+import { corsHeaders, jsonWithCors } from "../_shared/cors.ts";
 
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  if (req.method !== "POST") {
+    return jsonWithCors({ error: "Method not allowed" }, 405);
+  }
+
   if (!supabase) {
-    return new Response(JSON.stringify({ error: "Supabase not configured" }), { status: 500 });
+    return jsonWithCors({ error: "Supabase not configured" }, 500);
   }
 
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.replace("Bearer ", "");
   if (!token) {
-    return new Response(JSON.stringify({ error: "Missing bearer token" }), { status: 401 });
+    return jsonWithCors({ error: "Missing bearer token" }, 401);
   }
 
   let userId: string | undefined;
@@ -20,7 +29,7 @@ serve(async (req) => {
     if (error || !data?.user?.id) throw error ?? new Error("No user");
     userId = data.user.id;
   } catch (_err) {
-    return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401 });
+    return jsonWithCors({ error: "Invalid token" }, 401);
   }
 
   const { error: updateError } = await supabase
@@ -29,11 +38,8 @@ serve(async (req) => {
     .eq("id", userId);
 
   if (updateError) {
-    return new Response(JSON.stringify({ error: "Update failed" }), { status: 500 });
+    return jsonWithCors({ error: "Update failed" }, 500);
   }
 
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+  return jsonWithCors({ ok: true }, 200);
 });

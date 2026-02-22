@@ -8,11 +8,11 @@ Two Vite + React + TypeScript frontends that mirror an OnlyFans-style experience
 - Node 20+ and npm 10+ recommended.
 - Install: `npm install` inside each app directory (`user-side/`, `creator-side/`).
 - Run dev server: `npm run dev`.
-- Type check: `npm run lint` (user-side) or `npm run build` (creator-side also runs `tsc`).
+- Type check: `npm run lint` (both apps).
 - Build static assets: `npm run build` -> `dist/`.
 
 ## Environment
-- `user-side/` reads `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_CREATOR_APP_URL` via Vite.
+- `user-side/` reads `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_CREATOR_APP_URL`, `VITE_GIFT_CREATOR_ID`, and `VITE_GIFT_AMOUNT_MAJOR` via Vite.
 - `creator-side/` reads `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_CONSUMER_APP_URL` via Vite.
 - Copy the provided `.env.local.example`, `.env.staging.example`, or `.env.production.example` to the matching file and fill values; keep real secrets out of git.
 
@@ -24,9 +24,10 @@ Two Vite + React + TypeScript frontends that mirror an OnlyFans-style experience
 ## Deploying
 - Both apps output static bundles suitable for any CDN/static host (e.g., Vercel, Netlify, S3 + CloudFront).
 - Ensure Supabase env vars are configured in the host environment before serving the user app.
+- For payout retries, deploy and schedule `process-payout-queue` (every 1-5 minutes). Set `PAYOUT_QUEUE_CRON_TOKEN` and send it as bearer token from your scheduler.
 
 ## CI
-- GitHub Actions workflow at `.github/workflows/ci.yml` runs `npm ci && npm run lint && npm run build` for `user-side/` and `npm ci && npm run build` for `creator-side/`.
+- GitHub Actions workflow at `.github/workflows/ci.yml` runs `npm ci && npm run lint && npm run build` for both apps.
 - Add repository secrets `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` so the user build uses real Supabase values; otherwise fallback placeholders are used.
 
 ## Security hardening checklist (Supabase)
