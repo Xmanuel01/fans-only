@@ -16,8 +16,9 @@ type InitRequest = {
   amountNaira?: number; // backward compatibility; treated as amountMajor
   currency?: string; // default KES
   metadata?: Record<string, unknown>;
-  creator_id: string;
-  type: "tip" | "subscription";
+  creator_id?: string;
+  post_id?: number;
+  type: "tip" | "subscription" | "wallet_topup" | "ppv";
   channels?: string[];
 };
 
@@ -35,8 +36,8 @@ serve(async (req) => {
   }
 
   const amountMajor = Number(body.amountMajor ?? body.amountNaira ?? 0);
-  if (!body.email || !amountMajor || !body.creator_id || !body.type) {
-    return jsonWithCors({ error: "email, amountMajor, creator_id, type required" }, 400);
+  if (!body.email || !amountMajor || !body.type) {
+    return jsonWithCors({ error: "email, amountMajor, type required" }, 400);
   }
   if (!Number.isFinite(amountMajor) || amountMajor <= 0) {
     return jsonWithCors({ error: "amountMajor must be a positive number" }, 400);
@@ -46,17 +47,55 @@ serve(async (req) => {
   const { userId, errorResponse } = await requireAgeConfirmed(supabase, req);
   if (errorResponse) return withCors(errorResponse);
 
-  const { data: creatorRow, error: creatorErr } = await supabase
-    .from("creators")
-    .select("id")
-    .eq("id", body.creator_id)
-    .maybeSingle();
-  if (creatorErr) return jsonWithCors({ error: "Creator lookup failed" }, 500);
-  if (!creatorRow) return jsonWithCors({ error: "Unknown creator_id" }, 400);
+  let creatorId: string | null = body.creator_id ?? null;
+
+  if (body.type !== "wallet_topup") {
+    if (!creatorId) {
+      return jsonWithCors({ error: "creator_id required" }, 400);
+    }
+    const { data: creatorRow, error: creatorErr } = await supabase
+      .from("creators")
+      .select("id")
+      .eq("id", creatorId)
+      .maybeSingle();
+    if (creatorErr) return jsonWithCors({ error: "Creator lookup failed" }, 500);
+    if (!creatorRow) return jsonWithCors({ error: "Unknown creator_id" }, 400);
+  }
+
+  if (body.type === "ppv") {
+    if (!body.post_id) {
+      return jsonWithCors({ error: "post_id required for ppv" }, 400);
+    }
+    const { data: postRow, error: postErr } = await supabase
+      .from("posts")
+      .select("id, creator_id, price_cents, currency, visibility")
+      .eq("id", body.post_id)
+      .maybeSingle();
+    if (postErr) return jsonWithCors({ error: "Post lookup failed" }, 500);
+    if (!postRow) return jsonWithCors({ error: "Post not found" }, 404);
+    if (postRow.visibility !== "ppv") {
+      return jsonWithCors({ error: "Post is not ppv" }, 400);
+    }
+    if (!creatorId) {
+      creatorId = postRow.creator_id?.toString?.() ?? null;
+    }
+    if (!creatorId || creatorId !== postRow.creator_id) {
+      return jsonWithCors({ error: "creator_id mismatch for ppv post" }, 400);
+    }
+    const expectedMinor = Number(postRow.price_cents ?? 0);
+    if (!Number.isFinite(expectedMinor) || expectedMinor <= 0) {
+      return jsonWithCors({ error: "Post price is invalid" }, 400);
+    }
+    const requestedMinor = Math.round(amountMajor * 100);
+    if (requestedMinor !== expectedMinor) {
+      return jsonWithCors({ error: "Amount does not match PPV price" }, 400);
+    }
+  }
 
   const amountMinor = Math.round(amountMajor * 100);
   const currency = (body.currency ?? "KES").toUpperCase();
-  const reference = `pay_${userId.slice(0, 8)}_${body.creator_id.slice(0, 8)}_${Date.now()}`;
+  const creatorRef = creatorId ? creatorId.slice(0, 8) : "wallet";
+  const reference = `pay_${userId.slice(0, 8)}_${creatorRef}_${Date.now()}`;
   const callback_url =
     Deno.env.get("PAYSTACK_CALLBACK_URL") ??
     new URL("/paystack/callback", req.url).toString();
@@ -70,7 +109,8 @@ serve(async (req) => {
     channels: body.channels?.length ? body.channels : ["mobile_money"],
     metadata: {
       type: body.type,
-      creator_id: body.creator_id,
+      creator_id: creatorId,
+      post_id: body.post_id ?? null,
       payer_user_id: userId,
       ...body.metadata,
     },
@@ -101,7 +141,7 @@ serve(async (req) => {
       amount_cents: amountMinor,
       currency: payload.currency,
       status: "requires_action",
-      creator_id: body.creator_id,
+      creator_id: creatorId,
       user_id: userId,
       type: body.type,
       metadata: payload.metadata ?? {},

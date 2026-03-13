@@ -1,20 +1,17 @@
-const normalizeUrl = (value: string | undefined, fallback: string, name: string) => {
-  if (!value) {
-    if (import.meta.env.DEV) {
-      console.warn(`[env] ${name} is not set; using ${fallback}.`);
-    }
-    return fallback;
-  }
+const missing: string[] = [];
+const invalid: string[] = [];
 
-  try {
-    const url = new URL(value);
-    return url.toString().replace(/\/$/, '');
-  } catch {
-    if (import.meta.env.DEV) {
-      console.warn(`[env] ${name} is invalid: ${value}. Using ${fallback}.`);
-    }
-    return fallback;
+const readRequired = (value: string | undefined, name: string): string | null => {
+  if (!value) {
+    missing.push(name);
+    return null;
   }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    missing.push(name);
+    return null;
+  }
+  return trimmed;
 };
 
 const readOptional = (value: string | undefined): string | null => {
@@ -23,25 +20,81 @@ const readOptional = (value: string | undefined): string | null => {
   return trimmed ? trimmed : null;
 };
 
-const supabaseUrl = readOptional(import.meta.env.VITE_SUPABASE_URL);
-const supabaseAnonKey = readOptional(import.meta.env.VITE_SUPABASE_ANON_KEY);
+const normalizeUrl = (value: string | null, name: string): string | null => {
+  if (!value) {
+    return null;
+  }
+  try {
+    const url = new URL(value);
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    invalid.push(name);
+    return null;
+  }
+};
+
+const normalizeUrlOrPath = (value: string | null, name: string): string | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('/')) {
+    return trimmed.length > 1 && trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+  }
+  return normalizeUrl(trimmed, name);
+};
+
+const normalizeBasePath = (value: string | null, fallback: string): string => {
+  if (!value) return fallback;
+  let trimmed = value.trim();
+  if (!trimmed) return fallback;
+  if (!trimmed.startsWith('/')) {
+    trimmed = `/${trimmed}`;
+  }
+  if (trimmed.length > 1 && trimmed.endsWith('/')) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  return trimmed;
+};
+
+const supabaseUrl = normalizeUrl(
+  readRequired(import.meta.env.VITE_SUPABASE_URL, 'VITE_SUPABASE_URL'),
+  'VITE_SUPABASE_URL'
+);
+const supabaseAnonKey = readRequired(
+  import.meta.env.VITE_SUPABASE_ANON_KEY,
+  'VITE_SUPABASE_ANON_KEY'
+);
+const consumerAppUrl =
+  normalizeUrlOrPath(readOptional(import.meta.env.VITE_CONSUMER_APP_URL), 'VITE_CONSUMER_APP_URL') ??
+  '/user';
+const creatorBasePath = normalizeBasePath(
+  readOptional(import.meta.env.VITE_CREATOR_BASE_PATH),
+  '/creator'
+);
 
 export const env = {
   supabaseUrl,
   supabaseAnonKey,
-  consumerAppUrl: normalizeUrl(
-    import.meta.env.VITE_CONSUMER_APP_URL,
-    'https://app.example.com',
-    'VITE_CONSUMER_APP_URL'
-  ),
-  enableDemoMode: !import.meta.env.PROD && import.meta.env.VITE_ENABLE_DEMO_MODE !== 'false',
-  forceAuthScreenOnDevBoot:
-    !import.meta.env.PROD && import.meta.env.VITE_FORCE_AUTH_SCREEN_ON_DEV_BOOT !== 'false',
+  consumerAppUrl,
+  creatorBasePath,
   isProd: Boolean(import.meta.env.PROD),
 };
 
-export const isSupabaseConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey);
+export const envStatus = {
+  missing,
+  invalid,
+  hasIssues: missing.length > 0 || invalid.length > 0,
+};
 
-if (!isSupabaseConfigured && import.meta.env.DEV) {
-  console.warn('[env] Supabase is not configured. Auth will be disabled.');
+export const isSupabaseConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey);
+export const isConsumerAppConfigured = Boolean(env.consumerAppUrl);
+
+if (envStatus.hasIssues && import.meta.env.DEV) {
+  const details = [
+    missing.length ? `missing: ${missing.join(', ')}` : null,
+    invalid.length ? `invalid: ${invalid.join(', ')}` : null,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+  console.warn(`[env] Configuration issues detected (${details}).`);
 }

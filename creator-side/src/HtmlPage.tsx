@@ -3,6 +3,8 @@ import { ROUTE_MAP } from './routes';
 
 const HEAD_MARKER = 'data-html-head';
 const FETCH_TIMEOUT_MS = 10000;
+const BASE_URL = import.meta.env.BASE_URL ?? '/';
+const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`;
 
 export const normalizePath = (input: string): string => {
   let path = input || '/';
@@ -206,7 +208,7 @@ export function HtmlPage({ path }: { path: string }) {
 
     setError(null);
 
-    fetch(`/pages/${file}`, { cache: 'force-cache', signal: controller.signal })
+    fetch(assetUrl(`pages/${file}`), { cache: 'force-cache', signal: controller.signal })
       .then((response) => {
         if (!response.ok) {
           throw new Error(`Failed to load ${file}`);

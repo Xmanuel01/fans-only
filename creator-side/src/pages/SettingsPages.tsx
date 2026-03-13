@@ -1,6 +1,19 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { fetchCreatorPricing, updateCreatorPricing } from '../supabaseClient';
 import SettingsShell from './SettingsShell';
 import './SettingsPages.css';
+
+const USE_SAMPLE_DATA =
+  !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true';
+const SAMPLE_HANDLE = '@aiko.mitsuri';
+const SAMPLE_EMAIL = 'creator@example.com';
+const SAMPLE_DISPLAY_NAME = 'Aiko Mitsuri';
+const SAMPLE_SUBSCRIPTION_PRICE = 'KSh 1299 / month';
+
+const USER_HANDLE = USE_SAMPLE_DATA ? SAMPLE_HANDLE : '';
+const ACCOUNT_EMAIL = USE_SAMPLE_DATA ? SAMPLE_EMAIL : '';
+const DISPLAY_NAME = USE_SAMPLE_DATA ? SAMPLE_DISPLAY_NAME : 'Creator';
+const SUBSCRIPTION_PRICE = USE_SAMPLE_DATA ? SAMPLE_SUBSCRIPTION_PRICE : 'Not set';
 
 const LANGUAGE_OPTIONS = [
   'English',
@@ -58,7 +71,7 @@ export function SettingsHome() {
   const [contentProtection, setContentProtection] = useState(false);
 
   return (
-    <SettingsShell userHandle="@aiko.mitsuri">
+    <SettingsShell userHandle={USER_HANDLE}>
       <div className="settings-content__header">
         <h2>Settings</h2>
         <a className="save-button" href="/my/settings/profile">
@@ -93,14 +106,14 @@ export function SettingsHome() {
           <div className="settings-row">
             <div>
               <div className="settings-row__label">Display name</div>
-              <div className="settings-row__meta">Aiko Mitsuri</div>
+              <div className="settings-row__meta">{DISPLAY_NAME}</div>
             </div>
             <span className="settings-chip">Verified</span>
           </div>
           <div className="settings-row">
             <div>
               <div className="settings-row__label">Subscription price</div>
-              <div className="settings-row__meta">$12.99 / month</div>
+              <div className="settings-row__meta">{SUBSCRIPTION_PRICE}</div>
             </div>
             <a className="save-button" href="/my/settings/subscription">
               Manage
@@ -117,27 +130,27 @@ export function SettingsHome() {
 
 export function SettingsAccount() {
   return (
-    <SettingsShell activeItem="account" userHandle="@aiko.mitsuri">
+    <SettingsShell activeItem="account" userHandle={USER_HANDLE}>
       <div className="settings-content__header">
         <h2>Account</h2>
       </div>
       <div className="settings-account">
         <div className="settings-account__group">
           <div className="settings-account__section-title">Account info</div>
-          <AccountRow label="Username" meta="@aiko.mitsuri" />
-          <AccountRow label="Email" meta="emmanuelhanningtone59@gmail.com" />
+          <AccountRow label="Username" meta={USER_HANDLE || undefined} />
+          <AccountRow label="Email" meta={ACCOUNT_EMAIL || undefined} />
           <AccountRow label="Phone number" />
         </div>
 
         <div className="settings-account__group">
           <div className="settings-account__section-title">Linked accounts</div>
           <AccountRow label="X account" />
-          <AccountRow label="Google account" meta="emmanuelhanningtone59@gmail.com" />
+          <AccountRow label="Google account" meta={ACCOUNT_EMAIL || undefined} />
         </div>
 
         <div className="settings-account__group">
           <div className="settings-account__section-title">Connected accounts</div>
-          <AccountRow label="Connect another Onlyfans account" />
+          <AccountRow label="Connect another SpicyX account" />
         </div>
 
         <div className="settings-account__group">
@@ -175,7 +188,7 @@ export function SettingsNotifications() {
   }, [form, saved]);
 
   return (
-    <SettingsShell activeItem="notifications" userHandle="@aiko.mitsuri">
+    <SettingsShell activeItem="notifications" userHandle={USER_HANDLE}>
       <div className="settings-content__header">
         <h2>Notifications</h2>
         <button
@@ -256,7 +269,7 @@ export function SettingsPrivacy() {
   }, [form, saved]);
 
   return (
-    <SettingsShell activeItem="privacy" userHandle="@aiko.mitsuri">
+    <SettingsShell activeItem="privacy" userHandle={USER_HANDLE}>
       <div className="settings-content__header">
         <h2>Privacy and safety</h2>
         <button
@@ -317,8 +330,10 @@ export function SettingsPrivacy() {
 }
 
 export function SettingsSubscription() {
-  const [price, setPrice] = useState('Free');
-  const [savedPrice, setSavedPrice] = useState('Free');
+  const [price, setPrice] = useState('');
+  const [savedPrice, setSavedPrice] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'profile' | 'trial' | 'tracking'>(
     'profile'
   );
@@ -326,8 +341,30 @@ export function SettingsSubscription() {
 
   const hasChanges = price !== savedPrice;
 
+  useEffect(() => {
+    if (USE_SAMPLE_DATA) {
+      setPrice('12.99');
+      setSavedPrice('12.99');
+      return;
+    }
+    setLoading(true);
+    (async () => {
+      try {
+        const pricing = await fetchCreatorPricing();
+        const cents = pricing?.subscription_price_cents ?? 0;
+        const major = cents > 0 ? (cents / 100).toFixed(2) : '';
+        setPrice(major);
+        setSavedPrice(major);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
   return (
-    <SettingsShell activeItem="subscription" userHandle="@aiko.mitsuri">
+    <SettingsShell activeItem="subscription" userHandle={USER_HANDLE}>
       <div className="settings-content__header settings-content__header--subscription">
         <h2>Subscription and promotions</h2>
         <button className="subscription-header__icon" type="button" aria-label="Media">
@@ -340,15 +377,18 @@ export function SettingsSubscription() {
           <label className="subscription-field">
             <span>Price per month</span>
             <div className="subscription-field__input">
-              <span className="subscription-field__currency">$</span>
+              <span className="subscription-field__currency">KSh</span>
               <input
-                type="text"
+                type="number"
+                min="0"
+                step="0.01"
                 value={price}
                 onChange={(event) => setPrice(event.target.value)}
+                disabled={loading}
               />
             </div>
           </label>
-          <div className="subscription-hint">Minimum $4.99 USD or free</div>
+          <div className="subscription-hint">Minimum KSh 500 or free</div>
           <div className="subscription-hint">
             You must{' '}
             <a href="/my/banking" className="subscription-link">
@@ -371,11 +411,33 @@ export function SettingsSubscription() {
             className="subscription-button primary"
             type="button"
             disabled={!hasChanges}
-            onClick={() => setSavedPrice(price)}
+            onClick={async () => {
+              const raw = price.trim();
+              const numeric = raw ? Number(raw) : 0;
+              if (!Number.isFinite(numeric) || numeric < 0) {
+                setSaveError('Enter a valid price.');
+                return;
+              }
+              try {
+                setLoading(true);
+                setSaveError(null);
+                await updateCreatorPricing({
+                  subscription_price_cents: Math.round(numeric * 100),
+                  subscription_currency: 'KES',
+                });
+                setSavedPrice(raw);
+              } catch (err) {
+                console.error(err);
+                setSaveError('Could not save price.');
+              } finally {
+                setLoading(false);
+              }
+            }}
           >
-            Save
+            {loading ? 'Saving...' : 'Save'}
           </button>
         </div>
+        {saveError ? <div className="subscription-hint">{saveError}</div> : null}
 
         <div className="subscription-tabs">
           <button
@@ -545,7 +607,7 @@ export function SettingsDisplay() {
   }, []);
 
   return (
-    <SettingsShell activeItem="display" userHandle="@aiko.mitsuri">
+    <SettingsShell activeItem="display" userHandle={USER_HANDLE}>
       <div className="settings-content__header">
         <h2>Display</h2>
         <div className="settings-chip">Auto-saved</div>
@@ -626,7 +688,7 @@ export function SettingsLanguage() {
   };
 
   return (
-    <SettingsShell activeItem="display" userHandle="@aiko.mitsuri">
+    <SettingsShell activeItem="display" userHandle={USER_HANDLE}>
       <div className="settings-content__header settings-content__header--language">
         <button
           className="settings-language-back"
@@ -746,4 +808,9 @@ function FreeTrialEmptyIcon() {
     </svg>
   );
 }
+
+
+
+
+
 

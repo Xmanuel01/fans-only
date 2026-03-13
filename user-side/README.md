@@ -1,33 +1,17 @@
-# OnlyFans-like Frontend
+# User App
 
-## Quick start
+Consumer-facing app for SpicyX, served at `/user/`.
 
-- Node 20+, npm 10+
-- Install deps: \
-  pm install\
-- Local env: copy \.env.local.example\ to \.env.local\ and fill Supabase keys
-- Run dev server: \
-  pm run dev\
-- Type check: \
-  pm run lint\
-- Format check: \
-  pm run format\
+## Local
+- `npm ci`
+- `npm run dev`
+- `npm run lint`
+- `npm run build`
 
-## Project structure
+## Environment
+- Required: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- Optional: `VITE_CREATOR_APP_URL` (defaults to `/creator`)
 
-- \src/App.tsx\: UI + navigation + age gate
-- \src/style.css\: global styles
-- \src/supabaseClient.ts\: Supabase client + age-gate helpers
-
-## Tooling
-
-- Vite + React + TypeScript
-- Prettier for formatting
-- Husky + lint-staged for pre-commit checks
-
-## Environment files
-
-- \.env.local\ (dev)
-- \.env.staging\
-- \.env.production\
-  Use the \*.example templates and keep real secrets out of git.
+## Production
+- Vite base path is `/user/`.
+- Route handling and headers are defined at repo-root `vercel.json`.

@@ -1,37 +1,58 @@
-# Fans Only (monorepo)
+# SpicyX Monorepo
 
-Two Vite + React + TypeScript frontends that mirror an OnlyFans-style experience:
-- `user-side/`: consumer-facing app with Supabase-backed age gate.
-- `creator-side/`: creator dashboard/management UI (static UX prototype).
+Three Vite + React + TypeScript frontends deployed as one route-based application:
+- `landingpage/` -> `/app/`
+- `user-side/` -> `/user/`
+- `creator-side/` -> `/creator/`
+
+Primary host: `https://fans-only-olive.vercel.app` (redirects to `/app/`).
 
 ## Quick start
 - Node 20+ and npm 10+ recommended.
-- Install: `npm install` inside each app directory (`user-side/`, `creator-side/`).
-- Run dev server: `npm run dev`.
-- Type check: `npm run lint` (both apps).
-- Build static assets: `npm run build` -> `dist/`.
+- Install dependencies:
+  - `npm ci`
+  - `npm --prefix landingpage ci`
+  - `npm --prefix user-side ci`
+  - `npm --prefix creator-side ci`
+- Run local development:
+  - `npm run dev`
+
+## Build and test
+- Lint all apps: `npm run lint`
+- Test all apps: `npm run test`
+- Build unified static output: `npm run build`
+- Unified output structure:
+  - `dist/app/`
+  - `dist/user/`
+  - `dist/creator/`
+
+## Deployment (single Vercel project)
+- Set project root to repository root.
+- Build command: `npm run build`
+- Output directory: `dist`
+- `vercel.json` at repo root controls redirects, rewrites, CSP, and headers.
 
 ## Environment
-- `user-side/` reads `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_CREATOR_APP_URL`, `VITE_GIFT_CREATOR_ID`, and `VITE_GIFT_AMOUNT_MAJOR` via Vite.
-- `creator-side/` reads `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_CONSUMER_APP_URL` via Vite.
-- Copy the provided `.env.local.example`, `.env.staging.example`, or `.env.production.example` to the matching file and fill values; keep real secrets out of git.
+- User app (`user-side`) expects:
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY`
+  - Optional: `VITE_CREATOR_APP_URL` (defaults to `/creator`)
+- Creator app (`creator-side`) expects:
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY`
+  - Optional: `VITE_CONSUMER_APP_URL` (defaults to `/user`)
+  - Optional: `VITE_CREATOR_BASE_PATH` (defaults to `/creator`)
 
-## Project notes
-- Supabase client lives in `user-side/src/supabaseClient.ts` and currently records age confirmations and exits.
-- UI state and navigation live primarily in `user-side/src/App.tsx` and `creator-side/src/pages/*`.
-- Husky + lint-staged are configured on the user side for formatting.
+## Smoke checks
+- Script: `node scripts/smoke-check.mjs <base-url>`
+- Validates:
+  - `/` redirects to `/app/`
+  - `/app/`, `/user/`, `/creator/` return 200
+  - deep links return SPA HTML
+  - critical headers/CSP are present
 
-## Deploying
-- Both apps output static bundles suitable for any CDN/static host (e.g., Vercel, Netlify, S3 + CloudFront).
-- Ensure Supabase env vars are configured in the host environment before serving the user app.
-- For payout retries, deploy and schedule `process-payout-queue` (every 1-5 minutes). Set `PAYOUT_QUEUE_CRON_TOKEN` and send it as bearer token from your scheduler.
-
-## CI
-- GitHub Actions workflow at `.github/workflows/ci.yml` runs `npm ci && npm run lint && npm run build` for both apps.
-- Add repository secrets `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` so the user build uses real Supabase values; otherwise fallback placeholders are used.
-
-## Security hardening checklist (Supabase)
-- **Rotate** Supabase project keys (anon & service) in the dashboard; update GitHub repo secrets accordingly. Replace any local `.env.*` with non-sensitive values (examples in `user-side/.env*.example`).
-- **Enable RLS** on all tables (`profiles`, `age_gate_events`, future content tables) with policies that scope rows to `auth.uid()`.
-- **Keep `service_role` server-side only** (e.g., edge functions) and never in client bundles.
-- **Auth settings:** require email confirmation, configure allowed redirect domains, and enable secret-scanning alerts.
+## Security checklist (Supabase)
+- Rotate anon/service keys after exposure.
+- Keep `service_role` server-side only.
+- Enforce RLS on all tables.
+- Configure allowed auth redirect domains.

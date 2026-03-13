@@ -9,6 +9,9 @@ export const supabase =
     ? createClient(supabaseUrl, supabaseAnonKey)
     : null;
 
+const appRedirectUrl = () =>
+  new URL(import.meta.env.BASE_URL ?? '/', window.location.origin).toString();
+
 export async function getSession(): Promise<Session | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.auth.getSession();
@@ -28,7 +31,7 @@ export async function signInWithMagicLink(email: string) {
   if (!supabase) throw new Error('Supabase not configured');
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: window.location.origin },
+    options: { emailRedirectTo: appRedirectUrl() },
   });
   if (error) throw error;
 }
@@ -45,7 +48,7 @@ export async function signUpWithPassword(email: string, password: string) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { emailRedirectTo: window.location.origin },
+    options: { emailRedirectTo: appRedirectUrl() },
   });
   if (error) throw error;
   return data;
@@ -55,7 +58,7 @@ export async function signInWithOAuth(provider: Provider) {
   if (!supabase) throw new Error('Supabase not configured');
   const { error } = await supabase.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: window.location.origin },
+    options: { redirectTo: appRedirectUrl() },
   });
   if (error) throw error;
 }
@@ -76,11 +79,16 @@ export type PayoutTransfer = {
 };
 
 export type PayoutAccount = {
+  provider: "mpesa" | "bank" | "paypal";
   currency: string;
   account_name: string;
-  account_number_last4: string;
-  bank_code: string;
-  recipient_code: string;
+  account_number_last4: string | null;
+  bank_code: string | null;
+  bank_name?: string | null;
+  recipient_code: string | null;
+  paypal_email?: string | null;
+  recipient_type?: string | null;
+  msisdn_e164?: string | null;
 };
 
 async function requireUserId() {
@@ -120,7 +128,9 @@ export async function fetchPayoutAccount(): Promise<PayoutAccount | null> {
   const userId = await requireUserId();
   const { data, error } = await supabase
     .from('creator_payout_accounts')
-    .select('currency, account_name, account_number_last4, bank_code, recipient_code')
+    .select(
+      'provider, currency, account_name, account_number_last4, bank_code, bank_name, recipient_code, paypal_email, recipient_type, msisdn_e164'
+    )
     .eq('creator_id', userId)
     .maybeSingle();
   if (error) throw error;
@@ -141,7 +151,148 @@ export async function upsertMpesaPayoutAccount(params: {
   return data;
 }
 
+export async function upsertBankPayoutAccount(params: {
+  accountNumber: string;
+  accountName: string;
+  bankCode: string;
+  bankName?: string;
+  currency?: string;
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('upsert-bank-payout-account', {
+    body: params,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function upsertPaypalPayoutAccount(params: {
+  paypalEmail: string;
+  currency?: string;
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('upsert-paypal-payout-account', {
+    body: params,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchCreatorPricing(): Promise<{
+  subscription_price_cents: number;
+  subscription_currency: string;
+} | null> {
+  if (!supabase) return null;
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from('creators')
+    .select('subscription_price_cents, subscription_currency')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+export async function updateCreatorPricing(params: {
+  subscription_price_cents: number;
+  subscription_currency?: string;
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from('creators')
+    .update({
+      subscription_price_cents: params.subscription_price_cents,
+      subscription_currency: params.subscription_currency ?? 'KES',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+export async function publishCreatorPost(params: {
+  title: string;
+  body?: string | null;
+  visibility: 'public' | 'subscribers' | 'ppv';
+  price_cents?: number | null;
+  currency?: string;
+  content_rating?: 'sfw' | 'nsfw';
+  post_type?: 'post' | 'story';
+  expires_at?: string | null;
+  files?: File[];
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const userId = await requireUserId();
+  const { data: post, error: postError } = await supabase
+    .from('posts')
+    .insert({
+      creator_id: userId,
+      title: params.title,
+      body: params.body ?? null,
+      visibility: params.visibility,
+      price_cents: params.price_cents ?? 0,
+      currency: params.currency ?? 'KES',
+      content_rating: params.content_rating ?? 'sfw',
+      post_type: params.post_type ?? 'post',
+      expires_at: params.expires_at ?? null,
+    })
+    .select('id')
+    .single();
+  if (postError) throw postError;
+
+  const files = params.files ?? [];
+  if (!files.length) return post;
+
+  const uploads = await Promise.all(
+    files.map(async (file) => {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${userId}/${post.id}/${crypto.randomUUID?.() ?? Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('creator-media')
+        .upload(path, file, {
+          contentType: file.type || undefined,
+          upsert: false,
+        });
+      if (uploadError) throw uploadError;
+      return {
+        post_id: post.id,
+        storage_path: path,
+        mime_type: file.type || null,
+        width: null,
+        height: null,
+        size_bytes: file.size,
+      };
+    })
+  );
+
+  if (uploads.length) {
+    const { error: mediaErr } = await supabase.from('media_assets').insert(uploads);
+    if (mediaErr) throw mediaErr;
+  }
+
+  return post;
+}
+
 export async function requestCreatorPayout(params: {
+  amountMinor?: number;
+  currency?: string;
+  reason?: string;
+  provider?: 'mpesa' | 'bank';
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const idempotencyKey =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`;
+  const { data, error } = await supabase.functions.invoke('request-creator-payout', {
+    body: params,
+    headers: { 'x-idempotency-key': idempotencyKey },
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function requestPaypalPayout(params: {
   amountMinor?: number;
   currency?: string;
   reason?: string;
@@ -151,7 +302,7 @@ export async function requestCreatorPayout(params: {
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random()}`;
-  const { data, error } = await supabase.functions.invoke('request-creator-payout', {
+  const { data, error } = await supabase.functions.invoke('request-paypal-payout', {
     body: params,
     headers: { 'x-idempotency-key': idempotencyKey },
   });

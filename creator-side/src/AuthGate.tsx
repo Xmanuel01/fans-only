@@ -7,38 +7,16 @@ import {
   signInWithPassword,
   signUpWithPassword,
 } from './supabaseClient';
-import { env } from './env';
+import { env, envStatus, isSupabaseConfigured } from './env';
 import './auth.css';
 
-type GateState = 'loading' | 'unauthenticated' | 'no-creator' | 'ready';
+type GateState = 'loading' | 'unauthenticated' | 'no-creator' | 'ready' | 'misconfigured' | 'age-required';
 
 const CONSUMER_APP_URL = env.consumerAppUrl;
-const DEMO_MODE_ENABLED = env.enableDemoMode;
-const FORCE_AUTH_SCREEN_ON_DEV_BOOT = env.forceAuthScreenOnDevBoot;
-
-const safeStorage = {
-  getItem(key: string) {
-    try {
-      return localStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  },
-  setItem(key: string, value: string) {
-    try {
-      localStorage.setItem(key, value);
-    } catch {
-      // Ignore storage write errors (private mode, quota, etc).
-    }
-  },
-  removeItem(key: string) {
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      // Ignore storage removal errors.
-    }
-  },
-};
+const BASE_URL = import.meta.env.BASE_URL ?? '/';
+const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`;
+const isExternalUrl = (value: string | null) => Boolean(value && /^https?:\/\//i.test(value));
+const CONSUMER_IS_EXTERNAL = isExternalUrl(CONSUMER_APP_URL);
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GateState>('loading');
@@ -52,43 +30,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     let unsub = () => {};
 
     async function boot() {
-      if (FORCE_AUTH_SCREEN_ON_DEV_BOOT) {
-        safeStorage.removeItem('demoModeCreator');
-
-        if (supabase) {
-          try {
-            await signOut();
-          } catch {
-            // Ignore sign-out errors while forcing auth screen in dev.
-          }
-
-          const {
-            data: { subscription },
-          } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-            if (!nextSession?.user) {
-              setState('unauthenticated');
-              return;
-            }
-            await ensureCreator(nextSession.user.id);
-          });
-
-          unsub = () => subscription.unsubscribe();
-        }
-
-        setState('unauthenticated');
+      if (envStatus.hasIssues) {
+        setState('misconfigured');
         return;
       }
 
-      const demo = DEMO_MODE_ENABLED && safeStorage.getItem('demoModeCreator') === 'true';
-      if (demo) {
-        setState('ready');
-        return;
-      }
-      safeStorage.removeItem('demoModeCreator');
-
-      if (!supabase) {
+      if (!isSupabaseConfigured || !supabase) {
         setError('Supabase environment variables are not configured.');
-        setState('unauthenticated');
+        setState('misconfigured');
         return;
       }
 
@@ -123,6 +72,24 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const { data: ageRow, error: ageErr } = await supabase
+      .from('profiles')
+      .select('age_confirmed_at')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (ageErr) {
+      console.warn(ageErr);
+      setError('Could not verify age status.');
+      setState('unauthenticated');
+      return;
+    }
+
+    if (!ageRow?.age_confirmed_at) {
+      setState('age-required');
+      return;
+    }
+
     const { data, error: fetchError } = await supabase
       .from('creators')
       .select('id, handle')
@@ -149,13 +116,36 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return <ScreenShell title="Checking account...">Hold tight while we verify your session.</ScreenShell>;
   }
 
+  if (state === 'misconfigured') {
+    const issues = [
+      ...envStatus.missing.map((item) => `Missing ${item}`),
+      ...envStatus.invalid.map((item) => `Invalid ${item}`),
+    ];
+
+    return (
+      <ScreenShell title="Configuration required">
+        <p className="muted">
+          This deployment is missing required environment variables. Update the configuration and
+          redeploy the app.
+        </p>
+        {issues.length ? (
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {issues.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
+        ) : null}
+      </ScreenShell>
+    );
+  }
+
   if (state === 'unauthenticated') {
     return (
       <div className="auth-shell">
         <div className="auth-panel">
           <div className="auth-brand">
             <div className="brand-stack">
-              <span className="brand-wordmark">The Bold Chic</span>
+              <span className="brand-wordmark">SpicyX</span>
               <span className="brand-tagline">Lace and pleasure Haven</span>
             </div>
           </div>
@@ -223,27 +213,27 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               >
                 Create account
               </button>
-              {DEMO_MODE_ENABLED && (
-                <button
-                  className="ghost-btn"
-                  onClick={() => {
-                    safeStorage.setItem('demoModeCreator', 'true');
-                    setState('ready');
-                  }}
-                >
-                  Continue as demo
-                </button>
-              )}
             </div>
             {error && <div className="auth-error">{error}</div>}
             <p className="auth-lede">
               Use your email and password to access your account. Need a profile first? Go to{' '}
-              <a href={CONSUMER_APP_URL}>the consumer app</a> and choose "Become a creator."
+              {CONSUMER_APP_URL ? (
+                <a
+                  href={CONSUMER_APP_URL}
+                  target={CONSUMER_IS_EXTERNAL ? '_blank' : undefined}
+                  rel={CONSUMER_IS_EXTERNAL ? 'noreferrer' : undefined}
+                >
+                  the consumer app
+                </a>
+              ) : (
+                <span>the consumer app</span>
+              )}{' '}
+              and choose "Become a creator."
             </p>
           </div>
         </div>
         <div className="auth-hero">
-          <img src="/logo.png" alt="The Bold Chic" className="hero-logo" />
+          <img src={assetUrl('logo.png')} alt="SpicyX" className="hero-logo" />
         </div>
       </div>
     );
@@ -257,9 +247,49 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           here.
         </p>
         <div className="cta-row">
-          <a className="primary-btn" href={CONSUMER_APP_URL} target="_blank" rel="noreferrer">
-            Go to consumer app
-          </a>
+          {CONSUMER_APP_URL ? (
+            <a
+              className="primary-btn"
+              href={CONSUMER_APP_URL}
+              target={CONSUMER_IS_EXTERNAL ? '_blank' : undefined}
+              rel={CONSUMER_IS_EXTERNAL ? 'noreferrer' : undefined}
+            >
+              Go to consumer app
+            </a>
+          ) : (
+            <span className="primary-btn" aria-disabled="true">
+              Consumer app unavailable
+            </span>
+          )}
+          <button className="ghost-btn" onClick={signOut}>
+            Sign out
+          </button>
+        </div>
+      </ScreenShell>
+    );
+  }
+
+  if (state === 'age-required') {
+    return (
+      <ScreenShell title="Age verification required">
+        <p className="muted">
+          Please confirm your age in the consumer app before accessing the creator dashboard.
+        </p>
+        <div className="cta-row">
+          {CONSUMER_APP_URL ? (
+            <a
+              className="primary-btn"
+              href={CONSUMER_APP_URL}
+              target={CONSUMER_IS_EXTERNAL ? '_blank' : undefined}
+              rel={CONSUMER_IS_EXTERNAL ? 'noreferrer' : undefined}
+            >
+              Verify in consumer app
+            </a>
+          ) : (
+            <span className="primary-btn" aria-disabled="true">
+              Consumer app unavailable
+            </span>
+          )}
           <button className="ghost-btn" onClick={signOut}>
             Sign out
           </button>
@@ -297,7 +327,11 @@ function ScreenShell({ title, children }: { title: string; children: React.React
   );
 }
 
-function TopLinks({ consumerUrl, handle }: { consumerUrl: string; handle: string | null }) {
+function TopLinks({ consumerUrl, handle }: { consumerUrl: string | null; handle: string | null }) {
+  if (!consumerUrl) {
+    return null;
+  }
+
   const profileUrl = handle ? `${consumerUrl.replace(/\/$/, '')}/creator/${handle}` : consumerUrl;
   return (
     <div

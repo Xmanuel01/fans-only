@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+ï»¿import { useEffect, type ReactNode } from 'react';
 import './MyPages.css';
 import './SettingsProfile.css';
 
@@ -16,6 +16,9 @@ type SettingsItem = {
   href: string;
 };
 
+const USE_SAMPLE_DATA =
+  !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true';
+
 const PRIMARY_SETTINGS: SettingsItem[] = [
   { key: 'profile', label: 'Profile', href: '/my/settings/profile' },
   { key: 'account', label: 'Account', href: '/my/settings/account' },
@@ -32,6 +35,20 @@ const GENERAL_SETTINGS: SettingsItem[] = [
   { key: 'display', label: 'Display', href: '/my/settings/display' },
 ];
 
+const NAV_PROFILE = USE_SAMPLE_DATA
+  ? {
+      name: 'Aiko Mitsuri',
+      handle: '@aiko.mitsuri',
+      avatar: 'https://i.pravatar.cc/120?img=21',
+      meta: { fans: '1 fan', followers: '4 followers' },
+    }
+  : {
+      name: 'Creator',
+      handle: '',
+      avatar: '',
+      meta: null as null | { fans: string; followers: string },
+    };
+
 type SettingsShellProps = {
   activeItem?: SettingsItemKey;
   children: ReactNode;
@@ -41,7 +58,7 @@ type SettingsShellProps = {
 export default function SettingsShell({
   activeItem,
   children,
-  userHandle = '@aiko.mitsuri',
+  userHandle = USE_SAMPLE_DATA ? NAV_PROFILE.handle : '',
 }: SettingsShellProps) {
   useEffect(() => {
     document.body.classList.add('react-page');
@@ -64,13 +81,20 @@ export default function SettingsShell({
     <div className="settings-shell">
       <aside className="my-nav my-nav--dark">
         <div className="my-nav__profile">
-          <img className="my-nav__avatar" src="https://i.pravatar.cc/120?img=21" alt="Profile avatar" />
+          {NAV_PROFILE.avatar ? (
+            <img className="my-nav__avatar" src={NAV_PROFILE.avatar} alt="Profile avatar" />
+          ) : (
+            <div className="my-nav__avatar" aria-hidden="true" />
+          )}
           <div className="my-nav__identity">
-            <div className="name">Aiko Mitsuri</div>
-            <div className="handle">{userHandle}</div>
-            <div className="meta">
-              <span>1 fan</span> · <span>4 followers</span>
-            </div>
+            <div className="name">{NAV_PROFILE.name}</div>
+            {userHandle ? <div className="handle">{userHandle}</div> : null}
+            {NAV_PROFILE.meta ? (
+              <div className="meta">
+                <span>{NAV_PROFILE.meta.fans}</span> -{' '}
+                <span>{NAV_PROFILE.meta.followers}</span>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -106,8 +130,12 @@ export default function SettingsShell({
 
         <div className="my-nav__secondary">
           <NavItem href="/my/settings" label="Settings" icon={<GearIcon />} isActive />
-          <NavItem href="/news" label="What's new" icon={<StarIcon />} badge="1" />
-          <NavItem href="/logout" label="Log out" icon={<LogOutIcon />} />
+          {USE_SAMPLE_DATA ? (
+            <>
+              <NavItem href="/news" label="What's new" icon={<StarIcon />} badge="1" />
+              <NavItem href="/logout" label="Log out" icon={<LogOutIcon />} />
+            </>
+          ) : null}
         </div>
       </aside>
 
@@ -123,7 +151,7 @@ export default function SettingsShell({
           </button>
           <h2>Settings</h2>
         </div>
-        <div className="settings-menu__user">{userHandle}</div>
+        {userHandle ? <div className="settings-menu__user">{userHandle}</div> : null}
         <div className="settings-menu__list">
           {PRIMARY_SETTINGS.map((item) => (
             <a
@@ -294,3 +322,4 @@ function LogOutIcon() {
     </svg>
   );
 }
+

@@ -12,6 +12,7 @@ type Body = {
   amountMinor?: number;
   currency?: string;
   reason?: string;
+  provider?: "mpesa" | "bank";
 };
 
 serve(async (req) => {
@@ -45,11 +46,15 @@ serve(async (req) => {
     return jsonWithCors({ error: "Invalid JSON" }, 400);
   }
 
-  const { data: payoutAccount, error: payoutAccountErr } = await supabase
+  const requestedProvider = body.provider?.trim?.() as "mpesa" | "bank" | undefined;
+  let payoutQuery = supabase
     .from("creator_payout_accounts")
-    .select("recipient_code, currency, recipient_active, bank_code, account_number_last4, kyc_status")
-    .eq("creator_id", creatorId)
-    .maybeSingle();
+    .select("provider, recipient_code, currency, recipient_active, bank_code, account_number_last4, kyc_status")
+    .eq("creator_id", creatorId);
+  if (requestedProvider) {
+    payoutQuery = payoutQuery.eq("provider", requestedProvider);
+  }
+  const { data: payoutAccount, error: payoutAccountErr } = await payoutQuery.maybeSingle();
   if (payoutAccountErr) return jsonWithCors({ error: "Payout account lookup failed" }, 500);
   if (!payoutAccount || !payoutAccount.recipient_code) {
     return jsonWithCors({ error: "Payout destination not configured" }, 400);
@@ -59,6 +64,9 @@ serve(async (req) => {
   }
   if (payoutAccount.kyc_status !== "verified") {
     return jsonWithCors({ error: "Payout destination requires KYC verification" }, 400);
+  }
+  if (payoutAccount.provider === "paypal") {
+    return jsonWithCors({ error: "Use PayPal payout endpoint for PayPal payouts" }, 400);
   }
 
   const currency = (body.currency ?? payoutAccount.currency ?? "KES").toUpperCase();
@@ -93,7 +101,7 @@ serve(async (req) => {
     p_requested_by: creatorId,
     p_idempotency_key: idempotencyKey,
     p_reference: reference,
-    p_metadata: { source: "request-creator-payout" },
+    p_metadata: { source: "request-creator-payout", provider: "paystack", payout_provider: payoutAccount.provider },
   });
   if (queueErr) {
     if (queueErr.code === "23505") {

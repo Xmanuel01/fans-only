@@ -91,6 +91,7 @@ serve(async (req) => {
     recipient_active: Boolean(recipientJson.data.active ?? true),
     msisdn_e164: accountNumber,
     provider_account_id: recipientJson.data.id?.toString?.() ?? null,
+    recipient_type: recipientJson.data.type ?? "mobile_money",
     kyc_status: kycStatus,
     kyc_last_checked_at: new Date().toISOString(),
     metadata: {

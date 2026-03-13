@@ -4,8 +4,12 @@ import {
   fetchPayoutAccount,
   fetchPayoutSummary,
   fetchPayoutTransfers,
+  publishCreatorPost,
   requestCreatorPayout,
+  requestPaypalPayout,
+  upsertBankPayoutAccount,
   upsertMpesaPayoutAccount,
+  upsertPaypalPayoutAccount,
 } from '../supabaseClient';
 import './MyPages.css';
 
@@ -96,6 +100,9 @@ type StoryItem = {
   isLive?: boolean;
 };
 
+const USE_SAMPLE_DATA =
+  !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true';
+
 const NOTIFICATION_TABS: Array<{ key: NotificationTab; label: string }> = [
   { key: 'all', label: 'All' },
   { key: 'tags', label: 'Tags' },
@@ -107,32 +114,34 @@ const NOTIFICATION_TABS: Array<{ key: NotificationTab; label: string }> = [
 
 const NOTIFICATION_ITEMS: NotificationItem[] = [];
 
-const SUGGESTIONS: SuggestionCard[] = [
-  {
-    id: 's-1',
-    name: 'Mia Nowak',
-    handle: '@liospark',
-    gradient:
-      'linear-gradient(120deg, rgba(4, 120, 166, 0.9), rgba(4, 74, 123, 0.6)), linear-gradient(120deg, #12a4d9, #0c4f7a)',
-    badge: 'Free',
-  },
-  {
-    id: 's-2',
-    name: 'Saya Moon',
-    handle: '@saya_moon',
-    gradient:
-      'linear-gradient(120deg, rgba(10, 10, 10, 0.5), rgba(116, 116, 116, 0.6)), linear-gradient(120deg, #1f1f1f, #a0a0a0)',
-    badge: 'Free',
-  },
-  {
-    id: 's-3',
-    name: 'Fitness Barbie',
-    handle: '@fitnessbarbiex',
-    gradient:
-      'linear-gradient(120deg, rgba(60, 60, 60, 0.55), rgba(18, 18, 18, 0.7)), linear-gradient(120deg, #4b4b4b, #1c1c1c)',
-    badge: 'Free',
-  },
-];
+const SUGGESTIONS: SuggestionCard[] = USE_SAMPLE_DATA
+  ? [
+      {
+        id: 's-1',
+        name: 'Mia Nowak',
+        handle: '@liospark',
+        gradient:
+          'linear-gradient(120deg, rgba(4, 120, 166, 0.9), rgba(4, 74, 123, 0.6)), linear-gradient(120deg, #12a4d9, #0c4f7a)',
+        badge: 'Free',
+      },
+      {
+        id: 's-2',
+        name: 'Saya Moon',
+        handle: '@saya_moon',
+        gradient:
+          'linear-gradient(120deg, rgba(10, 10, 10, 0.5), rgba(116, 116, 116, 0.6)), linear-gradient(120deg, #1f1f1f, #a0a0a0)',
+        badge: 'Free',
+      },
+      {
+        id: 's-3',
+        name: 'Fitness Barbie',
+        handle: '@fitnessbarbiex',
+        gradient:
+          'linear-gradient(120deg, rgba(60, 60, 60, 0.55), rgba(18, 18, 18, 0.7)), linear-gradient(120deg, #4b4b4b, #1c1c1c)',
+        badge: 'Free',
+      },
+    ]
+  : [];
 
 const DEFAULT_LIST_ITEMS: Array<{ key: string; label: string }> = [
   { key: 'fans', label: 'Fans' },
@@ -141,152 +150,164 @@ const DEFAULT_LIST_ITEMS: Array<{ key: string; label: string }> = [
   { key: 'blocked', label: 'Blocked' },
 ];
 
-const SUBSCRIPTIONS_ACTIVE: PersonItem[] = [
-  {
-    id: 'sa-1',
-    name: 'Aria Rose',
-    handle: '@ariarose',
-    detail: '$12.99 / mo',
-    status: 'Auto-renew',
-    order: 1,
-  },
-  {
-    id: 'sa-2',
-    name: 'Skyline',
-    handle: '@skyline',
-    detail: '$9.99 / mo',
-    status: 'Renews in 5 days',
-    order: 2,
-  },
-  {
-    id: 'sa-3',
-    name: 'Maya Chen',
-    handle: '@mayachen',
-    detail: '$12.99 / mo',
-    status: 'Auto-renew',
-    order: 3,
-  },
-];
+const SUBSCRIPTIONS_ACTIVE: PersonItem[] = USE_SAMPLE_DATA
+  ? [
+      {
+        id: 'sa-1',
+        name: 'Aria Rose',
+        handle: '@ariarose',
+        detail: '$12.99 / mo',
+        status: 'Auto-renew',
+        order: 1,
+      },
+      {
+        id: 'sa-2',
+        name: 'Skyline',
+        handle: '@skyline',
+        detail: '$9.99 / mo',
+        status: 'Renews in 5 days',
+        order: 2,
+      },
+      {
+        id: 'sa-3',
+        name: 'Maya Chen',
+        handle: '@mayachen',
+        detail: '$12.99 / mo',
+        status: 'Auto-renew',
+        order: 3,
+      },
+    ]
+  : [];
 
-const SUBSCRIPTIONS_EXPIRED: PersonItem[] = [
-  {
-    id: 'se-1',
-    name: 'Rowan',
-    handle: '@rowan',
-    detail: 'Expired 3 days ago',
-    status: 'Offer 10% back',
-    order: 1,
-  },
-  {
-    id: 'se-2',
-    name: 'Zara Hope',
-    handle: '@zarahope',
-    detail: 'Expired last week',
-    status: 'Send reminder',
-    order: 2,
-  },
-];
+const SUBSCRIPTIONS_EXPIRED: PersonItem[] = USE_SAMPLE_DATA
+  ? [
+      {
+        id: 'se-1',
+        name: 'Rowan',
+        handle: '@rowan',
+        detail: 'Expired 3 days ago',
+        status: 'Offer 10% back',
+        order: 1,
+      },
+      {
+        id: 'se-2',
+        name: 'Zara Hope',
+        handle: '@zarahope',
+        detail: 'Expired last week',
+        status: 'Send reminder',
+        order: 2,
+      },
+    ]
+  : [];
 
-const SUBSCRIBERS_ACTIVE: PersonItem[] = [
-  {
-    id: 'sb-1',
-    name: 'Kai Rivers',
-    handle: '@kairivers',
-    detail: 'Subscribed 6 months',
-    status: 'Top fan',
-    order: 1,
-  },
-  {
-    id: 'sb-2',
-    name: 'Nova Lane',
-    handle: '@novalane',
-    detail: 'Subscribed 3 months',
-    status: 'VIP',
-    order: 2,
-  },
-  {
-    id: 'sb-3',
-    name: 'Eli Stone',
-    handle: '@elistone',
-    detail: 'Subscribed 1 month',
-    status: 'New',
-    order: 3,
-  },
-];
+const SUBSCRIBERS_ACTIVE: PersonItem[] = USE_SAMPLE_DATA
+  ? [
+      {
+        id: 'sb-1',
+        name: 'Kai Rivers',
+        handle: '@kairivers',
+        detail: 'Subscribed 6 months',
+        status: 'Top fan',
+        order: 1,
+      },
+      {
+        id: 'sb-2',
+        name: 'Nova Lane',
+        handle: '@novalane',
+        detail: 'Subscribed 3 months',
+        status: 'VIP',
+        order: 2,
+      },
+      {
+        id: 'sb-3',
+        name: 'Eli Stone',
+        handle: '@elistone',
+        detail: 'Subscribed 1 month',
+        status: 'New',
+        order: 3,
+      },
+    ]
+  : [];
 
-const PAYMENTS: PaymentItem[] = [
-  { id: 'p-1', label: 'Weekly payout', date: 'Today', amount: '$1,280.00', status: 'pending' },
-  { id: 'p-2', label: 'Weekly payout', date: 'Jan 3', amount: '$1,410.00', status: 'paid' },
-  { id: 'p-3', label: 'Tips', date: 'Jan 1', amount: '$215.00', status: 'paid' },
-  { id: 'p-4', label: 'Chargeback', date: 'Dec 29', amount: '-$42.00', status: 'failed' },
-];
+const PAYMENTS: PaymentItem[] = USE_SAMPLE_DATA
+  ? [
+      { id: 'p-1', label: 'Weekly payout', date: 'Today', amount: '$1,280.00', status: 'pending' },
+      { id: 'p-2', label: 'Weekly payout', date: 'Jan 3', amount: '$1,410.00', status: 'paid' },
+      { id: 'p-3', label: 'Tips', date: 'Jan 1', amount: '$215.00', status: 'paid' },
+      { id: 'p-4', label: 'Chargeback', date: 'Dec 29', amount: '-$42.00', status: 'failed' },
+    ]
+  : [];
 
-const HOME_POSTS: HomePost[] = [
-  {
-    id: 'hp-1',
-    author: 'OnlyFans',
-    handle: '@onlyfans',
-    avatar: 'https://i.pravatar.cc/80?img=32',
-    time: '3 hours ago',
-    caption:
-      'Weekend trip diary from Puerto Vallarta. New sunset set just dropped for subscribers.',
-    type: 'photo',
-    media: ['https://dummyimage.com/1080x680/1a2b44/e8edf5&text=Puerto+Vallarta+Set'],
-    likes: 1842,
-    comments: 221,
-  },
-  {
-    id: 'hp-2',
-    author: 'Emily Frame',
-    handle: '@emily_frame',
-    avatar: 'https://i.pravatar.cc/80?img=47',
-    time: '6 hours ago',
-    caption:
-      'Quick behind-the-scenes clip before tonight live stream. Full video is in my vault.',
-    type: 'video',
-    video: {
-      src: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-      poster: 'https://dummyimage.com/1080x680/2a1838/e8edf5&text=Behind+The+Scenes',
-    },
-    likes: 1290,
-    comments: 104,
-  },
-  {
-    id: 'hp-3',
-    author: 'Cherry',
-    handle: '@urcherryx',
-    avatar: 'https://i.pravatar.cc/80?img=12',
-    time: 'yesterday',
-    caption:
-      'Late night thoughts: consistency beats motivation. Posting schedule is now Mon, Wed, Fri.',
-    type: 'text',
-    likes: 932,
-    comments: 88,
-  },
-  {
-    id: 'hp-4',
-    author: 'Mia Nowak',
-    handle: '@liospark',
-    avatar: 'https://i.pravatar.cc/80?img=20',
-    time: '2 days ago',
-    caption: 'Fresh photoset from the neon studio. Which look should I expand next?',
-    type: 'photo',
-    media: ['https://dummyimage.com/1080x680/22314a/e8edf5&text=Neon+Studio+Set'],
-    likes: 1544,
-    comments: 197,
-  },
-];
+const HOME_POSTS: HomePost[] = USE_SAMPLE_DATA
+  ? [
+      {
+        id: 'hp-1',
+        author: 'SpicyX',
+        handle: '@SpicyX',
+        avatar: 'https://i.pravatar.cc/80?img=32',
+        time: '3 hours ago',
+        caption:
+          'Weekend trip diary from Puerto Vallarta. New sunset set just dropped for subscribers.',
+        type: 'photo',
+        media: ['https://dummyimage.com/1080x680/1a2b44/e8edf5&text=Puerto+Vallarta+Set'],
+        likes: 1842,
+        comments: 221,
+      },
+      {
+        id: 'hp-2',
+        author: 'Emily Frame',
+        handle: '@emily_frame',
+        avatar: 'https://i.pravatar.cc/80?img=47',
+        time: '6 hours ago',
+        caption:
+          'Quick behind-the-scenes clip before tonight live stream. Full video is in my vault.',
+        type: 'video',
+        video: {
+          src: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+          poster: 'https://dummyimage.com/1080x680/2a1838/e8edf5&text=Behind+The+Scenes',
+        },
+        likes: 1290,
+        comments: 104,
+      },
+      {
+        id: 'hp-3',
+        author: 'Cherry',
+        handle: '@urcherryx',
+        avatar: 'https://i.pravatar.cc/80?img=12',
+        time: 'yesterday',
+        caption:
+          'Late night thoughts: consistency beats motivation. Posting schedule is now Mon, Wed, Fri.',
+        type: 'text',
+        likes: 932,
+        comments: 88,
+      },
+      {
+        id: 'hp-4',
+        author: 'Mia Nowak',
+        handle: '@liospark',
+        avatar: 'https://i.pravatar.cc/80?img=20',
+        time: '2 days ago',
+        caption: 'Fresh photoset from the neon studio. Which look should I expand next?',
+        type: 'photo',
+        media: ['https://dummyimage.com/1080x680/22314a/e8edf5&text=Neon+Studio+Set'],
+        likes: 1544,
+        comments: 197,
+      },
+    ]
+  : [];
 
-const HOME_STORIES: StoryItem[] = [
-  { id: 'st-1', name: 'Aiko', image: 'https://i.pravatar.cc/96?img=21', isLive: true },
-  { id: 'st-2', name: 'Emily', image: 'https://i.pravatar.cc/96?img=47' },
-  { id: 'st-3', name: 'Cherry', image: 'https://i.pravatar.cc/96?img=12' },
-  { id: 'st-4', name: 'Mia', image: 'https://i.pravatar.cc/96?img=20' },
-  { id: 'st-5', name: 'Saya', image: 'https://i.pravatar.cc/96?img=14' },
-  { id: 'st-6', name: 'Fitness', image: 'https://i.pravatar.cc/96?img=26' },
-  { id: 'st-7', name: 'Nora', image: 'https://i.pravatar.cc/96?img=39' },
-  { id: 'st-8', name: 'Alex', image: 'https://i.pravatar.cc/96?img=33' },
-];
+const HOME_STORIES: StoryItem[] = USE_SAMPLE_DATA
+  ? [
+      { id: 'st-1', name: 'Aiko', image: 'https://i.pravatar.cc/96?img=21', isLive: true },
+      { id: 'st-2', name: 'Emily', image: 'https://i.pravatar.cc/96?img=47' },
+      { id: 'st-3', name: 'Cherry', image: 'https://i.pravatar.cc/96?img=12' },
+      { id: 'st-4', name: 'Mia', image: 'https://i.pravatar.cc/96?img=20' },
+      { id: 'st-5', name: 'Saya', image: 'https://i.pravatar.cc/96?img=14' },
+      { id: 'st-6', name: 'Fitness', image: 'https://i.pravatar.cc/96?img=26' },
+      { id: 'st-7', name: 'Nora', image: 'https://i.pravatar.cc/96?img=39' },
+      { id: 'st-8', name: 'Alex', image: 'https://i.pravatar.cc/96?img=33' },
+    ]
+  : [];
 
 export function MyHome() {
   const [activeFilter, setActiveFilter] = useState<'all' | 'photos' | 'videos' | 'texts'>('all');
@@ -598,7 +619,7 @@ export function MyHome() {
                       {post.author} <VerifiedIcon />
                     </div>
                     <div className="home-post__handle">
-                      {post.handle} · {post.time}
+                      {post.handle} - {post.time}
                     </div>
                   </div>
                 </div>
@@ -656,12 +677,12 @@ type ChatItem = {
   };
 };
 
-const CHAT_LIST: ChatItem[] = [
+const CHAT_LIST: ChatItem[] = USE_SAMPLE_DATA ? [
   {
     id: 'chat-1',
     name: 'Technological Cow',
     handle: '@technological-cow-21',
-    preview: 'hello my sweet filip, so nice to see u here again 💗',
+    preview: 'hello my sweet filip, so nice to see u here again',
     time: 'now',
     avatar: 'https://dummyimage.com/64x64/0f172a/fff&text=TC',
     stats: {
@@ -670,8 +691,8 @@ const CHAT_LIST: ChatItem[] = [
       ppv: '$0.00',
       tip: '$0.00',
       fanType: 'Expired',
-      autoRenew: '—',
-      nickname: '🪙',
+      autoRenew: '-',
+      nickname: '',
       notes: [
         { id: 'n1', text: 'User is often alone at home', date: 'Jan 07' },
         { id: 'n2', text: 'User watches anime like Gate and Berserk', date: 'Jan 07' },
@@ -683,7 +704,7 @@ const CHAT_LIST: ChatItem[] = [
     id: 'chat-2',
     name: 'Raven',
     handle: '@raven',
-    preview: 'You came back 🥹 my heart is warm',
+    preview: 'You came back, my heart is warm',
     time: '13:13',
     avatar: 'https://dummyimage.com/64x64/111/fff&text=R',
     stats: {
@@ -695,14 +716,14 @@ const CHAT_LIST: ChatItem[] = [
       cost: '$12/mo',
       duration: '3 months',
       autoRenew: 'On',
-      nickname: '💜 Raven',
+      nickname: 'Raven',
       notes: [
         { id: 'n4', text: 'Enjoys cosplay streams', date: 'Jan 03' },
         { id: 'n5', text: 'Likes weekend drops', date: 'Jan 10' },
       ],
     },
   },
-];
+] : [];
 
 export function MyChats() {
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
@@ -834,7 +855,7 @@ export function MyChats() {
                 <div className="msg-bubble other">Hello sweet Mitsuri, how was your weekend?</div>
                 <div className="msg-bubble me">
                   weekend was calm, yoga, coffee, cuddles with mochi and some reading... how was
-                  yours, mon cher? 😊🌸
+                  yours, mon cher?
                 </div>
               </div>
               <div className="msg-thread__composer">
@@ -908,7 +929,7 @@ function ChatInsights({ chat }: { chat: ChatItem }) {
 
       <div className="insight-card">
         <div className="card-title">Nickname</div>
-        <div className="nick-box">{chat.stats.nickname ?? '—'}</div>
+        <div className="nick-box">{chat.stats.nickname ?? '--'}</div>
       </div>
 
       <div className="insight-card">
@@ -1858,18 +1879,22 @@ export function MyPayments() {
         </div>
         <div className="my-divider" />
         <div className="my-list">
-          {filtered.map((item) => (
-            <div key={item.id} className="my-list-item">
-              <div>
-                <div className="my-chat-name">{item.label}</div>
-                <div className="my-muted">{item.date}</div>
-              </div>
-              <div className="my-row">
-                <span className="my-pill">{item.status}</span>
-                <strong>{item.amount}</strong>
-              </div>
-            </div>
-          ))}
+          {filtered.length
+            ? filtered.map((item) => (
+                <div key={item.id} className="my-list-item">
+                  <div>
+                    <div className="my-chat-name">{item.label}</div>
+                    <div className="my-muted">{item.date}</div>
+                  </div>
+                  <div className="my-row">
+                    <span className="my-pill">{item.status}</span>
+                    <strong>{item.amount}</strong>
+                  </div>
+                </div>
+              ))
+            : !loading
+              ? <div className="my-empty">No payouts yet.</div>
+              : null}
         </div>
       </div>
     </MyLayout>
@@ -1877,12 +1902,26 @@ export function MyPayments() {
 }
 
 export function MyPaymentsAddCard() {
+  if (!USE_SAMPLE_DATA) {
+    return (
+      <MyLayout title="Add card" activeNav="add-card" header={null}>
+        <div className="my-card">
+          <div className="my-chat-name">Paystack setup required</div>
+          <p className="my-muted" style={{ margin: 0 }}>
+            Card payments are handled by Paystack. Configure the Paystack inline checkout flow
+            before enabling card collection in production.
+          </p>
+        </div>
+      </MyLayout>
+    );
+  }
+
   const [form, setForm] = useState({
     country: 'Kenya',
     state: 'Nairobi City',
     address: '',
     city: 'Nairobi',
-    email: 'emmanuelhanningtone59@gmail.com',
+    email: '',
     cardName: '',
     cardNumber: '',
     expiry: '',
@@ -1962,7 +2001,7 @@ export function MyPaymentsAddCard() {
           <div className="add-card-section">
             <div className="add-card-section-title">Billing details</div>
             <p className="add-card-note">
-              We are fully compliant with Payment Card Industry Data Security Standards.
+              Live card payments are processed via Paystack checkout.
             </p>
 
             <div className="add-card-grid">
@@ -2135,15 +2174,19 @@ export function PostsCreate() {
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduleAt, setScheduleAt] = useState('');
   const [audience, setAudience] = useState('All fans');
+  const [postType, setPostType] = useState<'post' | 'story'>('post');
+  const [contentRating, setContentRating] = useState<'sfw' | 'nsfw'>('sfw');
+  const [storyDurationHours, setStoryDurationHours] = useState('24');
   const [pollEnabled, setPollEnabled] = useState(false);
   const [pollOptions, setPollOptions] = useState(['', '']);
   const [notice, setNotice] = useState('');
+  const [publishing, setPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const noticeTimer = useRef<number | null>(null);
 
   const remaining = 1000 - content.length;
   const hasContent = content.trim().length > 0 || attachments.length > 0;
-  const canPublish = hasContent && (!isPaid || price.trim().length > 0);
+  const canPublish = hasContent && (!isPaid || price.trim().length > 0) && !publishing;
 
   useEffect(() => {
     return () => {
@@ -2181,11 +2224,59 @@ export function PostsCreate() {
     showNotice('Draft saved.');
   };
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (!canPublish) {
       return;
     }
-    showNotice(isScheduled ? 'Post scheduled.' : 'Post ready to publish.');
+    const trimmed = content.trim();
+    const priceValue = Number(price);
+    if (isPaid && (!Number.isFinite(priceValue) || priceValue <= 0)) {
+      showNotice('Enter a valid price.');
+      return;
+    }
+    if (isScheduled && scheduleAt) {
+      showNotice('Scheduling is not available yet.');
+      return;
+    }
+
+    const visibility =
+      isPaid ? 'ppv' : audience === 'Subscribers' ? 'subscribers' : 'public';
+    const title = trimmed.slice(0, 80) || 'New post';
+    const durationHours = Math.max(1, Number(storyDurationHours) || 24);
+    const expiresAt =
+      postType === 'story'
+        ? new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString()
+        : null;
+
+    try {
+      setPublishing(true);
+      await publishCreatorPost({
+        title,
+        body: trimmed || null,
+        visibility,
+        price_cents: isPaid ? Math.round(priceValue * 100) : 0,
+        currency: 'KES',
+        content_rating: contentRating,
+        post_type: postType,
+        expires_at: expiresAt,
+        files: attachments,
+      });
+      setContent('');
+      setAttachments([]);
+      setIsPaid(false);
+      setPrice('');
+      setIsScheduled(false);
+      setScheduleAt('');
+      setPostType('post');
+      setContentRating('sfw');
+      setStoryDurationHours('24');
+      showNotice('Post published.');
+    } catch (err) {
+      console.error(err);
+      showNotice('Could not publish post.');
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const togglePaid = () => {
@@ -2259,7 +2350,7 @@ export function PostsCreate() {
               onClick={handlePublish}
               disabled={!canPublish}
             >
-              Post
+              {publishing ? 'Publishing...' : 'Post'}
             </button>
           </div>
         </div>
@@ -2272,7 +2363,9 @@ export function PostsCreate() {
               <div className="create-post__avatar" aria-hidden="true" />
               <div>
                 <div className="create-post__name">Aiko Mitsuri</div>
-                <div className="create-post__handle">@aiko.mitsuri</div>
+                {NAV_PROFILE.handle ? (
+                  <div className="create-post__handle">{NAV_PROFILE.handle}</div>
+                ) : null}
               </div>
             </div>
 
@@ -2370,6 +2463,44 @@ export function PostsCreate() {
                 </select>
               </label>
 
+              <label className="create-post__field">
+                <span>Post type</span>
+                <select
+                  className="my-input"
+                  value={postType}
+                  onChange={(event) => setPostType(event.target.value as 'post' | 'story')}
+                >
+                  <option value="post">Post</option>
+                  <option value="story">Story (expires)</option>
+                </select>
+              </label>
+
+              {postType === 'story' ? (
+                <label className="create-post__field">
+                  <span>Story duration (hours)</span>
+                  <input
+                    className="my-input"
+                    type="number"
+                    min="1"
+                    max="72"
+                    value={storyDurationHours}
+                    onChange={(event) => setStoryDurationHours(event.target.value)}
+                  />
+                </label>
+              ) : null}
+
+              <label className="create-post__field">
+                <span>Content rating</span>
+                <select
+                  className="my-input"
+                  value={contentRating}
+                  onChange={(event) => setContentRating(event.target.value as 'sfw' | 'nsfw')}
+                >
+                  <option value="sfw">SFW</option>
+                  <option value="nsfw">NSFW</option>
+                </select>
+              </label>
+
               <div className="my-divider" />
 
               <div className="my-toggle">
@@ -2387,12 +2518,12 @@ export function PostsCreate() {
 
               {isPaid ? (
                 <label className="create-post__field">
-                  <span>Price</span>
+                  <span>Price (KES)</span>
                   <input
                     className="my-input"
                     type="number"
                     min="1"
-                    placeholder="$4.99"
+                    placeholder="KSh 499"
                     value={price}
                     onChange={(event) => setPrice(event.target.value)}
                   />
@@ -2459,9 +2590,15 @@ export function MyBanking() {
   const [autoPayout, setAutoPayout] = useState(true);
   const [schedule, setSchedule] = useState('weekly');
   const [transferRequested, setTransferRequested] = useState(false);
-  const [accountNumber, setAccountNumber] = useState('');
-  const [accountName, setAccountName] = useState('');
-  const [bankCode, setBankCode] = useState('MPESA');
+  const [payoutMethod, setPayoutMethod] = useState<'mpesa' | 'bank' | 'paypal'>('mpesa');
+  const [mpesaNumber, setMpesaNumber] = useState('');
+  const [mpesaName, setMpesaName] = useState('');
+  const [mpesaBankCode, setMpesaBankCode] = useState('MPESA');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankAccountName, setBankAccountName] = useState('');
+  const [bankCode, setBankCode] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [paypalEmail, setPaypalEmail] = useState('');
   const [savingAccount, setSavingAccount] = useState(false);
   const [bankingError, setBankingError] = useState<string | null>(null);
   const [savedDestination, setSavedDestination] = useState<string | null>(null);
@@ -2471,9 +2608,25 @@ export function MyBanking() {
       try {
         const account = await fetchPayoutAccount();
         if (!account) return;
-        setAccountName(account.account_name);
-        setBankCode(account.bank_code);
-        setSavedDestination(`****${account.account_number_last4}`);
+        setPayoutMethod(account.provider ?? 'mpesa');
+        setSavedDestination(
+          account.provider === 'paypal'
+            ? account.paypal_email ?? null
+            : account.account_number_last4
+              ? `****${account.account_number_last4}`
+              : null
+        );
+        if (account.provider === 'paypal') {
+          setPaypalEmail(account.paypal_email ?? '');
+        } else if (account.provider === 'bank') {
+          setBankAccountName(account.account_name ?? '');
+          setBankCode(account.bank_code ?? '');
+          setBankName(account.bank_name ?? '');
+        } else {
+          setMpesaName(account.account_name ?? '');
+          setMpesaBankCode(account.bank_code ?? 'MPESA');
+          setMpesaNumber(account.msisdn_e164 ?? '');
+        }
       } catch (err) {
         console.error(err);
       }
@@ -2485,7 +2638,7 @@ export function MyBanking() {
       <div className="my-card">
         <div className="my-row">
           <div>
-            <div className="my-chat-name">M-PESA payout account</div>
+            <div className="my-chat-name">Payout destination</div>
             <div className="my-muted">
               {savedDestination ? `Active destination ${savedDestination}` : 'No payout destination set'}
             </div>
@@ -2495,21 +2648,56 @@ export function MyBanking() {
             type="button"
             disabled={savingAccount}
             onClick={async () => {
-              if (!accountNumber || !accountName) {
-                setBankingError('Enter M-PESA number and account name');
-                return;
-              }
               try {
                 setSavingAccount(true);
                 setBankingError(null);
-                const response = await upsertMpesaPayoutAccount({
-                  accountNumber,
-                  accountName,
-                  bankCode,
-                  currency: 'KES',
-                });
-                const masked = response?.payoutAccount?.accountNumberMasked ?? `****${accountNumber.slice(-4)}`;
-                setSavedDestination(masked);
+                if (payoutMethod === 'paypal') {
+                  const email = paypalEmail.trim().toLowerCase();
+                  if (!email) {
+                    setBankingError('Enter a valid PayPal email');
+                    return;
+                  }
+                  await upsertPaypalPayoutAccount({ paypalEmail: email, currency: 'KES' });
+                  setSavedDestination(email);
+                } else if (payoutMethod === 'bank') {
+                  const normalizedAccount = bankAccountNumber.replace(/\D/g, '');
+                  const normalizedName = bankAccountName.trim();
+                  const normalizedBankCode = bankCode.trim().toUpperCase();
+                  const normalizedBankName = bankName.trim();
+                  if (!normalizedAccount || !normalizedName || !normalizedBankCode) {
+                    setBankingError('Enter a valid bank account, name, and bank code');
+                    return;
+                  }
+                  const response = await upsertBankPayoutAccount({
+                    accountNumber: normalizedAccount,
+                    accountName: normalizedName,
+                    bankCode: normalizedBankCode,
+                    bankName: normalizedBankName,
+                    currency: 'KES',
+                  });
+                  const masked =
+                    response?.payoutAccount?.accountNumberMasked ??
+                    `****${normalizedAccount.slice(-4)}`;
+                  setSavedDestination(masked);
+                } else {
+                  const normalizedAccount = mpesaNumber.replace(/\D/g, '');
+                  const normalizedName = mpesaName.trim();
+                  const normalizedBankCode = mpesaBankCode.trim().toUpperCase() || 'MPESA';
+                  if (!normalizedAccount || !normalizedName) {
+                    setBankingError('Enter a valid M-PESA number and account name');
+                    return;
+                  }
+                  const response = await upsertMpesaPayoutAccount({
+                    accountNumber: normalizedAccount,
+                    accountName: normalizedName,
+                    bankCode: normalizedBankCode,
+                    currency: 'KES',
+                  });
+                  const masked =
+                    response?.payoutAccount?.accountNumberMasked ??
+                    `****${normalizedAccount.slice(-4)}`;
+                  setSavedDestination(masked);
+                }
                 setTransferRequested(false);
               } catch (err) {
                 console.error(err);
@@ -2524,27 +2712,118 @@ export function MyBanking() {
         </div>
         <div className="my-divider" />
         <div className="my-form">
-          <label className="my-muted">M-PESA number</label>
-          <input
-            className="my-input"
-            value={accountNumber}
-            onChange={(event) => setAccountNumber(event.target.value)}
-            placeholder="2547XXXXXXXX"
-          />
-          <label className="my-muted">Account name</label>
-          <input
-            className="my-input"
-            value={accountName}
-            onChange={(event) => setAccountName(event.target.value)}
-            placeholder="Creator full name"
-          />
-          <label className="my-muted">Bank code</label>
-          <input
-            className="my-input"
-            value={bankCode}
-            onChange={(event) => setBankCode(event.target.value.toUpperCase())}
-            placeholder="MPESA"
-          />
+          <div className="my-row my-row--start">
+            <div>
+              <div className="my-chat-name">Payout method</div>
+              <div className="my-muted">Choose where payouts should be sent.</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                className={`my-button ${payoutMethod === 'mpesa' ? '' : 'secondary'}`}
+                type="button"
+                onClick={() => setPayoutMethod('mpesa')}
+              >
+                M-PESA
+              </button>
+              <button
+                className={`my-button ${payoutMethod === 'bank' ? '' : 'secondary'}`}
+                type="button"
+                onClick={() => setPayoutMethod('bank')}
+              >
+                Bank
+              </button>
+              <button
+                className={`my-button ${payoutMethod === 'paypal' ? '' : 'secondary'}`}
+                type="button"
+                onClick={() => setPayoutMethod('paypal')}
+              >
+                PayPal
+              </button>
+            </div>
+          </div>
+          {payoutMethod === 'paypal' ? (
+            <>
+              <label className="my-muted">PayPal email</label>
+              <input
+                className="my-input"
+                type="email"
+                autoComplete="email"
+                value={paypalEmail}
+                onChange={(event) => setPaypalEmail(event.target.value)}
+                placeholder="you@example.com"
+              />
+              <div className="my-muted">Payouts follow your balance currency.</div>
+            </>
+          ) : payoutMethod === 'bank' ? (
+            <>
+              <label className="my-muted">Bank account number</label>
+              <input
+                className="my-input"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={bankAccountNumber}
+                onChange={(event) => setBankAccountNumber(event.target.value)}
+                placeholder="Account number"
+              />
+              <label className="my-muted">Account name</label>
+              <input
+                className="my-input"
+                autoComplete="name"
+                value={bankAccountName}
+                onChange={(event) => setBankAccountName(event.target.value)}
+                placeholder="Account holder name"
+              />
+              <label className="my-muted">Bank code</label>
+              <input
+                className="my-input"
+                autoCapitalize="characters"
+                autoComplete="off"
+                value={bankCode}
+                onChange={(event) => setBankCode(event.target.value.toUpperCase())}
+                placeholder="BANK CODE"
+              />
+              <label className="my-muted">Bank name (optional)</label>
+              <input
+                className="my-input"
+                autoComplete="organization"
+                value={bankName}
+                onChange={(event) => setBankName(event.target.value)}
+                placeholder="e.g. Equity Bank"
+              />
+            </>
+          ) : (
+            <>
+              <label className="my-muted">M-PESA number</label>
+              <input
+                className="my-input"
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="tel"
+                value={mpesaNumber}
+                onChange={(event) => setMpesaNumber(event.target.value)}
+                placeholder="2547XXXXXXXX"
+              />
+              <label className="my-muted">Account name</label>
+              <input
+                className="my-input"
+                autoComplete="name"
+                value={mpesaName}
+                onChange={(event) => setMpesaName(event.target.value)}
+                placeholder="Creator full name"
+              />
+              <label className="my-muted">Bank code</label>
+              <input
+                className="my-input"
+                autoCapitalize="characters"
+                autoComplete="off"
+                value={mpesaBankCode}
+                onChange={(event) => setMpesaBankCode(event.target.value.toUpperCase())}
+                placeholder="MPESA"
+              />
+            </>
+          )}
         </div>
         <div className="my-divider" />
         <div className="my-row">
@@ -2582,7 +2861,14 @@ export function MyBanking() {
           onClick={async () => {
             try {
               setBankingError(null);
-              await requestCreatorPayout({ reason: 'Manual transfer now' });
+              if (payoutMethod === 'paypal') {
+                await requestPaypalPayout({ reason: 'Manual transfer now' });
+              } else {
+                await requestCreatorPayout({
+                  reason: 'Manual transfer now',
+                  provider: payoutMethod === 'bank' ? 'bank' : 'mpesa',
+                });
+              }
               setTransferRequested(true);
             } catch (err) {
               console.error(err);
@@ -2594,7 +2880,7 @@ export function MyBanking() {
         </button>
       </div>
       {transferRequested ? (
-        <div className="my-alert">Transfer request sent to your bank.</div>
+        <div className="my-alert">Transfer request sent.</div>
       ) : null}
       {bankingError ? <div className="my-alert">{bankingError}</div> : null}
     </MyLayout>
@@ -2750,6 +3036,20 @@ function PeopleListPage({
   );
 }
 
+const NAV_PROFILE = USE_SAMPLE_DATA
+  ? {
+      name: 'Aiko Mitsuri',
+      handle: '@aiko.mitsuri',
+      avatar: 'https://i.pravatar.cc/120?img=21',
+      meta: { fans: '1 fan', followers: '4 followers' },
+    }
+  : {
+      name: 'Creator',
+      handle: '',
+      avatar: '',
+      meta: null as null | { fans: string; followers: string },
+    };
+
 function MyLayout({
   title,
   subtitle,
@@ -2776,13 +3076,22 @@ function MyLayout({
     <div className="my-shell">
       <aside className="my-nav my-nav--dark">
         <div className="my-nav__profile">
-          <img className="my-nav__avatar" src="https://i.pravatar.cc/120?img=21" alt="Profile avatar" />
+          {NAV_PROFILE.avatar ? (
+            <img className="my-nav__avatar" src={NAV_PROFILE.avatar} alt="Profile avatar" />
+          ) : (
+            <div className="my-nav__avatar" aria-hidden="true" />
+          )}
           <div className="my-nav__identity">
-            <div className="name">Aiko Mitsuri</div>
-            <div className="handle">@aiko.mitsuri</div>
-            <div className="meta">
-              <span>1 fan</span> • <span>4 followers</span>
-            </div>
+            <div className="name">{NAV_PROFILE.name}</div>
+            {NAV_PROFILE.handle ? (
+              <div className="handle">{NAV_PROFILE.handle}</div>
+            ) : null}
+            {NAV_PROFILE.meta ? (
+              <div className="meta">
+                <span>{NAV_PROFILE.meta.fans}</span> -{' '}
+                <span>{NAV_PROFILE.meta.followers}</span>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -2821,8 +3130,12 @@ function MyLayout({
 
         <div className="my-nav__secondary">
           <NavItem href="/my/settings" label="Settings" icon={<GearIcon />} isActive={activeNav === 'more'} />
-          <NavItem href="/news" label="What’s new" icon={<StarIcon />} badge="1" isActive={false} />
-          <NavItem href="/logout" label="Log out" icon={<LogOutIcon />} isActive={false} />
+          {USE_SAMPLE_DATA ? (
+            <>
+              <NavItem href="/news" label="What's new" icon={<StarIcon />} badge="1" isActive={false} />
+              <NavItem href="/logout" label="Log out" icon={<LogOutIcon />} isActive={false} />
+            </>
+          ) : null}
         </div>
       </aside>
 

@@ -1,8 +1,8 @@
-# Security Policy
+﻿# Security Policy
 
 ## Reporting
 
-- Email security@yourdomain.com with a clear description and reproduction steps.
+- Contact the security team via the Help Center with a clear description and reproduction steps.
 - Please do not open public issues for vulnerabilities.
 
 ## Handling
@@ -21,3 +21,4 @@
 - Add CSP/helmet headers at hosting layer.
 - Add SAST/DAST to CI.
 - Add RLS policy tests and migrations for Supabase tables; enforce RLS on all tables.
+

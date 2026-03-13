@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+﻿import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import './ProfileAiko.css';
 
 type TabKey = 'posts' | 'media';
@@ -366,9 +366,9 @@ export default function ProfileAiko() {
 
         <div className="profile-footer">
           <a href="/privacy">Privacy</a>
-          <span className="dot">·</span>
+          <span className="dot">-</span>
           <a href="/cookies">Cookie Notice</a>
-          <span className="dot">·</span>
+          <span className="dot">-</span>
           <a href="/terms">Terms of Service</a>
         </div>
       </aside>
@@ -696,3 +696,4 @@ function CloseIcon() {
     </svg>
   );
 }
+

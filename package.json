@@ -1,0 +1,24 @@
+{
+  "name": "SpicyX-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n landing,user,creator -c magenta,cyan,green \"npm --prefix landingpage run dev\" \"npm --prefix user-side run dev\" \"npm --prefix creator-side run dev\"",
+    "dev:landing": "npm --prefix landingpage run dev",
+    "dev:user": "npm --prefix user-side run dev",
+    "dev:creator": "npm --prefix creator-side run dev",
+    "install:apps": "npm --prefix landingpage ci --ignore-scripts && npm --prefix user-side ci --ignore-scripts && npm --prefix creator-side ci --ignore-scripts",
+    "build:landing": "npm --prefix landingpage run build",
+    "build:user": "npm --prefix user-side run build",
+    "build:creator": "npm --prefix creator-side run build",
+    "build:apps": "npm run build:landing && npm run build:user && npm run build:creator",
+    "build": "npm run install:apps && npm run build:apps && node scripts/assemble-dist.mjs",
+    "lint": "npm --prefix landingpage run lint && npm --prefix user-side run lint && npm --prefix creator-side run lint",
+    "test": "npm --prefix landingpage run test && npm --prefix user-side run test && npm --prefix creator-side run test",
+    "health": "node scripts/health-check.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}

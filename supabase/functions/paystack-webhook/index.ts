@@ -53,7 +53,7 @@ serve(async (req) => {
     // Idempotency: bail if already succeeded
     const { data: paymentRow, error: fetchErr } = await supabase
       .from("payments")
-      .select("id, status, type, creator_id, user_id, amount_cents, currency")
+      .select("id, status, type, creator_id, user_id, amount_cents, currency, metadata")
       .eq("provider", "paystack")
       .eq("provider_intent_id", reference)
       .maybeSingle();
@@ -66,10 +66,20 @@ serve(async (req) => {
     let resolvedPayment = paymentRow;
     if (!resolvedPayment) {
       const metadata = data.metadata ?? {};
-      const creatorId = metadata.creator_id?.toString?.();
+      const creatorId = metadata.creator_id?.toString?.() ?? null;
       const payerUserId = metadata.payer_user_id?.toString?.() ?? null;
-      const paymentType = metadata.type === "subscription" ? "subscription" : "tip";
-      if (!creatorId) return json({ error: "Unknown payment reference and missing creator metadata" }, 404);
+      const rawType = metadata.type?.toString?.();
+      const paymentType =
+        rawType === "subscription"
+          ? "subscription"
+          : rawType === "wallet_topup"
+            ? "wallet_topup"
+            : rawType === "ppv"
+              ? "ppv"
+              : "tip";
+      if (!creatorId && paymentType !== "wallet_topup") {
+        return json({ error: "Unknown payment reference and missing creator metadata" }, 404);
+      }
 
       const { data: recoveredPayment, error: recoverErr } = await supabase
         .from("payments")
@@ -89,7 +99,7 @@ serve(async (req) => {
           },
           { onConflict: "provider_intent_id" },
         )
-        .select("id, status, type, creator_id, user_id, amount_cents, currency")
+        .select("id, status, type, creator_id, user_id, amount_cents, currency, metadata")
         .single();
       if (recoverErr) return json({ error: "Payment recovery failed" }, 500);
       resolvedPayment = recoveredPayment;
@@ -110,6 +120,21 @@ serve(async (req) => {
         .eq("provider", "paystack")
         .eq("provider_intent_id", reference);
       if (updateErr) return json({ error: "Update failed" }, 500);
+    }
+
+    if (resolvedPayment.type === "wallet_topup") {
+      if (!resolvedPayment.user_id) {
+        return json({ error: "Wallet topup missing user_id" }, 400);
+      }
+      const { error: walletErr } = await supabase.rpc("credit_user_wallet", {
+        p_user_id: resolvedPayment.user_id,
+        p_amount_minor: amount,
+        p_currency: currency,
+        p_payment_id: resolvedPayment.id,
+        p_metadata: { source: "paystack.wallet_topup", reference },
+      });
+      if (walletErr) return json({ error: "Wallet credit failed" }, 500);
+      return json({ ok: true });
     }
 
     if (resolvedPayment.type === "tip") {
@@ -142,14 +167,35 @@ serve(async (req) => {
       if (subErr) return json({ error: "Subscription upsert failed" }, 500);
     }
 
-    const { error: creditErr } = await supabase.rpc("credit_creator_balance", {
-      p_creator_id: resolvedPayment.creator_id,
-      p_amount_minor: amount,
-      p_currency: currency,
-      p_payment_id: resolvedPayment.id,
-      p_metadata: { source: "paystack.charge.success", reference },
-    });
-    if (creditErr) return json({ error: "Creator balance credit failed" }, 500);
+    if (resolvedPayment.type === "ppv") {
+      const postId = resolvedPayment.metadata?.post_id ?? data?.metadata?.post_id;
+      if (!postId) return json({ error: "PPV purchase missing post_id" }, 400);
+
+      const { error: ppvErr } = await supabase.from("ppv_purchases").upsert(
+        {
+          user_id: resolvedPayment.user_id,
+          post_id: Number(postId),
+          creator_id: resolvedPayment.creator_id,
+          amount_cents: amount,
+          currency,
+          payment_id: resolvedPayment.id,
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,post_id" },
+      );
+      if (ppvErr && ppvErr.code !== "23505") return json({ error: "PPV purchase create failed" }, 500);
+    }
+
+    if (resolvedPayment.creator_id) {
+      const { error: creditErr } = await supabase.rpc("credit_creator_balance", {
+        p_creator_id: resolvedPayment.creator_id,
+        p_amount_minor: amount,
+        p_currency: currency,
+        p_payment_id: resolvedPayment.id,
+        p_metadata: { source: "paystack.charge.success", reference },
+      });
+      if (creditErr) return json({ error: "Creator balance credit failed" }, 500);
+    }
     return json({ ok: true });
   }
 
