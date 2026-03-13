@@ -37,10 +37,12 @@ Primary host: `https://fans-only-olive.vercel.app` (redirects to `/app/`).
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_ANON_KEY`
   - Optional: `VITE_CREATOR_APP_URL` (defaults to `/creator`)
+  - Optional: `VITE_PUBLIC_APP_ORIGIN` (recommended: `https://fans-only-olive.vercel.app`)
 - Creator app (`creator-side`) expects:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_ANON_KEY`
   - Optional: `VITE_CONSUMER_APP_URL` (defaults to `/user`)
+  - Optional: `VITE_PUBLIC_APP_ORIGIN` (recommended: `https://fans-only-olive.vercel.app`)
   - Optional: `VITE_CREATOR_BASE_PATH` (defaults to `/creator`)
 
 ## Smoke checks

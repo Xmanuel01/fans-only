@@ -6,6 +6,9 @@ User app is served at `/user/` under the main domain.
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
+## Recommended env
+- `VITE_PUBLIC_APP_ORIGIN=https://fans-only-olive.vercel.app` (forces auth callbacks to primary domain)
+
 ## Build expectations
 - Vite base path: `/user/`
 - Output is merged into root `dist/user/` by the monorepo build.

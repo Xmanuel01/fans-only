@@ -67,6 +67,10 @@ const supabaseAnonKey = readRequired(
 const consumerAppUrl =
   normalizeUrlOrPath(readOptional(import.meta.env.VITE_CONSUMER_APP_URL), 'VITE_CONSUMER_APP_URL') ??
   '/user';
+const publicAppOrigin = normalizeUrl(
+  readOptional(import.meta.env.VITE_PUBLIC_APP_ORIGIN),
+  'VITE_PUBLIC_APP_ORIGIN'
+);
 const creatorBasePath = normalizeBasePath(
   readOptional(import.meta.env.VITE_CREATOR_BASE_PATH),
   '/creator'
@@ -76,6 +80,7 @@ export const env = {
   supabaseUrl,
   supabaseAnonKey,
   consumerAppUrl,
+  publicAppOrigin,
   creatorBasePath,
   isProd: Boolean(import.meta.env.PROD),
 };

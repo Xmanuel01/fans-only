@@ -15,6 +15,7 @@ import {
   FiChevronRight,
   FiChevronLeft,
   FiChevronDown,
+  FiX,
 } from 'react-icons/fi'
 import {
   fetchAgeConfirmation,
@@ -1614,165 +1615,476 @@ function HomePage({
     'Your feed'
   const subscriptionSet = new Set(activeSubscriptions)
   const ppvPurchaseSet = new Set(ppvPurchases)
+  const [activeStoryIndex, setActiveStoryIndex] = useState<number | null>(null)
+  const [activeStoryMediaIndex, setActiveStoryMediaIndex] = useState(0)
+  const [postMediaIndexById, setPostMediaIndexById] = useState<Record<number, number>>({})
+  const activeStory =
+    activeStoryIndex === null || activeStoryIndex < 0 || activeStoryIndex >= stories.length
+      ? null
+      : stories[activeStoryIndex]
+
+  const getAccessState = (post: FeedPost) => {
+    const isSubscribed = subscriptionSet.has(post.creator.id)
+    const hasPpvAccess = ppvPurchaseSet.has(post.id)
+    const isSubscriberOnly = post.visibility === 'subscribers'
+    const isPpv = post.visibility === 'ppv'
+    const isLocked = (isSubscriberOnly && !isSubscribed) || (isPpv && !hasPpvAccess)
+    const showSubscribe =
+      post.creator.subscription_price_cents &&
+      post.creator.subscription_price_cents > 0 &&
+      !isSubscribed
+    return {
+      isSubscribed,
+      isPpv,
+      isLocked,
+      showSubscribe,
+    }
+  }
+
+  useEffect(() => {
+    if (activeStoryIndex === null) {
+      return
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [activeStoryIndex])
+
+  useEffect(() => {
+    if (activeStoryIndex === null) {
+      setActiveStoryMediaIndex(0)
+    }
+  }, [activeStoryIndex])
+
+  useEffect(() => {
+    if (activeStoryIndex === null || !stories.length) {
+      return
+    }
+
+    if (activeStoryIndex >= stories.length) {
+      setActiveStoryIndex(stories.length - 1)
+      setActiveStoryMediaIndex(0)
+    }
+  }, [activeStoryIndex, stories.length])
+
+  useEffect(() => {
+    if (!activeStory) {
+      return
+    }
+
+    if (!activeStory.media.length) {
+      setActiveStoryMediaIndex(0)
+      return
+    }
+
+    if (activeStoryMediaIndex >= activeStory.media.length) {
+      setActiveStoryMediaIndex(0)
+    }
+  }, [activeStory, activeStoryMediaIndex])
+
+  useEffect(() => {
+    if (activeStoryIndex === null) {
+      return
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActiveStoryIndex(null)
+        return
+      }
+
+      if (event.key === 'ArrowRight') {
+        setActiveStoryIndex((prev) => {
+          if (prev === null || !stories.length) {
+            return prev
+          }
+          return (prev + 1) % stories.length
+        })
+        setActiveStoryMediaIndex(0)
+        return
+      }
+
+      if (event.key === 'ArrowLeft') {
+        setActiveStoryIndex((prev) => {
+          if (prev === null || !stories.length) {
+            return prev
+          }
+          return (prev - 1 + stories.length) % stories.length
+        })
+        setActiveStoryMediaIndex(0)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeStoryIndex, stories.length])
+
+  const moveStory = (direction: 1 | -1) => {
+    setActiveStoryIndex((prev) => {
+      if (prev === null || !stories.length) {
+        return prev
+      }
+      return (prev + direction + stories.length) % stories.length
+    })
+    setActiveStoryMediaIndex(0)
+  }
 
   return (
-    <main className="feed">
-      <header className="feed-header">
-        <div className="feed-user">
-          <div>
-            <div className="name">{displayName}</div>
-            <div className="muted">
-              {posts.length ? 'Latest updates from creators you follow.' : 'Follow creators to see updates.'}
-            </div>
-          </div>
-        </div>
-        <div className="feed-actions">
-          <button className="see-all" onClick={onSeeAll}>
-            See all
-          </button>
-          <a
-            className="see-all"
-            href={CREATOR_APP_URL}
-            target={CREATOR_APP_EXTERNAL ? '_blank' : undefined}
-            rel={CREATOR_APP_EXTERNAL ? 'noreferrer' : undefined}
-          >
-            Creator dashboard
-          </a>
-        </div>
-      </header>
-
-      {stories.length ? (
-        <section className="card">
-          <div className="section-heading">
-            <h3>Stories</h3>
-          </div>
-          <div className="card-row">
-            {stories.map((story) => (
-              <AvatarChip
-                key={story.id}
-                name={story.creator.display_name}
-                avatar={story.creator.avatar_url ?? assetUrl('logo.png')}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {session && (
-        <section className="card creator-cta">
-          <div className="creator-cta-header">
+    <>
+      <main className="feed">
+        <header className="feed-header">
+          <div className="feed-user">
             <div>
-              <div className="muted small">Monetize</div>
-              <h3>{creatorProfile ? 'Creator profile ready' : 'Become a creator'}</h3>
-              <p className="muted">
-                Claim your handle to unlock the creator dashboard. You can update details later.
-              </p>
+              <div className="name">{displayName}</div>
+              <div className="muted">
+                {posts.length
+                  ? 'Latest updates from creators you follow.'
+                  : 'Follow creators to see updates.'}
+              </div>
             </div>
+          </div>
+          <div className="feed-actions">
+            <button className="see-all" onClick={onSeeAll}>
+              See all
+            </button>
             <a
-              className="pill ghost"
+              className="see-all"
               href={CREATOR_APP_URL}
               target={CREATOR_APP_EXTERNAL ? '_blank' : undefined}
               rel={CREATOR_APP_EXTERNAL ? 'noreferrer' : undefined}
             >
-              Open dashboard
+              Creator dashboard
             </a>
           </div>
-          {!creatorProfile ? (
-            <div className="creator-cta-body">
-              <label className="creator-label">
-                Handle
-                <input
-                  value={handle}
-                  onChange={(e) => setHandle(e.target.value.toLowerCase())}
-                  placeholder="your-handle"
-                  maxLength={30}
-                  pattern="^[a-z0-9_]+$"
-                />
-              </label>
-              <button
-                className="primary-btn"
-                onClick={() => onCreateCreator(handle)}
-                disabled={!handle || creatorLoading}
-              >
-                {creatorLoading ? 'Saving...' : 'Claim handle'}
-              </button>
-            </div>
-          ) : (
-            <div className="creator-cta-body">
-              <div className="muted">Handle</div>
-              <div className="creator-handle">@{creatorProfile.handle}</div>
-              <div className="creator-links">
-                <a
-                  className="primary-btn"
-                  href={CREATOR_APP_URL}
-                  target={CREATOR_APP_EXTERNAL ? '_blank' : undefined}
-                  rel={CREATOR_APP_EXTERNAL ? 'noreferrer' : undefined}
-                >
-                  Open dashboard
-                </a>
-                <a
-                  className="ghost-btn"
-                  href={`/creator/${creatorProfile.handle}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  View public profile
-                </a>
-              </div>
-            </div>
-          )}
-        </section>
-      )}
+        </header>
 
-      {posts.length ? (
-        posts.map((post) => {
-          const isSubscribed = subscriptionSet.has(post.creator.id)
-          const hasPpvAccess = ppvPurchaseSet.has(post.id)
-          const media = post.media[0]
-          const isVideo = media?.mime_type?.startsWith('video')
-          const isSubscriberOnly = post.visibility === 'subscribers'
-          const isPpv = post.visibility === 'ppv'
-          const isLocked =
-            (isSubscriberOnly && !isSubscribed) || (isPpv && !hasPpvAccess)
-          const showSubscribe =
-            post.creator.subscription_price_cents &&
-            post.creator.subscription_price_cents > 0 &&
-            !isSubscribed
-
-          return (
-            <section key={post.id} className={`card ${media ? 'media-card' : 'text-card'}`}>
-              <div className="card-header">
-                <img
-                  src={post.creator.avatar_url ?? assetUrl('logo.png')}
-                  alt={post.creator.display_name}
-                />
-                <div>
-                  <div className="name">{post.creator.display_name}</div>
-                  <div className="muted">@{post.creator.handle}</div>
-                </div>
-                <FiMoreHorizontal className="spacer" />
-                {showSubscribe ? (
-                  <button className="pill light" onClick={() => onSubscribe(post.creator)}>
-                    Subscribe {formatKsh(post.creator.subscription_price_cents)}
+        {stories.length ? (
+          <section className="card">
+            <div className="section-heading">
+              <h3>Stories</h3>
+            </div>
+            <div className="card-row">
+              {stories.map((story, index) => {
+                const storyMedia = story.media[0]
+                const hasVideo = Boolean(
+                  storyMedia && storyMedia.mime_type?.startsWith('video')
+                )
+                return (
+                  <button
+                    key={story.id}
+                    type="button"
+                    className="avatar-chip story-chip"
+                    onClick={() => {
+                      setActiveStoryIndex(index)
+                      setActiveStoryMediaIndex(0)
+                    }}
+                    aria-label={`Open ${story.creator.display_name} story`}
+                  >
+                    <img src={story.creator.avatar_url ?? assetUrl('logo.png')} alt={story.creator.display_name} />
+                    <span>{story.creator.display_name}</span>
+                    {hasVideo ? <span className="story-chip__type">Video</span> : null}
                   </button>
-                ) : isSubscribed ? (
-                  <span className="muted small">Subscribed</span>
-                ) : null}
-              </div>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
 
-              {media ? (
-                <div className={`media-wrapper ${isLocked ? 'locked' : ''}`}>
-                  {media.url ? (
-                    isVideo ? (
-                      <video className="media-hero" controls preload="metadata">
-                        <source src={media.url} type={media.mime_type ?? 'video/mp4'} />
-                      </video>
+        {session && (
+          <section className="card creator-cta">
+            <div className="creator-cta-header">
+              <div>
+                <div className="muted small">Monetize</div>
+                <h3>{creatorProfile ? 'Creator profile ready' : 'Become a creator'}</h3>
+                <p className="muted">
+                  Claim your handle to unlock the creator dashboard. You can update details later.
+                </p>
+              </div>
+              <a
+                className="pill ghost"
+                href={CREATOR_APP_URL}
+                target={CREATOR_APP_EXTERNAL ? '_blank' : undefined}
+                rel={CREATOR_APP_EXTERNAL ? 'noreferrer' : undefined}
+              >
+                Open dashboard
+              </a>
+            </div>
+            {!creatorProfile ? (
+              <div className="creator-cta-body">
+                <label className="creator-label">
+                  Handle
+                  <input
+                    value={handle}
+                    onChange={(e) => setHandle(e.target.value.toLowerCase())}
+                    placeholder="your-handle"
+                    maxLength={30}
+                    pattern="^[a-z0-9_]+$"
+                  />
+                </label>
+                <button
+                  className="primary-btn"
+                  onClick={() => onCreateCreator(handle)}
+                  disabled={!handle || creatorLoading}
+                >
+                  {creatorLoading ? 'Saving...' : 'Claim handle'}
+                </button>
+              </div>
+            ) : (
+              <div className="creator-cta-body">
+                <div className="muted">Handle</div>
+                <div className="creator-handle">@{creatorProfile.handle}</div>
+                <div className="creator-links">
+                  <a
+                    className="primary-btn"
+                    href={CREATOR_APP_URL}
+                    target={CREATOR_APP_EXTERNAL ? '_blank' : undefined}
+                    rel={CREATOR_APP_EXTERNAL ? 'noreferrer' : undefined}
+                  >
+                    Open dashboard
+                  </a>
+                  <a
+                    className="ghost-btn"
+                    href={`/creator/${creatorProfile.handle}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View public profile
+                  </a>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {posts.length ? (
+          posts.map((post) => {
+            const { isSubscribed, isPpv, isLocked, showSubscribe } = getAccessState(post)
+            const mediaCount = post.media.length
+            const mediaIndex = Math.max(
+              0,
+              Math.min(postMediaIndexById[post.id] ?? 0, Math.max(mediaCount - 1, 0))
+            )
+            const media = mediaCount ? post.media[mediaIndex] : null
+            const isVideo = media?.mime_type?.startsWith('video')
+
+            return (
+              <section key={post.id} className={`card ${media ? 'media-card' : 'text-card'}`}>
+                <div className="card-header">
+                  <img
+                    src={post.creator.avatar_url ?? assetUrl('logo.png')}
+                    alt={post.creator.display_name}
+                  />
+                  <div>
+                    <div className="name">{post.creator.display_name}</div>
+                    <div className="muted">@{post.creator.handle}</div>
+                  </div>
+                  <FiMoreHorizontal className="spacer" />
+                  {showSubscribe ? (
+                    <button className="pill light" onClick={() => onSubscribe(post.creator)}>
+                      Subscribe {formatKsh(post.creator.subscription_price_cents)}
+                    </button>
+                  ) : isSubscribed ? (
+                    <span className="muted small">Subscribed</span>
+                  ) : null}
+                </div>
+
+                {media ? (
+                  <div className={`media-wrapper ${isLocked ? 'locked' : ''}`}>
+                    {media.url ? (
+                      isVideo ? (
+                        <video className="media-hero" controls preload="metadata" playsInline>
+                          <source src={media.url} type={media.mime_type ?? 'video/mp4'} />
+                        </video>
+                      ) : (
+                        <img src={media.url} alt={post.title} />
+                      )
                     ) : (
-                      <img src={media.url} alt={post.title} />
+                      <div className="media-placeholder">Preview unavailable</div>
+                    )}
+                    {mediaCount > 1 ? (
+                      <>
+                        <button
+                          className="media-nav media-nav--prev"
+                          type="button"
+                          aria-label="Previous media"
+                          onClick={() =>
+                            setPostMediaIndexById((prev) => ({
+                              ...prev,
+                              [post.id]: (mediaIndex - 1 + mediaCount) % mediaCount,
+                            }))
+                          }
+                        >
+                          <FiChevronLeft />
+                        </button>
+                        <button
+                          className="media-nav media-nav--next"
+                          type="button"
+                          aria-label="Next media"
+                          onClick={() =>
+                            setPostMediaIndexById((prev) => ({
+                              ...prev,
+                              [post.id]: (mediaIndex + 1) % mediaCount,
+                            }))
+                          }
+                        >
+                          <FiChevronRight />
+                        </button>
+                        <div className="media-count">
+                          {mediaIndex + 1}/{mediaCount}
+                        </div>
+                      </>
+                    ) : null}
+                    {isLocked ? (
+                      <div className="media-lock-overlay">
+                        <div className="media-lock-tag">
+                          <FiLock size={14} />
+                          {isPpv ? 'Pay-per-view' : 'Subscribers only'}
+                        </div>
+                        <div className="lock-title">
+                          {isPpv ? 'Unlock this post' : 'Subscribe to view'}
+                        </div>
+                        <div className="lock-subtitle">
+                          {isPpv
+                            ? `Price: ${formatKsh(post.price_cents ?? 0)}`
+                            : 'Support the creator to access this content.'}
+                        </div>
+                        <div className="media-lock-actions">
+                          {isPpv ? (
+                            <button className="primary-btn" onClick={() => onUnlockPost(post)}>
+                              Unlock for {formatKsh(post.price_cents ?? 0)}
+                            </button>
+                          ) : showSubscribe ? (
+                            <button className="pill light" onClick={() => onSubscribe(post.creator)}>
+                              Subscribe {formatKsh(post.creator.subscription_price_cents)}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : isLocked ? (
+                  <div className="media-wrapper locked">
+                    <div className="media-placeholder">
+                      <div className="media-lock-tag">
+                        <FiLock size={14} />
+                        {post.visibility === 'ppv' ? 'Pay-per-view' : 'Subscribers only'}
+                      </div>
+                      <div className="lock-title">Content locked</div>
+                      <div className="lock-subtitle">
+                        {post.visibility === 'ppv'
+                          ? `Price: ${formatKsh(post.price_cents ?? 0)}`
+                          : 'Subscribe to unlock.'}
+                      </div>
+                      {post.visibility === 'ppv' ? (
+                        <button className="primary-btn" onClick={() => onUnlockPost(post)}>
+                          Unlock for {formatKsh(post.price_cents ?? 0)}
+                        </button>
+                      ) : showSubscribe ? (
+                        <button className="pill light" onClick={() => onSubscribe(post.creator)}>
+                          Subscribe {formatKsh(post.creator.subscription_price_cents)}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="card-body">
+                  <p className="title">{post.title}</p>
+                  {post.body ? <p className="muted">{post.body}</p> : null}
+                </div>
+              </section>
+            )
+          })
+        ) : (
+          <section className="card">
+            <div className="card-body">
+              <p className="title">No posts yet</p>
+              <p className="muted">Follow creators to see new content in your feed.</p>
+            </div>
+          </section>
+        )}
+      </main>
+
+      {activeStory ? (
+        <div
+          className="story-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${activeStory.creator.display_name} story`}
+          onClick={() => setActiveStoryIndex(null)}
+        >
+          <div className="story-modal__panel" onClick={(event) => event.stopPropagation()}>
+            <header className="story-modal__header">
+              <div>
+                <div className="name">{activeStory.creator.display_name}</div>
+                <div className="muted">@{activeStory.creator.handle}</div>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Close story"
+                onClick={() => setActiveStoryIndex(null)}
+              >
+                <FiX size={20} />
+              </button>
+            </header>
+
+            {(() => {
+              const { isPpv, isLocked, showSubscribe } = getAccessState(activeStory)
+              const mediaCount = activeStory.media.length
+              const mediaIndex = Math.max(
+                0,
+                Math.min(activeStoryMediaIndex, Math.max(mediaCount - 1, 0))
+              )
+              const media = mediaCount ? activeStory.media[mediaIndex] : null
+              const isVideo = media?.mime_type?.startsWith('video')
+              return (
+                <div className={`media-wrapper story-modal__media ${isLocked ? 'locked' : ''}`}>
+                  {media ? (
+                    media.url ? (
+                      isVideo ? (
+                        <video className="media-hero" controls preload="metadata" playsInline autoPlay>
+                          <source src={media.url} type={media.mime_type ?? 'video/mp4'} />
+                        </video>
+                      ) : (
+                        <img src={media.url} alt={activeStory.title || 'Story'} />
+                      )
+                    ) : (
+                      <div className="media-placeholder">Story unavailable</div>
                     )
                   ) : (
-                    <div className="media-placeholder">Preview unavailable</div>
+                    <div className="media-placeholder">No story media</div>
                   )}
+                  {mediaCount > 1 ? (
+                    <>
+                      <button
+                        className="media-nav media-nav--prev"
+                        type="button"
+                        aria-label="Previous story media"
+                        onClick={() =>
+                          setActiveStoryMediaIndex((prev) => (prev - 1 + mediaCount) % mediaCount)
+                        }
+                      >
+                        <FiChevronLeft />
+                      </button>
+                      <button
+                        className="media-nav media-nav--next"
+                        type="button"
+                        aria-label="Next story media"
+                        onClick={() =>
+                          setActiveStoryMediaIndex((prev) => (prev + 1) % mediaCount)
+                        }
+                      >
+                        <FiChevronRight />
+                      </button>
+                      <div className="media-count">
+                        {mediaIndex + 1}/{mediaCount}
+                      </div>
+                    </>
+                  ) : null}
                   {isLocked ? (
                     <div className="media-lock-overlay">
                       <div className="media-lock-tag">
@@ -1780,69 +2092,51 @@ function HomePage({
                         {isPpv ? 'Pay-per-view' : 'Subscribers only'}
                       </div>
                       <div className="lock-title">
-                        {isPpv ? 'Unlock this post' : 'Subscribe to view'}
+                        {isPpv ? 'Unlock this story' : 'Subscribe to view'}
                       </div>
                       <div className="lock-subtitle">
                         {isPpv
-                          ? `Price: ${formatKsh(post.price_cents ?? 0)}`
-                          : 'Support the creator to access this content.'}
+                          ? `Price: ${formatKsh(activeStory.price_cents ?? 0)}`
+                          : 'Support the creator to access this story.'}
                       </div>
                       <div className="media-lock-actions">
                         {isPpv ? (
-                          <button className="primary-btn" onClick={() => onUnlockPost(post)}>
-                            Unlock for {formatKsh(post.price_cents ?? 0)}
+                          <button className="primary-btn" onClick={() => onUnlockPost(activeStory)}>
+                            Unlock for {formatKsh(activeStory.price_cents ?? 0)}
                           </button>
                         ) : showSubscribe ? (
-                          <button className="pill light" onClick={() => onSubscribe(post.creator)}>
-                            Subscribe {formatKsh(post.creator.subscription_price_cents)}
+                          <button
+                            className="pill light"
+                            onClick={() => onSubscribe(activeStory.creator)}
+                          >
+                            Subscribe {formatKsh(activeStory.creator.subscription_price_cents)}
                           </button>
                         ) : null}
                       </div>
                     </div>
                   ) : null}
                 </div>
-              ) : isLocked ? (
-                <div className="media-wrapper locked">
-                  <div className="media-placeholder">
-                    <div className="media-lock-tag">
-                      <FiLock size={14} />
-                      {post.visibility === 'ppv' ? 'Pay-per-view' : 'Subscribers only'}
-                    </div>
-                    <div className="lock-title">Content locked</div>
-                    <div className="lock-subtitle">
-                      {post.visibility === 'ppv'
-                        ? `Price: ${formatKsh(post.price_cents ?? 0)}`
-                        : 'Subscribe to unlock.'}
-                    </div>
-                    {post.visibility === 'ppv' ? (
-                      <button className="primary-btn" onClick={() => onUnlockPost(post)}>
-                        Unlock for {formatKsh(post.price_cents ?? 0)}
-                      </button>
-                    ) : showSubscribe ? (
-                      <button className="pill light" onClick={() => onSubscribe(post.creator)}>
-                        Subscribe {formatKsh(post.creator.subscription_price_cents)}
-                      </button>
-                    ) : null}
-                  </div>
+              )
+            })()}
+
+            <footer className="story-modal__footer">
+              <div className="title">{activeStory.title}</div>
+              {activeStory.body ? <p className="muted">{activeStory.body}</p> : null}
+              {stories.length > 1 ? (
+                <div className="story-modal__switchers">
+                  <button className="pill ghost" type="button" onClick={() => moveStory(-1)}>
+                    Previous story
+                  </button>
+                  <button className="pill ghost" type="button" onClick={() => moveStory(1)}>
+                    Next story
+                  </button>
                 </div>
               ) : null}
-
-              <div className="card-body">
-                <p className="title">{post.title}</p>
-                {post.body ? <p className="muted">{post.body}</p> : null}
-              </div>
-            </section>
-          )
-        })
-      ) : (
-        <section className="card">
-          <div className="card-body">
-            <p className="title">No posts yet</p>
-            <p className="muted">Follow creators to see new content in your feed.</p>
+            </footer>
           </div>
-        </section>
-      )}
-    </main>
+        </div>
+      ) : null}
+    </>
   )
 }
 
@@ -2654,6 +2948,4 @@ export default function App() {
     </div>
   )
 }
-
-
 

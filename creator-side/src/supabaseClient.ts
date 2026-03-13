@@ -9,8 +9,21 @@ export const supabase =
     ? createClient(supabaseUrl, supabaseAnonKey)
     : null;
 
+const FALLBACK_PUBLIC_APP_ORIGIN = 'https://fans-only-olive.vercel.app';
+const resolveAuthRedirectOrigin = () => {
+  if (env.publicAppOrigin) {
+    return env.publicAppOrigin;
+  }
+  if (import.meta.env.PROD) {
+    return FALLBACK_PUBLIC_APP_ORIGIN;
+  }
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  return FALLBACK_PUBLIC_APP_ORIGIN;
+};
 const appRedirectUrl = () =>
-  new URL(import.meta.env.BASE_URL ?? '/', window.location.origin).toString();
+  new URL(import.meta.env.BASE_URL ?? '/', resolveAuthRedirectOrigin()).toString();
 
 export async function getSession(): Promise<Session | null> {
   if (!supabase) return null;

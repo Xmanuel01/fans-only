@@ -11,6 +11,7 @@ Consumer-facing app for SpicyX, served at `/user/`.
 ## Environment
 - Required: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 - Optional: `VITE_CREATOR_APP_URL` (defaults to `/creator`)
+- Optional: `VITE_PUBLIC_APP_ORIGIN` (recommended: `https://fans-only-olive.vercel.app`)
 
 ## Production
 - Vite base path is `/user/`.

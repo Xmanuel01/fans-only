@@ -65,6 +65,10 @@ const supabaseAnonKey = readRequired(
 const creatorAppUrl =
   normalizeUrlOrPath(readOptional(import.meta.env.VITE_CREATOR_APP_URL), 'VITE_CREATOR_APP_URL') ??
   '/creator'
+const publicAppOrigin = normalizeUrl(
+  readOptional(import.meta.env.VITE_PUBLIC_APP_ORIGIN),
+  'VITE_PUBLIC_APP_ORIGIN'
+)
 
 const helpCenterUrl = normalizeUrl(
   readOptional(import.meta.env.VITE_HELP_CENTER_URL),
@@ -92,6 +96,7 @@ export const env = {
   supabaseUrl,
   supabaseAnonKey,
   creatorAppUrl,
+  publicAppOrigin,
   helpCenterUrl,
   releaseNotesUrl,
   appDownloadUrl,
