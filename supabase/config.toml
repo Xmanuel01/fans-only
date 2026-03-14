@@ -9,5 +9,8 @@ enabled = true
 [studio]
 enabled = true
 
+[functions.ensure-profile]
+verify_jwt = false
+
 [functions.upload-creator-profile-asset]
 verify_jwt = false
