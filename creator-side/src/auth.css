@@ -202,25 +202,28 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 28px 18px;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .onboarding-card {
   position: relative;
-  width: min(700px, 100%);
+  width: min(640px, 100%);
   display: grid;
   justify-items: center;
-  gap: 24px;
+  gap: 18px;
   text-align: center;
-  padding: 32px 48px 40px;
+  padding: 20px 36px 24px;
 }
 
 .onboarding-flow {
-  width: min(660px, 100%);
+  width: min(620px, 100%);
   display: grid;
-  gap: 28px;
-  min-height: min(860px, calc(100vh - 56px));
-  align-content: space-between;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  height: min(720px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
 }
 
 .onboarding-flow__topbar {
@@ -231,13 +234,13 @@ body {
 }
 
 .onboarding-top-btn {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border: none;
   border-radius: 999px;
   background: transparent;
   color: #ffffff;
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1;
   cursor: pointer;
 }
@@ -245,24 +248,24 @@ body {
 .onboarding-progress {
   display: grid;
   justify-items: center;
-  gap: 10px;
-  padding-top: 4px;
+  gap: 8px;
+  padding-top: 2px;
 }
 
 .onboarding-progress__label {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
 }
 
 .onboarding-dots {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 
 .onboarding-dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.24);
 }
@@ -273,51 +276,54 @@ body {
 
 .onboarding-screen {
   display: grid;
-  gap: 22px;
+  gap: 16px;
   justify-items: start;
+  align-content: center;
 }
 
 .onboarding-screen--referrals {
-  width: min(560px, 100%);
+  width: min(520px, 100%);
   margin: 0 auto;
 }
 
 .onboarding-screen--country {
-  width: min(560px, 100%);
+  width: min(520px, 100%);
   margin: 0 auto;
 }
 
 .onboarding-screen--content {
-  width: min(620px, 100%);
+  width: min(580px, 100%);
   margin: 0 auto;
 }
 
 .onboarding-screen--identity {
-  width: min(560px, 100%);
+  width: min(520px, 100%);
   margin: 0 auto;
 }
 
 .onboarding-screen--subscription-price {
-  width: min(560px, 100%);
+  width: min(520px, 100%);
   margin: 0 auto;
 }
 
 .onboarding-screen--verify-identity {
-  width: min(600px, 100%);
+  width: min(560px, 100%);
   margin: 0 auto;
 }
 
 .onboarding-screen--profile-setup {
-  width: min(640px, 100%);
+  width: min(600px, 100%);
   margin: 0 auto;
+  align-content: start;
 }
 
 .onboarding-screen__title {
   margin: 0;
-  font-size: clamp(34px, 5vw, 50px);
+  font-size: clamp(28px, 4vw, 40px);
   line-height: 1;
   letter-spacing: -0.04em;
   font-weight: 800;
+  text-wrap: balance;
 }
 
 .onboarding-screen__title--country {
@@ -348,8 +354,8 @@ body {
   margin: 0;
   max-width: 640px;
   color: rgba(255, 255, 255, 0.92);
-  font-size: 16px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.45;
   font-weight: 700;
 }
 
@@ -367,7 +373,7 @@ body {
 
 .onboarding-copy-stack {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .onboarding-copy--profile-setup {
@@ -376,12 +382,12 @@ body {
 
 .onboarding-field {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
 }
 
 .onboarding-field__label {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.4;
   font-weight: 700;
 }
@@ -390,11 +396,11 @@ body {
   width: 100%;
   box-sizing: border-box;
   border: none;
-  border-radius: 18px;
+  border-radius: 16px;
   background: #2b2b2b;
   color: #ffffff;
-  padding: 18px 20px;
-  font-size: 18px;
+  padding: 15px 18px;
+  font-size: 16px;
   font-weight: 700;
   outline: none;
 }
@@ -413,11 +419,11 @@ body {
   box-sizing: border-box;
   appearance: none;
   border: none;
-  border-radius: 18px;
+  border-radius: 16px;
   background: #2b2b2b;
   color: #ffffff;
-  padding: 18px 50px 18px 20px;
-  font-size: 17px;
+  padding: 15px 44px 15px 18px;
+  font-size: 16px;
   font-weight: 700;
   outline: none;
   cursor: pointer;
@@ -425,16 +431,16 @@ body {
 
 .onboarding-select-chevron {
   position: absolute;
-  right: 18px;
+  right: 16px;
   top: 50%;
   transform: translateY(-50%);
   color: rgba(255, 255, 255, 0.92);
-  font-size: 22px;
+  font-size: 20px;
   pointer-events: none;
 }
 
 .onboarding-field__note {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.82);
 }
@@ -446,30 +452,30 @@ body {
 
 .onboarding-money-field__prefix {
   position: absolute;
-  left: 20px;
+  left: 18px;
   top: 50%;
   transform: translateY(-50%);
   color: #ffffff;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   pointer-events: none;
 }
 
 .onboarding-input--money {
-  padding-left: 74px;
+  padding-left: 64px;
 }
 
 .onboarding-upload-grid {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+  gap: 16px;
 }
 
 .onboarding-upload-card {
   position: relative;
   display: grid;
-  gap: 14px;
+  gap: 10px;
   cursor: pointer;
 }
 
@@ -481,7 +487,7 @@ body {
 }
 
 .onboarding-upload-card__label {
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.4;
   font-weight: 700;
 }
@@ -498,12 +504,12 @@ body {
 
 .onboarding-upload-card__surface--avatar {
   aspect-ratio: 1;
-  border-radius: 28px;
+  border-radius: 22px;
 }
 
 .onboarding-upload-card__surface--banner {
-  min-height: 220px;
-  border-radius: 28px;
+  min-height: 180px;
+  border-radius: 22px;
 }
 
 .onboarding-avatar-preview,
@@ -554,7 +560,7 @@ body {
 
 .onboarding-upload-card__hint {
   color: rgba(255, 255, 255, 0.72);
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1.45;
   font-weight: 600;
 }
@@ -563,7 +569,7 @@ body {
   width: 100%;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
 }
 
 .onboarding-category-pill {
@@ -571,8 +577,8 @@ body {
   border-radius: 999px;
   background: #242424;
   color: rgba(255, 255, 255, 0.9);
-  padding: 12px 16px;
-  font-size: 15px;
+  padding: 10px 14px;
+  font-size: 13px;
   line-height: 1.3;
   font-weight: 700;
   cursor: pointer;
@@ -587,14 +593,14 @@ body {
 .onboarding-error {
   margin: 0;
   color: #ffb0b0;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
   font-weight: 700;
 }
 
 .identity-preview {
   position: relative;
-  width: min(260px, 100%);
+  width: min(220px, 100%);
   aspect-ratio: 1.55;
   justify-self: center;
   border-radius: 42px;
@@ -695,21 +701,21 @@ body {
   width: 100%;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 14px;
 }
 
 .onboarding-choice-card {
   width: 100%;
-  min-height: 132px;
+  min-height: 116px;
   box-sizing: border-box;
   border: 2px solid transparent;
-  border-radius: 22px;
+  border-radius: 18px;
   background: #2b2b2b;
   color: #ffffff;
-  padding: 20px 18px;
+  padding: 16px 14px;
   text-align: left;
   display: grid;
-  gap: 16px;
+  gap: 10px;
   cursor: pointer;
 }
 
@@ -719,14 +725,14 @@ body {
 }
 
 .onboarding-choice-card__title {
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.2;
   font-weight: 800;
 }
 
 .onboarding-choice-card__description {
   color: rgba(255, 255, 255, 0.88);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.35;
   font-weight: 700;
 }
@@ -763,7 +769,7 @@ body {
 
 .onboarding-globe {
   position: relative;
-  width: 248px;
+  width: 216px;
   aspect-ratio: 1;
   border-radius: 50%;
   background:
@@ -820,7 +826,7 @@ body {
 .onboarding-title {
   margin: 0;
   max-width: 700px;
-  font-size: clamp(32px, 4.8vw, 44px);
+  font-size: clamp(28px, 4vw, 38px);
   line-height: 1.02;
   font-weight: 800;
   letter-spacing: -0.035em;
@@ -832,13 +838,13 @@ body {
 }
 
 .onboarding-cta {
-  width: min(520px, 100%);
+  width: min(480px, 100%);
   border: none;
   border-radius: 999px;
-  padding: 15px 22px;
+  padding: 13px 20px;
   background: #ffffff;
   color: #111111;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
   cursor: pointer;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
@@ -850,9 +856,9 @@ body {
 }
 
 .onboarding-actions-stack {
-  width: min(520px, 100%);
+  width: min(480px, 100%);
   display: grid;
-  gap: 16px;
+  gap: 12px;
   justify-self: center;
   align-self: end;
 }
@@ -862,7 +868,7 @@ body {
   border: none;
   background: transparent;
   color: #ffffff;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -893,8 +899,8 @@ body {
   margin: 0;
   max-width: 620px;
   color: rgba(255, 255, 255, 0.82);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.5;
   text-wrap: pretty;
 }
 
@@ -909,13 +915,15 @@ body {
 
 @media (max-width: 760px) {
   .onboarding-card {
-    padding: 24px 24px 36px;
-    gap: 24px;
+    padding: 20px 20px 24px;
+    gap: 18px;
   }
 
   .onboarding-flow {
-    min-height: calc(100vh - 56px);
-    gap: 28px;
+    height: auto;
+    min-height: calc(100vh - 32px);
+    max-height: none;
+    gap: 18px;
   }
 
   .onboarding-flow__topbar {
@@ -930,7 +938,7 @@ body {
   }
 
   .onboarding-progress__label {
-    font-size: 15px;
+    font-size: 14px;
   }
 
   .onboarding-dot {
@@ -946,43 +954,43 @@ body {
   }
 
   .onboarding-globe {
-    width: 208px;
+    width: 180px;
   }
 
   .onboarding-title {
-    font-size: clamp(24px, 6vw, 34px);
+    font-size: clamp(22px, 5.8vw, 30px);
   }
 
   .onboarding-screen__title {
-    font-size: clamp(28px, 9vw, 40px);
+    font-size: clamp(24px, 8vw, 32px);
   }
 
   .onboarding-copy {
-    font-size: 15px;
+    font-size: 14px;
   }
 
   .identity-preview {
-    width: min(260px, 100%);
-    border-radius: 34px;
+    width: min(220px, 100%);
+    border-radius: 28px;
   }
 
   .onboarding-input {
-    padding: 16px 16px;
-    font-size: 16px;
+    padding: 14px 14px;
+    font-size: 15px;
   }
 
   .onboarding-money-field__prefix {
-    left: 18px;
-    font-size: 16px;
+    left: 16px;
+    font-size: 15px;
   }
 
   .onboarding-input--money {
-    padding-left: 66px;
+    padding-left: 58px;
   }
 
   .onboarding-select {
-    padding: 16px 46px 16px 16px;
-    font-size: 16px;
+    padding: 14px 42px 14px 14px;
+    font-size: 15px;
   }
 
   .onboarding-choice-grid {
@@ -995,19 +1003,19 @@ body {
   }
 
   .onboarding-upload-card__surface--banner {
-    min-height: 180px;
+    min-height: 150px;
   }
 
   .onboarding-choice-card {
-    min-height: 132px;
-    padding: 20px 18px;
+    min-height: 108px;
+    padding: 16px 14px;
   }
 
   .onboarding-actions-stack {
-    gap: 16px;
+    gap: 10px;
   }
 
   .onboarding-legal {
-    font-size: 15px;
+    font-size: 13px;
   }
 }
