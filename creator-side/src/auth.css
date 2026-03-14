@@ -518,12 +518,14 @@ body {
 }
 
 .onboarding-upload-card__surface--banner {
-  min-height: 180px;
+  aspect-ratio: 3 / 1;
   border-radius: 22px;
 }
 
 .onboarding-avatar-preview,
 .onboarding-banner-preview {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -532,6 +534,8 @@ body {
 
 .onboarding-avatar-placeholder,
 .onboarding-banner-placeholder {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: grid;
@@ -1020,7 +1024,7 @@ body {
   }
 
   .onboarding-upload-card__surface--banner {
-    min-height: 150px;
+    aspect-ratio: 3 / 1;
   }
 
   .onboarding-choice-card {

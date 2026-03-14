@@ -1605,7 +1605,7 @@ function CreatorOnboardingProfileSetup({
               </div>
 
               <span className="onboarding-upload-card__hint">
-                {bannerFile ? bannerFile.name : 'Upload a wide image or short video'}
+                {bannerFile ? bannerFile.name : 'Recommended 1500 x 500 image or short video'}
               </span>
             </label>
           </div>
