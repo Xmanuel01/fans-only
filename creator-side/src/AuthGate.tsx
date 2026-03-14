@@ -45,6 +45,7 @@ const CONSUMER_IS_EXTERNAL = isExternalUrl(CONSUMER_APP_URL);
 const ONBOARDING_INTRO_WINDOW_MS = 10 * 60 * 1000;
 const MIN_SUBSCRIPTION_PRICE_KES = 50;
 const DEFAULT_SUBSCRIPTION_PRICE_KES = '500';
+const PROFILE_CATEGORY_SELECTION_COUNT = 2;
 const COUNTRY_OPTIONS = [
   { code: 'KE', label: 'Kenya' },
   { code: 'NG', label: 'Nigeria' },
@@ -108,7 +109,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [displayNameDraft, setDisplayNameDraft] = useState('');
   const [handleDraft, setHandleDraft] = useState('');
   const [subscriptionPriceDraft, setSubscriptionPriceDraft] = useState(DEFAULT_SUBSCRIPTION_PRICE_KES);
-  const [profileCategoryDraft, setProfileCategoryDraft] = useState('');
+  const [profileCategoryDraft, setProfileCategoryDraft] = useState<string[]>([]);
 
   useEffect(() => {
     let unsub = () => {};
@@ -665,14 +666,15 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           if (!Number.isFinite(amount) || amount < MIN_SUBSCRIPTION_PRICE_KES) {
             throw new Error(`Set a subscription price of at least KSh ${MIN_SUBSCRIPTION_PRICE_KES}.`);
           }
-          if (!profileCategoryDraft.trim()) {
-            throw new Error('Choose a content category.');
+          if (profileCategoryDraft.length !== PROFILE_CATEGORY_SELECTION_COUNT) {
+            throw new Error(`Choose ${PROFILE_CATEGORY_SELECTION_COUNT} content categories.`);
           }
 
           await upsertCreatorProfileSetup({
             handle: handleDraft,
             display_name: displayNameDraft,
-            category: profileCategoryDraft,
+            category: profileCategoryDraft[0],
+            categories: profileCategoryDraft,
             subscription_price_cents: Math.round(amount * 100),
             subscription_currency: 'KES',
             avatarFile,
@@ -1466,8 +1468,8 @@ function CreatorOnboardingProfileSetup({
   onClose,
   onContinue,
 }: {
-  category: string;
-  onCategoryChange: (value: string) => Promise<void>;
+  category: string[];
+  onCategoryChange: (value: string[]) => Promise<void>;
   onBack: () => Promise<void>;
   onClose: () => Promise<void>;
   onContinue: (payload: { avatarFile: File; bannerFile: File }) => Promise<void>;
@@ -1496,7 +1498,9 @@ function CreatorOnboardingProfileSetup({
     };
   }, [bannerPreviewUrl]);
 
-  const canContinue = Boolean(category.trim() && avatarFile && bannerFile);
+  const canContinue = Boolean(
+    category.length === PROFILE_CATEGORY_SELECTION_COUNT && avatarFile && bannerFile,
+  );
 
   return (
     <div className="onboarding-shell">
@@ -1554,7 +1558,7 @@ function CreatorOnboardingProfileSetup({
 
               <span className="onboarding-upload-card__label">Profile image</span>
 
-              <span className="onboarding-upload-card__surface onboarding-upload-card__surface--avatar">
+              <div className="onboarding-upload-card__surface onboarding-upload-card__surface--avatar">
                 {avatarPreviewUrl ? (
                   <img className="onboarding-avatar-preview" src={avatarPreviewUrl} alt="" />
                 ) : (
@@ -1563,7 +1567,7 @@ function CreatorOnboardingProfileSetup({
                     <span className="onboarding-avatar-placeholder__line" />
                   </span>
                 )}
-              </span>
+              </div>
 
               <span className="onboarding-upload-card__hint">
                 {avatarFile ? avatarFile.name : 'Upload a square image'}
@@ -1591,7 +1595,7 @@ function CreatorOnboardingProfileSetup({
 
               <span className="onboarding-upload-card__label">Banner image or video</span>
 
-              <span className="onboarding-upload-card__surface onboarding-upload-card__surface--banner">
+              <div className="onboarding-upload-card__surface onboarding-upload-card__surface--banner">
                 {bannerPreviewUrl ? (
                   bannerPreviewType === 'video' ? (
                     <video
@@ -1609,7 +1613,7 @@ function CreatorOnboardingProfileSetup({
                     <span className="onboarding-banner-placeholder__line" />
                   </span>
                 )}
-              </span>
+              </div>
 
               <span className="onboarding-upload-card__hint">
                 {bannerFile ? bannerFile.name : 'Upload a wide image or short video'}
@@ -1619,14 +1623,26 @@ function CreatorOnboardingProfileSetup({
 
           <div className="onboarding-field">
             <span className="onboarding-field__label">Content category</span>
+            <p className="onboarding-field__hint">
+              Select {PROFILE_CATEGORY_SELECTION_COUNT} categories so fans can discover you in
+              more than one lane.
+            </p>
             <div className="onboarding-category-grid">
               {CREATOR_PROFILE_CATEGORIES.map((option) => {
-                const active = option === category;
+                const active = category.includes(option);
                 return (
                   <button
                     key={option}
+                    aria-pressed={active}
                     className={`onboarding-category-pill${active ? ' active' : ''}`}
-                    onClick={() => void onCategoryChange(option)}
+                    onClick={() => {
+                      const nextValue = active
+                        ? category.filter((item) => item !== option)
+                        : category.length < PROFILE_CATEGORY_SELECTION_COUNT
+                          ? [...category, option]
+                          : category;
+                      void onCategoryChange(nextValue);
+                    }}
                     type="button"
                   >
                     {option}
@@ -1634,6 +1650,9 @@ function CreatorOnboardingProfileSetup({
                 );
               })}
             </div>
+            <span className="onboarding-selection-count">
+              {category.length}/{PROFILE_CATEGORY_SELECTION_COUNT} selected
+            </span>
           </div>
 
           {error ? <p className="onboarding-error">{error}</p> : null}
@@ -1645,6 +1664,11 @@ function CreatorOnboardingProfileSetup({
           onClick={async () => {
             if (!avatarFile || !bannerFile) {
               setError('Add both a profile image and a banner asset.');
+              return;
+            }
+
+            if (category.length !== PROFILE_CATEGORY_SELECTION_COUNT) {
+              setError(`Select ${PROFILE_CATEGORY_SELECTION_COUNT} categories.`);
               return;
             }
 
@@ -1715,7 +1739,7 @@ function hydratePostSignupDraft(
   setDisplayName: (value: string) => void,
   setHandle: (value: string) => void,
   setSubscriptionPrice: (value: string) => void,
-  setProfileCategory: (value: string) => void,
+  setProfileCategory: (value: string[]) => void,
 ) {
   if (typeof window === 'undefined') return;
   const userId = user.id;
@@ -1740,7 +1764,7 @@ function hydratePostSignupDraft(
   if (storedSubscriptionPrice === null) {
     window.sessionStorage.setItem(postSignupSubscriptionPriceKey(userId), subscriptionPrice);
   }
-  setProfileCategory(window.sessionStorage.getItem(postSignupProfileCategoryKey(userId)) ?? '');
+  setProfileCategory(parseStoredPostSignupCategories(window.sessionStorage.getItem(postSignupProfileCategoryKey(userId))));
 }
 
 function storePostSignupReferralCode(userId: string, value: string) {
@@ -1773,9 +1797,12 @@ function storePostSignupSubscriptionPrice(userId: string, value: string) {
   window.sessionStorage.setItem(postSignupSubscriptionPriceKey(userId), value);
 }
 
-function storePostSignupProfileCategory(userId: string, value: string) {
+function storePostSignupProfileCategory(userId: string, value: string[]) {
   if (typeof window === 'undefined') return;
-  window.sessionStorage.setItem(postSignupProfileCategoryKey(userId), value);
+  window.sessionStorage.setItem(
+    postSignupProfileCategoryKey(userId),
+    JSON.stringify(normalizeProfileCategories(value)),
+  );
 }
 
 function postSignupOnboardingSeenKey(userId: string) {
@@ -1812,6 +1839,29 @@ function postSignupSubscriptionPriceKey(userId: string) {
 
 function postSignupProfileCategoryKey(userId: string) {
   return `creator:onboarding:profile-category:${userId}`;
+}
+
+function parseStoredPostSignupCategories(rawValue: string | null) {
+  if (!rawValue) return [];
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (Array.isArray(parsed)) {
+      return normalizeProfileCategories(parsed.filter((item): item is string => typeof item === 'string'));
+    }
+    if (typeof parsed === 'string') {
+      return normalizeProfileCategories([parsed]);
+    }
+  } catch {
+    return normalizeProfileCategories([rawValue]);
+  }
+  return [];
+}
+
+function normalizeProfileCategories(value: string[]) {
+  return Array.from(new Set(value.filter((item) => CREATOR_PROFILE_CATEGORIES.includes(item)))).slice(
+    0,
+    PROFILE_CATEGORY_SELECTION_COUNT,
+  );
 }
 
 function seedPostSignupDisplayName(user: CreatorAuthUser) {

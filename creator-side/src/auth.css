@@ -392,6 +392,14 @@ body {
   font-weight: 700;
 }
 
+.onboarding-field__hint {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
 .onboarding-input {
   width: 100%;
   box-sizing: border-box;
@@ -493,6 +501,8 @@ body {
 }
 
 .onboarding-upload-card__surface {
+  display: block;
+  width: 100%;
   position: relative;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -588,6 +598,13 @@ body {
   border-color: #3cff68;
   background: #17381f;
   color: #ffffff;
+}
+
+.onboarding-selection-count {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 700;
 }
 
 .onboarding-error {

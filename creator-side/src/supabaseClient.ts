@@ -225,6 +225,7 @@ export async function upsertCreatorProfileSetup(params: {
   handle: string;
   display_name: string;
   category: string;
+  categories: string[];
   subscription_price_cents: number;
   subscription_currency?: string;
   avatarFile?: File | null;
@@ -237,6 +238,7 @@ export async function upsertCreatorProfileSetup(params: {
     handle: params.handle,
     display_name: params.display_name,
     category: params.category,
+    categories: params.categories,
     subscription_price_cents: params.subscription_price_cents,
     subscription_currency: params.subscription_currency ?? 'KES',
     updated_at: new Date().toISOString(),
