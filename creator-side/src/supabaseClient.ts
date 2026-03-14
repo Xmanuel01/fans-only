@@ -14,9 +14,6 @@ const resolveAuthRedirectOrigin = () => {
   if (env.publicAppOrigin) {
     return env.publicAppOrigin;
   }
-  if (import.meta.env.PROD) {
-    return FALLBACK_PUBLIC_APP_ORIGIN;
-  }
   if (typeof window !== 'undefined') {
     return window.location.origin;
   }

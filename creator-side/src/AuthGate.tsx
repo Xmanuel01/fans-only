@@ -24,7 +24,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'signing-in' | 'error'>('idle');
-  const [creatorHandle, setCreatorHandle] = useState<string | null>(null);
 
   useEffect(() => {
     let unsub = () => {};
@@ -92,7 +91,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
     const { data, error: fetchError } = await supabase
       .from('creators')
-      .select('id, handle')
+      .select('id')
       .eq('id', userId)
       .maybeSingle();
 
@@ -105,9 +104,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
     if (!data) {
       setState('no-creator');
-      setCreatorHandle(null);
     } else {
-      setCreatorHandle(data.handle ?? null);
       setState('ready');
     }
   }
@@ -300,7 +297,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <TopLinks consumerUrl={CONSUMER_APP_URL} handle={creatorHandle} />
+      <TopLinks consumerUrl={CONSUMER_APP_URL} />
       {children}
     </>
   );
@@ -308,31 +305,39 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
 function ScreenShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        background: 'radial-gradient(circle at 10% 20%, #0f172a, #080b12)',
+      }}
+    >
       <div
         style={{
           maxWidth: 520,
           width: '100%',
-          background: 'white',
+          background: '#20242f',
           borderRadius: 16,
-          boxShadow: '0 12px 40px rgba(0,0,0,0.08)',
+          boxShadow: '0 20px 48px rgba(0,0,0,0.38)',
           padding: 24,
-          border: '1px solid #e6e8ec',
+          border: '1px solid #32394d',
+          color: '#e8edf5',
         }}
       >
-        <h1 style={{ marginTop: 0 }}>{title}</h1>
+        <h1 style={{ marginTop: 0, color: '#ffffff' }}>{title}</h1>
         <div style={{ display: 'grid', gap: 12 }}>{children}</div>
       </div>
     </div>
   );
 }
 
-function TopLinks({ consumerUrl, handle }: { consumerUrl: string | null; handle: string | null }) {
+function TopLinks({ consumerUrl }: { consumerUrl: string | null }) {
   if (!consumerUrl) {
     return null;
   }
-
-  const profileUrl = handle ? `${consumerUrl.replace(/\/$/, '')}/creator/${handle}` : consumerUrl;
   return (
     <div
       style={{
@@ -352,9 +357,6 @@ function TopLinks({ consumerUrl, handle }: { consumerUrl: string | null; handle:
         <a href={consumerUrl} target="_blank" rel="noreferrer" style={{ color: '#e8edf5' }}>
           Consumer app
         </a>
-        <a href={profileUrl} target="_blank" rel="noreferrer" style={{ color: '#e8edf5' }}>
-          View public profile
-        </a>
         <button
           onClick={signOut}
           style={{
@@ -371,4 +373,3 @@ function TopLinks({ consumerUrl, handle }: { consumerUrl: string | null; handle:
     </div>
   );
 }
-

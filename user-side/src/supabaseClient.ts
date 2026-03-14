@@ -14,9 +14,6 @@ const resolveAuthRedirectOrigin = () => {
   if (env.publicAppOrigin) {
     return env.publicAppOrigin
   }
-  if (import.meta.env.PROD) {
-    return FALLBACK_PUBLIC_APP_ORIGIN
-  }
   if (typeof window !== 'undefined') {
     return window.location.origin
   }
@@ -239,7 +236,8 @@ export async function initiatePaystackPayment({
   postId?: number
   amountMajor: number
   currency?: string
-  type?: 'tip' | 'subscription' | 'wallet_topup' | 'ppv'
+  // PPV unlocks use the wallet purchase RPC instead of direct checkout.
+  type?: 'tip' | 'subscription' | 'wallet_topup'
   metadata?: Record<string, unknown>
   channels?: string[]
 }) {

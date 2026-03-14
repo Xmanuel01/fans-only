@@ -1,6 +1,7 @@
 // Initialize a Paystack transaction and record a pending payment.
 // Env required: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 // Optional: PAYSTACK_CALLBACK_URL (falls back to request origin + /paystack/callback).
+// Direct PPV checkout is intentionally unsupported; PPV unlocks use wallet balance.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { supabase } from "../_shared/client.ts";
@@ -63,33 +64,10 @@ serve(async (req) => {
   }
 
   if (body.type === "ppv") {
-    if (!body.post_id) {
-      return jsonWithCors({ error: "post_id required for ppv" }, 400);
-    }
-    const { data: postRow, error: postErr } = await supabase
-      .from("posts")
-      .select("id, creator_id, price_cents, currency, visibility")
-      .eq("id", body.post_id)
-      .maybeSingle();
-    if (postErr) return jsonWithCors({ error: "Post lookup failed" }, 500);
-    if (!postRow) return jsonWithCors({ error: "Post not found" }, 404);
-    if (postRow.visibility !== "ppv") {
-      return jsonWithCors({ error: "Post is not ppv" }, 400);
-    }
-    if (!creatorId) {
-      creatorId = postRow.creator_id?.toString?.() ?? null;
-    }
-    if (!creatorId || creatorId !== postRow.creator_id) {
-      return jsonWithCors({ error: "creator_id mismatch for ppv post" }, 400);
-    }
-    const expectedMinor = Number(postRow.price_cents ?? 0);
-    if (!Number.isFinite(expectedMinor) || expectedMinor <= 0) {
-      return jsonWithCors({ error: "Post price is invalid" }, 400);
-    }
-    const requestedMinor = Math.round(amountMajor * 100);
-    if (requestedMinor !== expectedMinor) {
-      return jsonWithCors({ error: "Amount does not match PPV price" }, 400);
-    }
+    return jsonWithCors(
+      { error: "Direct PPV checkout is not supported. Use wallet balance to unlock PPV posts." },
+      400,
+    );
   }
 
   const amountMinor = Math.round(amountMajor * 100);

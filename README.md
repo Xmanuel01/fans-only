@@ -7,6 +7,13 @@ Three Vite + React + TypeScript frontends deployed as one route-based applicatio
 
 Primary host: `https://fans-only-olive.vercel.app` (redirects to `/app/`).
 
+## Workflow
+- `landingpage/` is a funnel only. `/app/` sends users into the consumer app (`/user/`) or creator dashboard (`/creator/`).
+- `user-side/` owns sign-in, age confirmation, creator discovery, wallet top-ups, subscription checkout, wallet-based PPV unlocks, and creator handle claiming.
+- `creator-side/` is only for signed-in users who already have `profiles.age_confirmed_at` and a `creators` row. It handles content publishing, payout setup, payout requests, and subscription pricing.
+- Creator onboarding is intentionally split: users become creators in `/user/`, then manage creator operations in `/creator/`.
+- Public creator profile pages are not part of the current route contract.
+
 ## Quick start
 - Node 20+ and npm 10+ recommended.
 - Install dependencies:

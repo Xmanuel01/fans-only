@@ -1723,8 +1723,9 @@ body {
 .age-modal {
   position: relative;
   width: min(640px, 92vw);
-  background: #f7f7f7;
-  color: #111;
+  background: #2d2d2d;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   padding: 28px 30px 20px;
   box-shadow: 0 22px 50px rgba(0, 0, 0, 0.35);
@@ -1738,7 +1739,7 @@ body {
 }
 
 .age-modal p {
-  color: #2b2b2b;
+  color: rgba(255, 255, 255, 0.9);
   line-height: 1.6;
   margin: 0 0 12px;
 }
@@ -1959,12 +1960,12 @@ body {
 .age-links {
   margin-top: 6px;
   font-size: 12px;
-  color: #a0a0a0;
+  color: rgba(255, 255, 255, 0.7);
   text-align: center;
 }
 
 .age-links a {
-  color: #d0d7ff;
+  color: #ffffff;
 }
 
 .footer {
