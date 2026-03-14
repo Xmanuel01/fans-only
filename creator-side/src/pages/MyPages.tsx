@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  fetchCreatorFeedPosts,
   fetchPayoutAccount,
   fetchPayoutSummary,
   fetchPayoutTransfers,
+  fetchCreatorStories,
   publishCreatorPost,
   requestCreatorPayout,
   requestPaypalPayout,
+  type CreatorContentItem,
   upsertBankPayoutAccount,
   upsertMpesaPayoutAccount,
   upsertPaypalPayoutAccount,
@@ -89,19 +92,188 @@ type HomePost = {
     src: string;
     poster: string;
   };
-  likes: number;
-  comments: number;
+  footerPrimary: string;
+  footerSecondary: string;
 };
 
 type StoryItem = {
   id: string;
   name: string;
   image: string;
+  previewUrl: string;
+  previewType: 'image' | 'video' | 'text';
+  caption: string;
+  expiresLabel: string;
   isLive?: boolean;
 };
 
 const USE_SAMPLE_DATA =
   !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true';
+const CREATOR_DRAFT_STORAGE_KEY = 'creator-post-draft-v1';
+
+const ensureHandle = (value: string | null | undefined) => {
+  if (!value) return '';
+  return value.startsWith('@') ? value : `@${value}`;
+};
+
+const formatRelativeTime = (value: string) => {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return 'Just now';
+
+  const diffMs = Date.now() - timestamp;
+  const diffMinutes = Math.max(1, Math.round(diffMs / (1000 * 60)));
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return new Date(value).toLocaleDateString();
+};
+
+const formatMinorCurrency = (amountMinor?: number | null, currency?: string | null) => {
+  const amount = Math.max(0, amountMinor ?? 0);
+  const normalizedCurrency = (currency ?? 'KES').toUpperCase();
+  const major = amount / 100;
+
+  if (normalizedCurrency === 'KES') {
+    return `KSh ${major.toLocaleString(undefined, {
+      minimumFractionDigits: major % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
+  return `${normalizedCurrency} ${major.toLocaleString(undefined, {
+    minimumFractionDigits: major % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
+const formatExpiryLabel = (expiresAt: string | null) => {
+  if (!expiresAt) return 'Expires soon';
+  const diffMs = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(diffMs) || diffMs <= 0) return 'Expired';
+  const diffHours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
+  if (diffHours < 24) return `Expires in ${diffHours}h`;
+  const diffDays = Math.round(diffHours / 24);
+  return `Expires in ${diffDays}d`;
+};
+
+const describeVisibility = (post: CreatorContentItem) => {
+  if (post.visibility === 'ppv') {
+    return `PPV · ${formatMinorCurrency(post.price_cents, post.currency)}`;
+  }
+  if (post.visibility === 'subscribers') {
+    return 'Subscribers only';
+  }
+  return 'Public';
+};
+
+const mapCreatorPostToHomePost = (post: CreatorContentItem): HomePost => {
+  const primaryMedia = post.media[0];
+  const isVideo = Boolean(primaryMedia?.mime_type?.startsWith('video/'));
+  const author = post.creator?.display_name?.trim() || 'You';
+
+  return {
+    id: String(post.id),
+    author,
+    handle: ensureHandle(post.creator?.handle),
+    avatar: post.creator?.avatar_url ?? '',
+    time: formatRelativeTime(post.created_at),
+    caption: post.body?.trim() || post.title || 'Untitled post',
+    type: primaryMedia ? (isVideo ? 'video' : 'photo') : 'text',
+    media: !isVideo && primaryMedia?.url ? [primaryMedia.url] : undefined,
+    video: isVideo && primaryMedia?.url ? { src: primaryMedia.url, poster: '' } : undefined,
+    footerPrimary: describeVisibility(post),
+    footerSecondary: `${post.content_rating.toUpperCase()} · ${formatRelativeTime(post.created_at)}`,
+  };
+};
+
+const mapCreatorStoryToStoryItem = (story: CreatorContentItem): StoryItem => {
+  const primaryMedia = story.media[0];
+  const previewType = primaryMedia?.mime_type?.startsWith('video/')
+    ? 'video'
+    : primaryMedia?.url
+      ? 'image'
+      : 'text';
+
+  return {
+    id: String(story.id),
+    name: story.creator?.display_name?.trim() || 'You',
+    image: story.creator?.avatar_url ?? primaryMedia?.url ?? '',
+    previewUrl: primaryMedia?.url ?? '',
+    previewType,
+    caption: story.body?.trim() || story.title || 'Story',
+    expiresLabel: formatExpiryLabel(story.expires_at),
+    isLive: false,
+  };
+};
+
+type CreatorPostDraft = {
+  content: string;
+  audience: 'All fans' | 'Subscribers';
+  postType: 'post' | 'story';
+  contentRating: 'sfw' | 'nsfw';
+  storyDurationHours: string;
+  isPaid: boolean;
+  price: string;
+};
+
+const DEFAULT_CREATOR_DRAFT: CreatorPostDraft = {
+  content: '',
+  audience: 'All fans',
+  postType: 'post',
+  contentRating: 'sfw',
+  storyDurationHours: '24',
+  isPaid: false,
+  price: '',
+};
+
+const readCreatorDraft = (): CreatorPostDraft | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(CREATOR_DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CreatorPostDraft>;
+    return {
+      ...DEFAULT_CREATOR_DRAFT,
+      ...parsed,
+      audience: parsed.audience === 'Subscribers' ? 'Subscribers' : 'All fans',
+      postType: parsed.postType === 'story' ? 'story' : 'post',
+      contentRating: parsed.contentRating === 'nsfw' ? 'nsfw' : 'sfw',
+      storyDurationHours: parsed.storyDurationHours ?? DEFAULT_CREATOR_DRAFT.storyDurationHours,
+      isPaid: Boolean(parsed.isPaid),
+      price: typeof parsed.price === 'string' ? parsed.price : '',
+      content: typeof parsed.content === 'string' ? parsed.content : '',
+    };
+  } catch (error) {
+    console.warn('Could not restore creator draft', error);
+    return null;
+  }
+};
+
+const writeCreatorDraft = (draft: CreatorPostDraft) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(CREATOR_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+  } catch (error) {
+    console.warn('Could not save creator draft', error);
+  }
+};
+
+const clearCreatorDraft = () => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.removeItem(CREATOR_DRAFT_STORAGE_KEY);
+  } catch (error) {
+    console.warn('Could not clear creator draft', error);
+  }
+};
 
 const NOTIFICATION_TABS: Array<{ key: NotificationTab; label: string }> = [
   { key: 'all', label: 'All' },
@@ -250,8 +422,8 @@ const HOME_POSTS: HomePost[] = USE_SAMPLE_DATA
           'Weekend trip diary from Puerto Vallarta. New sunset set just dropped for subscribers.',
         type: 'photo',
         media: ['https://dummyimage.com/1080x680/1a2b44/e8edf5&text=Puerto+Vallarta+Set'],
-        likes: 1842,
-        comments: 221,
+        footerPrimary: '1,842 likes',
+        footerSecondary: '221 comments',
       },
       {
         id: 'hp-2',
@@ -266,8 +438,8 @@ const HOME_POSTS: HomePost[] = USE_SAMPLE_DATA
           src: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
           poster: 'https://dummyimage.com/1080x680/2a1838/e8edf5&text=Behind+The+Scenes',
         },
-        likes: 1290,
-        comments: 104,
+        footerPrimary: '1,290 likes',
+        footerSecondary: '104 comments',
       },
       {
         id: 'hp-3',
@@ -278,8 +450,8 @@ const HOME_POSTS: HomePost[] = USE_SAMPLE_DATA
         caption:
           'Late night thoughts: consistency beats motivation. Posting schedule is now Mon, Wed, Fri.',
         type: 'text',
-        likes: 932,
-        comments: 88,
+        footerPrimary: '932 likes',
+        footerSecondary: '88 comments',
       },
       {
         id: 'hp-4',
@@ -290,22 +462,87 @@ const HOME_POSTS: HomePost[] = USE_SAMPLE_DATA
         caption: 'Fresh photoset from the neon studio. Which look should I expand next?',
         type: 'photo',
         media: ['https://dummyimage.com/1080x680/22314a/e8edf5&text=Neon+Studio+Set'],
-        likes: 1544,
-        comments: 197,
+        footerPrimary: '1,544 likes',
+        footerSecondary: '197 comments',
       },
     ]
   : [];
 
 const HOME_STORIES: StoryItem[] = USE_SAMPLE_DATA
   ? [
-      { id: 'st-1', name: 'Aiko', image: 'https://i.pravatar.cc/96?img=21', isLive: true },
-      { id: 'st-2', name: 'Emily', image: 'https://i.pravatar.cc/96?img=47' },
-      { id: 'st-3', name: 'Cherry', image: 'https://i.pravatar.cc/96?img=12' },
-      { id: 'st-4', name: 'Mia', image: 'https://i.pravatar.cc/96?img=20' },
-      { id: 'st-5', name: 'Saya', image: 'https://i.pravatar.cc/96?img=14' },
-      { id: 'st-6', name: 'Fitness', image: 'https://i.pravatar.cc/96?img=26' },
-      { id: 'st-7', name: 'Nora', image: 'https://i.pravatar.cc/96?img=39' },
-      { id: 'st-8', name: 'Alex', image: 'https://i.pravatar.cc/96?img=33' },
+      {
+        id: 'st-1',
+        name: 'Aiko',
+        image: 'https://i.pravatar.cc/96?img=21',
+        previewUrl: 'https://dummyimage.com/1080x1920/1d2430/e8edf5&text=Aiko+Story',
+        previewType: 'image',
+        caption: 'Quick story preview from the studio.',
+        expiresLabel: 'Expires in 24h',
+        isLive: true,
+      },
+      {
+        id: 'st-2',
+        name: 'Emily',
+        image: 'https://i.pravatar.cc/96?img=47',
+        previewUrl: 'https://dummyimage.com/1080x1920/202a3a/e8edf5&text=Emily+Story',
+        previewType: 'image',
+        caption: 'Morning update for subscribers.',
+        expiresLabel: 'Expires in 20h',
+      },
+      {
+        id: 'st-3',
+        name: 'Cherry',
+        image: 'https://i.pravatar.cc/96?img=12',
+        previewUrl: 'https://dummyimage.com/1080x1920/2e1d2a/e8edf5&text=Cherry+Story',
+        previewType: 'image',
+        caption: 'Cherry story drop.',
+        expiresLabel: 'Expires in 18h',
+      },
+      {
+        id: 'st-4',
+        name: 'Mia',
+        image: 'https://i.pravatar.cc/96?img=20',
+        previewUrl: 'https://dummyimage.com/1080x1920/243043/e8edf5&text=Mia+Story',
+        previewType: 'image',
+        caption: 'Mia backstage moment.',
+        expiresLabel: 'Expires in 16h',
+      },
+      {
+        id: 'st-5',
+        name: 'Saya',
+        image: 'https://i.pravatar.cc/96?img=14',
+        previewUrl: 'https://dummyimage.com/1080x1920/2b213c/e8edf5&text=Saya+Story',
+        previewType: 'image',
+        caption: 'Saya evening update.',
+        expiresLabel: 'Expires in 12h',
+      },
+      {
+        id: 'st-6',
+        name: 'Fitness',
+        image: 'https://i.pravatar.cc/96?img=26',
+        previewUrl: 'https://dummyimage.com/1080x1920/233629/e8edf5&text=Fitness+Story',
+        previewType: 'image',
+        caption: 'Workout recap.',
+        expiresLabel: 'Expires in 10h',
+      },
+      {
+        id: 'st-7',
+        name: 'Nora',
+        image: 'https://i.pravatar.cc/96?img=39',
+        previewUrl: 'https://dummyimage.com/1080x1920/372a24/e8edf5&text=Nora+Story',
+        previewType: 'image',
+        caption: 'Nora check-in.',
+        expiresLabel: 'Expires in 8h',
+      },
+      {
+        id: 'st-8',
+        name: 'Alex',
+        image: 'https://i.pravatar.cc/96?img=33',
+        previewUrl: 'https://dummyimage.com/1080x1920/202020/e8edf5&text=Alex+Story',
+        previewType: 'image',
+        caption: 'Alex preview story.',
+        expiresLabel: 'Expires in 6h',
+      },
     ]
   : [];
 
@@ -315,12 +552,73 @@ export function MyHome() {
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [suggestions, setSuggestions] = useState(SUGGESTIONS);
   const [followedIds, setFollowedIds] = useState<string[]>([]);
+  const [feedPosts, setFeedPosts] = useState<HomePost[]>(HOME_POSTS);
+  const [stories, setStories] = useState<StoryItem[]>(HOME_STORIES);
+  const [loadingContent, setLoadingContent] = useState(!USE_SAMPLE_DATA);
+  const [contentError, setContentError] = useState('');
+  const [activeStory, setActiveStory] = useState<StoryItem | null>(null);
   const storiesScrollerRef = useRef<HTMLDivElement | null>(null);
-  const storyRail = useMemo(() => [...HOME_STORIES, ...HOME_STORIES, ...HOME_STORIES], []);
+  const storyRail = useMemo(() => {
+    if (stories.length > 1) {
+      return [...stories, ...stories, ...stories];
+    }
+    return stories;
+  }, [stories]);
+
+  useEffect(() => {
+    if (USE_SAMPLE_DATA) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadCreatorContent = async () => {
+      setLoadingContent(true);
+      setContentError('');
+
+      try {
+        const [postsData, storiesData] = await Promise.all([
+          fetchCreatorFeedPosts(24),
+          fetchCreatorStories(18),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setFeedPosts(
+          postsData.map(mapCreatorPostToHomePost).map((post) => ({
+            ...post,
+            footerPrimary: post.footerPrimary.replace('Â·', '-'),
+            footerSecondary: post.footerSecondary.replace('Â·', '-'),
+          }))
+        );
+        setStories(storiesData.map(mapCreatorStoryToStoryItem));
+      } catch (error) {
+        console.error(error);
+        if (cancelled) {
+          return;
+        }
+        setFeedPosts([]);
+        setStories([]);
+        setContentError('Could not load your latest posts and stories.');
+      } finally {
+        if (!cancelled) {
+          setLoadingContent(false);
+        }
+      }
+    };
+
+    void loadCreatorContent();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const node = storiesScrollerRef.current;
-    if (!node) {
+    if (!node || storyRail.length <= 1) {
       return;
     }
     const segmentWidth = node.scrollWidth / 3;
@@ -330,6 +628,10 @@ export function MyHome() {
   const handleStoriesScroll = () => {
     const node = storiesScrollerRef.current;
     if (!node) {
+      return;
+    }
+
+    if (storyRail.length <= 1) {
       return;
     }
 
@@ -349,7 +651,7 @@ export function MyHome() {
   };
 
   const filteredPosts = useMemo(() => {
-    return HOME_POSTS.filter((post) => {
+    return feedPosts.filter((post) => {
       const matchesFilter =
         activeFilter === 'all' ||
         (activeFilter === 'photos' && post.type === 'photo') ||
@@ -365,7 +667,7 @@ export function MyHome() {
 
       return matchesFilter && matchesSearch;
     });
-  }, [activeFilter, searchTerm]);
+  }, [activeFilter, searchTerm, feedPosts]);
 
   const filteredSuggestions = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -552,28 +854,41 @@ export function MyHome() {
         <div className="home-feed__sticky">
           <section className="home-stories">
             <div className="home-stories__title">Home</div>
-            <div
-              ref={storiesScrollerRef}
-              className="home-stories__scroller"
-              onScroll={handleStoriesScroll}
-            >
-              <div className="home-stories__track">
-                {storyRail.map((story, index) => (
-                  <button
-                    key={`${story.id}-${index}`}
-                    className="home-story"
-                    type="button"
-                    aria-label={`Open ${story.name} story`}
-                  >
-                    <span className="home-story__ring">
-                      <img src={story.image} alt={story.name} />
-                    </span>
-                    <span className="home-story__name">{story.name}</span>
-                    {story.isLive ? <span className="home-story__live">Live</span> : null}
-                  </button>
-                ))}
+            {stories.length ? (
+              <div
+                ref={storiesScrollerRef}
+                className="home-stories__scroller"
+                onScroll={handleStoriesScroll}
+              >
+                <div className="home-stories__track">
+                  {storyRail.map((story, index) => (
+                    <button
+                      key={`${story.id}-${index}`}
+                      className="home-story"
+                      type="button"
+                      aria-label={`Open ${story.name} story`}
+                      onClick={() => setActiveStory(story)}
+                    >
+                      <span className="home-story__ring">
+                        {story.image ? (
+                          <img src={story.image} alt={story.name} />
+                        ) : (
+                          <span className="home-story__placeholder" aria-hidden="true">
+                            {story.name.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </span>
+                      <span className="home-story__name">{story.name}</span>
+                      {story.isLive ? <span className="home-story__live">Live</span> : null}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="home-feed__empty home-feed__empty--stories">
+                {loadingContent ? 'Loading stories...' : 'No active stories right now.'}
+              </div>
+            )}
 
             <div className="home-feed__filters">
               <button
@@ -609,17 +924,25 @@ export function MyHome() {
         </div>
 
         <div className="home-feed__posts">
+          {contentError ? <div className="home-feed__error">{contentError}</div> : null}
+
           {filteredPosts.map((post) => (
             <article key={post.id} className="home-post">
               <header className="home-post__header">
                 <div className="home-post__author">
-                  <img className="home-post__avatar" src={post.avatar} alt={post.author} />
+                  {post.avatar ? (
+                    <img className="home-post__avatar" src={post.avatar} alt={post.author} />
+                  ) : (
+                    <div className="home-post__avatar home-post__avatar--placeholder" aria-hidden="true">
+                      {post.author.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div>
                     <div className="home-post__name">
                       {post.author} <VerifiedIcon />
                     </div>
                     <div className="home-post__handle">
-                      {post.handle} - {post.time}
+                      {post.handle || '@creator'} - {post.time}
                     </div>
                   </div>
                 </div>
@@ -641,17 +964,58 @@ export function MyHome() {
               ) : null}
 
               <footer className="home-post__footer">
-                <span>{post.likes.toLocaleString()} likes</span>
-                <span>{post.comments.toLocaleString()} comments</span>
+                <span>{post.footerPrimary}</span>
+                <span>{post.footerSecondary}</span>
               </footer>
             </article>
           ))}
 
-          {!filteredPosts.length ? (
-            <div className="home-feed__empty">No posts match your current filter/search.</div>
+          {!filteredPosts.length && !contentError ? (
+            <div className="home-feed__empty">
+              {loadingContent
+                ? 'Loading your latest posts...'
+                : 'Your published posts will appear here once you create them.'}
+            </div>
           ) : null}
         </div>
       </div>
+
+      {activeStory ? (
+        <div className="home-story-modal" role="dialog" aria-modal="true">
+          <button
+            className="home-story-modal__backdrop"
+            type="button"
+            aria-label="Close story preview"
+            onClick={() => setActiveStory(null)}
+          />
+          <div className="home-story-modal__card">
+            <button
+              className="home-story-modal__close"
+              type="button"
+              aria-label="Close story preview"
+              onClick={() => setActiveStory(null)}
+            >
+              <CloseIcon />
+            </button>
+            <div className="home-story-modal__meta">
+              <div className="home-story-modal__name">{activeStory.name}</div>
+              <div className="home-story-modal__expires">{activeStory.expiresLabel}</div>
+            </div>
+            <div className="home-story-modal__media">
+              {activeStory.previewType === 'video' && activeStory.previewUrl ? (
+                <video controls autoPlay muted playsInline preload="metadata">
+                  <source src={activeStory.previewUrl} />
+                </video>
+              ) : activeStory.previewType === 'image' && activeStory.previewUrl ? (
+                <img src={activeStory.previewUrl} alt={activeStory.caption} />
+              ) : (
+                <div className="home-story-modal__text">{activeStory.caption}</div>
+              )}
+            </div>
+            <div className="home-story-modal__caption">{activeStory.caption}</div>
+          </div>
+        </div>
+      ) : null}
     </MyLayout>
   );
 }
@@ -2167,18 +2531,15 @@ export function MyPaymentsAddCard() {
 }
 
 export function PostsCreate() {
+  const navigate = useNavigate();
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isPaid, setIsPaid] = useState(false);
   const [price, setPrice] = useState('');
-  const [isScheduled, setIsScheduled] = useState(false);
-  const [scheduleAt, setScheduleAt] = useState('');
-  const [audience, setAudience] = useState('All fans');
+  const [audience, setAudience] = useState<'All fans' | 'Subscribers'>('All fans');
   const [postType, setPostType] = useState<'post' | 'story'>('post');
   const [contentRating, setContentRating] = useState<'sfw' | 'nsfw'>('sfw');
   const [storyDurationHours, setStoryDurationHours] = useState('24');
-  const [pollEnabled, setPollEnabled] = useState(false);
-  const [pollOptions, setPollOptions] = useState(['', '']);
   const [notice, setNotice] = useState('');
   const [publishing, setPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2186,7 +2547,32 @@ export function PostsCreate() {
 
   const remaining = 1000 - content.length;
   const hasContent = content.trim().length > 0 || attachments.length > 0;
+  const hasDraftData =
+    content.trim().length > 0 ||
+    attachments.length > 0 ||
+    isPaid ||
+    price.trim().length > 0 ||
+    audience !== DEFAULT_CREATOR_DRAFT.audience ||
+    postType !== DEFAULT_CREATOR_DRAFT.postType ||
+    contentRating !== DEFAULT_CREATOR_DRAFT.contentRating ||
+    storyDurationHours !== DEFAULT_CREATOR_DRAFT.storyDurationHours;
   const canPublish = hasContent && (!isPaid || price.trim().length > 0) && !publishing;
+  const creatorDisplayName = NAV_PROFILE.name || 'Creator';
+
+  useEffect(() => {
+    const restored = readCreatorDraft();
+    if (!restored) {
+      return;
+    }
+
+    setContent(restored.content);
+    setAudience(restored.audience);
+    setPostType(restored.postType);
+    setContentRating(restored.contentRating);
+    setStoryDurationHours(restored.storyDurationHours);
+    setIsPaid(restored.isPaid);
+    setPrice(restored.price);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -2201,7 +2587,7 @@ export function PostsCreate() {
     if (noticeTimer.current) {
       window.clearTimeout(noticeTimer.current);
     }
-    noticeTimer.current = window.setTimeout(() => setNotice(''), 1800);
+    noticeTimer.current = window.setTimeout(() => setNotice(''), 2400);
   };
 
   const handleFiles = (event: ChangeEvent<HTMLInputElement>) => {
@@ -2217,32 +2603,76 @@ export function PostsCreate() {
     setAttachments((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
   };
 
+  const resetComposer = () => {
+    setContent(DEFAULT_CREATOR_DRAFT.content);
+    setAttachments([]);
+    setIsPaid(DEFAULT_CREATOR_DRAFT.isPaid);
+    setPrice(DEFAULT_CREATOR_DRAFT.price);
+    setAudience(DEFAULT_CREATOR_DRAFT.audience);
+    setPostType(DEFAULT_CREATOR_DRAFT.postType);
+    setContentRating(DEFAULT_CREATOR_DRAFT.contentRating);
+    setStoryDurationHours(DEFAULT_CREATOR_DRAFT.storyDurationHours);
+    clearCreatorDraft();
+  };
+
   const handleSaveDraft = () => {
-    if (!hasContent) {
+    if (!hasDraftData) {
+      clearCreatorDraft();
+      showNotice('Nothing to save yet.');
       return;
     }
-    showNotice('Draft saved.');
+
+    const draftPayload = {
+      content,
+      audience,
+      postType,
+      contentRating,
+      storyDurationHours,
+      isPaid,
+      price,
+    };
+
+    if (
+      content.trim().length > 0 ||
+      isPaid ||
+      price.trim().length > 0 ||
+      audience !== DEFAULT_CREATOR_DRAFT.audience ||
+      postType !== DEFAULT_CREATOR_DRAFT.postType ||
+      contentRating !== DEFAULT_CREATOR_DRAFT.contentRating ||
+      storyDurationHours !== DEFAULT_CREATOR_DRAFT.storyDurationHours
+    ) {
+      writeCreatorDraft(draftPayload);
+    } else {
+      clearCreatorDraft();
+    }
+
+    showNotice(
+      attachments.length
+        ? 'Draft saved. Reattach media files before publishing.'
+        : 'Draft saved.'
+    );
   };
 
   const handlePublish = async () => {
     if (!canPublish) {
       return;
     }
+
     const trimmed = content.trim();
     const priceValue = Number(price);
     if (isPaid && (!Number.isFinite(priceValue) || priceValue <= 0)) {
       showNotice('Enter a valid price.');
       return;
     }
-    if (isScheduled && scheduleAt) {
-      showNotice('Scheduling is not available yet.');
+
+    const durationHours = Math.round(Number(storyDurationHours) || 24);
+    if (postType === 'story' && (!Number.isFinite(durationHours) || durationHours < 1 || durationHours > 72)) {
+      showNotice('Story duration must be between 1 and 72 hours.');
       return;
     }
 
-    const visibility =
-      isPaid ? 'ppv' : audience === 'Subscribers' ? 'subscribers' : 'public';
-    const title = trimmed.slice(0, 80) || 'New post';
-    const durationHours = Math.max(1, Number(storyDurationHours) || 24);
+    const visibility = isPaid ? 'ppv' : audience === 'Subscribers' ? 'subscribers' : 'public';
+    const title = trimmed.slice(0, 80) || (postType === 'story' ? 'New story' : 'New post');
     const expiresAt =
       postType === 'story'
         ? new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString()
@@ -2261,19 +2691,15 @@ export function PostsCreate() {
         expires_at: expiresAt,
         files: attachments,
       });
-      setContent('');
-      setAttachments([]);
-      setIsPaid(false);
-      setPrice('');
-      setIsScheduled(false);
-      setScheduleAt('');
-      setPostType('post');
-      setContentRating('sfw');
-      setStoryDurationHours('24');
-      showNotice('Post published.');
-    } catch (err) {
-      console.error(err);
-      showNotice('Could not publish post.');
+
+      resetComposer();
+      showNotice(postType === 'story' ? 'Story published.' : 'Post published.');
+      window.setTimeout(() => navigate('/'), 250);
+    } catch (error) {
+      console.error(error);
+      showNotice(
+        error instanceof Error && error.message ? error.message : 'Could not publish content.'
+      );
     } finally {
       setPublishing(false);
     }
@@ -2287,34 +2713,6 @@ export function PostsCreate() {
       }
       return next;
     });
-  };
-
-  const toggleSchedule = () => {
-    setIsScheduled((prev) => {
-      const next = !prev;
-      if (!next) {
-        setScheduleAt('');
-      }
-      return next;
-    });
-  };
-
-  const togglePoll = () => {
-    setPollEnabled((prev) => {
-      const next = !prev;
-      if (!next) {
-        setPollOptions(['', '']);
-      }
-      return next;
-    });
-  };
-
-  const updatePollOption = (index: number, value: string) => {
-    setPollOptions((prev) => prev.map((item, itemIndex) => (itemIndex === index ? value : item)));
-  };
-
-  const addPollOption = () => {
-    setPollOptions((prev) => [...prev, '']);
   };
 
   return (
@@ -2340,7 +2738,7 @@ export function PostsCreate() {
               className="create-post__ghost"
               type="button"
               onClick={handleSaveDraft}
-              disabled={!hasContent}
+              disabled={!hasDraftData}
             >
               Save draft
             </button>
@@ -2350,7 +2748,13 @@ export function PostsCreate() {
               onClick={handlePublish}
               disabled={!canPublish}
             >
-              {publishing ? 'Publishing...' : 'Post'}
+              {publishing
+                ? postType === 'story'
+                  ? 'Publishing story...'
+                  : 'Publishing post...'
+                : postType === 'story'
+                  ? 'Publish story'
+                  : 'Publish post'}
             </button>
           </div>
         </div>
@@ -2360,9 +2764,13 @@ export function PostsCreate() {
         <div className="create-post__grid">
           <section className="my-card create-post__editor">
             <div className="create-post__author">
-              <div className="create-post__avatar" aria-hidden="true" />
+              {NAV_PROFILE.avatar ? (
+                <img className="create-post__avatar-image" src={NAV_PROFILE.avatar} alt={creatorDisplayName} />
+              ) : (
+                <div className="create-post__avatar" aria-hidden="true" />
+              )}
               <div>
-                <div className="create-post__name">Aiko Mitsuri</div>
+                <div className="create-post__name">{creatorDisplayName}</div>
                 {NAV_PROFILE.handle ? (
                   <div className="create-post__handle">{NAV_PROFILE.handle}</div>
                 ) : null}
@@ -2395,33 +2803,10 @@ export function PostsCreate() {
                 <CameraMiniIcon />
                 Add media
               </button>
-              <button className={`create-post__tool${pollEnabled ? ' is-active' : ''}`} type="button" onClick={togglePoll}>
-                <PencilIcon />
-                Poll
-              </button>
               <span className={`create-post__count${remaining < 50 ? ' is-low' : ''}`}>
                 {remaining}
               </span>
             </div>
-
-            {pollEnabled ? (
-              <div className="create-post__poll">
-                <div className="create-post__poll-title">Poll options</div>
-                {pollOptions.map((option, index) => (
-                  <input
-                    key={`poll-${index}`}
-                    className="my-input"
-                    placeholder={`Option ${index + 1}`}
-                    value={option}
-                    onChange={(event) => updatePollOption(index, event.target.value)}
-                  />
-                ))}
-                <button className="create-post__link" type="button" onClick={addPollOption}>
-                  <PlusIcon />
-                  Add another option
-                </button>
-              </div>
-            ) : null}
 
             <div className="create-post__attachments">
               {attachments.length ? (
@@ -2455,11 +2840,10 @@ export function PostsCreate() {
                 <select
                   className="my-input"
                   value={audience}
-                  onChange={(event) => setAudience(event.target.value)}
+                  onChange={(event) => setAudience(event.target.value as 'All fans' | 'Subscribers')}
                 >
                   <option>All fans</option>
                   <option>Subscribers</option>
-                  <option>Close friends</option>
                 </select>
               </label>
 
@@ -2532,30 +2916,11 @@ export function PostsCreate() {
 
               <div className="my-divider" />
 
-              <div className="my-toggle">
-                <div>
-                  <div className="create-post__toggle-title">Schedule</div>
-                  <div className="my-muted">Post later with a scheduled time.</div>
-                </div>
-                <button
-                  className={`my-toggle__switch${isScheduled ? ' is-on' : ''}`}
-                  type="button"
-                  aria-pressed={isScheduled}
-                  onClick={toggleSchedule}
-                />
+              <div className="create-post__status-note">
+                {postType === 'story'
+                  ? 'Stories publish immediately and expire automatically after the selected duration.'
+                  : 'Posts publish immediately. Scheduling and polls are disabled until the backend workflow is ready.'}
               </div>
-
-              {isScheduled ? (
-                <label className="create-post__field">
-                  <span>Publish at</span>
-                  <input
-                    className="my-input"
-                    type="datetime-local"
-                    value={scheduleAt}
-                    onChange={(event) => setScheduleAt(event.target.value)}
-                  />
-                </label>
-              ) : null}
             </div>
 
             <div className="my-card create-post__summary">
@@ -2569,15 +2934,23 @@ export function PostsCreate() {
                 <strong>{audience}</strong>
               </div>
               <div className="create-post__summary-row">
-                <span>Paid post</span>
-                <strong>{isPaid ? 'Yes' : 'No'}</strong>
+                <span>Visibility</span>
+                <strong>
+                  {isPaid
+                    ? `PPV (${formatMinorCurrency(Math.round((Number(price) || 0) * 100), 'KES')})`
+                    : audience === 'Subscribers'
+                      ? 'Subscribers only'
+                      : 'Public'}
+                </strong>
               </div>
-              {isScheduled ? (
-                <div className="create-post__summary-row">
-                  <span>Scheduled</span>
-                  <strong>{scheduleAt ? scheduleAt : 'Pick a time'}</strong>
-                </div>
-              ) : null}
+              <div className="create-post__summary-row">
+                <span>Type</span>
+                <strong>{postType === 'story' ? 'Story' : 'Post'}</strong>
+              </div>
+              <div className="create-post__summary-row">
+                <span>Content rating</span>
+                <strong>{contentRating.toUpperCase()}</strong>
+              </div>
             </div>
           </aside>
         </div>
@@ -3476,6 +3849,3 @@ function LogOutIcon() {
     </svg>
   );
 }
-
-
-

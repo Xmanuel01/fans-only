@@ -221,6 +221,153 @@ export async function updateCreatorPricing(params: {
   if (error) throw error;
 }
 
+export type CreatorContentMedia = {
+  id: number;
+  url: string;
+  mime_type: string | null;
+  width: number | null;
+  height: number | null;
+};
+
+export type CreatorContentItem = {
+  id: number;
+  title: string;
+  body: string | null;
+  visibility: 'public' | 'subscribers' | 'ppv';
+  price_cents: number | null;
+  currency: string | null;
+  content_rating: 'sfw' | 'nsfw';
+  post_type: 'post' | 'story';
+  expires_at: string | null;
+  created_at: string;
+  creator: {
+    id: string;
+    handle: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  } | null;
+  media: CreatorContentMedia[];
+};
+
+const CREATOR_CONTENT_SELECT = [
+  'id',
+  'title',
+  'body',
+  'visibility',
+  'price_cents',
+  'currency',
+  'content_rating',
+  'post_type',
+  'expires_at',
+  'created_at',
+  'creator:creators(id, handle, display_name, avatar_url)',
+  'media_assets(id, storage_path, mime_type, width, height)',
+].join(',');
+
+async function createSignedMediaMap(rows: any[]) {
+  if (!supabase) return new Map<string, string>();
+
+  const paths = rows.flatMap((row) =>
+    (row.media_assets ?? []).map((asset: any) => asset.storage_path)
+  );
+  const uniquePaths = Array.from(new Set(paths)).filter(
+    (path): path is string => typeof path === 'string' && path.length > 0
+  );
+  const signedMap = new Map<string, string>();
+
+  if (!uniquePaths.length) {
+    return signedMap;
+  }
+
+  const { data: signed, error: signedErr } = await supabase.storage
+    .from('creator-media')
+    .createSignedUrls(uniquePaths, 60 * 60);
+
+  if (signedErr) {
+    throw signedErr;
+  }
+
+  signed?.forEach((item) => {
+    if (item.path && item.signedUrl) {
+      signedMap.set(item.path, item.signedUrl);
+    }
+  });
+
+  return signedMap;
+}
+
+function mapCreatorContentRows(rows: any[], signedMap: Map<string, string>): CreatorContentItem[] {
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    visibility: row.visibility,
+    price_cents: row.price_cents,
+    currency: row.currency,
+    content_rating: row.content_rating,
+    post_type: row.post_type,
+    expires_at: row.expires_at,
+    created_at: row.created_at,
+    creator: row.creator
+      ? {
+          id: row.creator.id,
+          handle: row.creator.handle,
+          display_name: row.creator.display_name,
+          avatar_url: row.creator.avatar_url,
+        }
+      : null,
+    media: (row.media_assets ?? []).map((asset: any) => {
+      const storagePath = typeof asset.storage_path === 'string' ? asset.storage_path : '';
+      return {
+        id: asset.id,
+        url: storagePath ? signedMap.get(storagePath) ?? '' : '',
+        mime_type: asset.mime_type ?? null,
+        width: asset.width ?? null,
+        height: asset.height ?? null,
+      };
+    }),
+  }));
+}
+
+async function fetchCreatorContent(params: {
+  post_type?: 'post' | 'story';
+  limit?: number;
+  onlyActiveStories?: boolean;
+} = {}) {
+  if (!supabase) return [];
+
+  const userId = await requireUserId();
+  let query = supabase
+    .from('posts')
+    .select(CREATOR_CONTENT_SELECT)
+    .eq('creator_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(params.limit ?? 20);
+
+  if (params.post_type) {
+    query = query.eq('post_type', params.post_type);
+  }
+
+  if (params.onlyActiveStories) {
+    query = query.gt('expires_at', new Date().toISOString());
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const rows = (data ?? []) as any[];
+  const signedMap = await createSignedMediaMap(rows);
+  return mapCreatorContentRows(rows, signedMap);
+}
+
+export async function fetchCreatorFeedPosts(limit = 20): Promise<CreatorContentItem[]> {
+  return fetchCreatorContent({ post_type: 'post', limit });
+}
+
+export async function fetchCreatorStories(limit = 12): Promise<CreatorContentItem[]> {
+  return fetchCreatorContent({ post_type: 'story', limit, onlyActiveStories: true });
+}
+
 export async function upsertCreatorProfileSetup(params: {
   handle: string;
   display_name: string;
@@ -270,28 +417,33 @@ export async function publishCreatorPost(params: {
 }) {
   if (!supabase) throw new Error('Supabase not configured');
   const userId = await requireUserId();
-  const { data: post, error: postError } = await supabase
-    .from('posts')
-    .insert({
-      creator_id: userId,
-      title: params.title,
-      body: params.body ?? null,
-      visibility: params.visibility,
-      price_cents: params.price_cents ?? 0,
-      currency: params.currency ?? 'KES',
-      content_rating: params.content_rating ?? 'sfw',
-      post_type: params.post_type ?? 'post',
-      expires_at: params.expires_at ?? null,
-    })
-    .select('id')
-    .single();
-  if (postError) throw postError;
+  let postId: number | null = null;
+  const uploadedPaths: string[] = [];
 
-  const files = params.files ?? [];
-  if (!files.length) return post;
+  try {
+    const { data: post, error: postError } = await supabase
+      .from('posts')
+      .insert({
+        creator_id: userId,
+        title: params.title,
+        body: params.body ?? null,
+        visibility: params.visibility,
+        price_cents: params.price_cents ?? 0,
+        currency: params.currency ?? 'KES',
+        content_rating: params.content_rating ?? 'sfw',
+        post_type: params.post_type ?? 'post',
+        expires_at: params.expires_at ?? null,
+      })
+      .select('id')
+      .single();
+    if (postError) throw postError;
 
-  const uploads = await Promise.all(
-    files.map(async (file) => {
+    postId = post.id;
+    const files = params.files ?? [];
+    if (!files.length) return post;
+
+    const uploads = [];
+    for (const file of files) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const path = `${userId}/${post.id}/${crypto.randomUUID?.() ?? Date.now()}-${safeName}`;
       const { error: uploadError } = await supabase.storage
@@ -301,23 +453,46 @@ export async function publishCreatorPost(params: {
           upsert: false,
         });
       if (uploadError) throw uploadError;
-      return {
+      uploadedPaths.push(path);
+      uploads.push({
         post_id: post.id,
         storage_path: path,
         mime_type: file.type || null,
         width: null,
         height: null,
         size_bytes: file.size,
-      };
-    })
-  );
+      });
+    }
 
-  if (uploads.length) {
-    const { error: mediaErr } = await supabase.from('media_assets').insert(uploads);
-    if (mediaErr) throw mediaErr;
+    if (uploads.length) {
+      const { error: mediaErr } = await supabase.from('media_assets').insert(uploads);
+      if (mediaErr) throw mediaErr;
+    }
+
+    return post;
+  } catch (error) {
+    if (uploadedPaths.length) {
+      const { error: cleanupStorageError } = await supabase.storage
+        .from('creator-media')
+        .remove(uploadedPaths);
+      if (cleanupStorageError) {
+        console.warn('Failed to clean up uploaded media after publish error', cleanupStorageError);
+      }
+    }
+
+    if (postId) {
+      const { error: cleanupPostError } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', postId)
+        .eq('creator_id', userId);
+      if (cleanupPostError) {
+        console.warn('Failed to clean up draft post after publish error', cleanupPostError);
+      }
+    }
+
+    throw error;
   }
-
-  return post;
 }
 
 async function uploadCreatorProfileAsset(userId: string, folder: 'avatar' | 'banner', file: File) {
