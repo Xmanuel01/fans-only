@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   supabase,
   getSession,
@@ -98,6 +99,7 @@ const POST_SIGNUP_STEPS: ReadonlyArray<OnboardingStep> = [
 ];
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
   const [state, setState] = useState<GateState | OnboardingStep>('loading');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -684,6 +686,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           markPostSignupOnboardingSeen(userId);
           clearStoredPostSignupStep(userId);
           await ensureCreator(session.user as CreatorAuthUser);
+          navigate('/', { replace: true });
         }}
       />
     );

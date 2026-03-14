@@ -110,6 +110,7 @@ alter table public.audit_log enable row level security;
 
 -- Drop permissive public select and replace with age-verified access
 drop policy if exists "Creators: public select" on public.creators;
+drop policy if exists "Creators: age-verified select" on public.creators;
 drop policy if exists "Creators: self upsert" on public.creators;
 drop policy if exists "Creators: self update" on public.creators;
 
@@ -132,6 +133,10 @@ create policy "Creators: self update" on public.creators
   for update using (auth.uid() = id) with check (auth.uid() = id);
 
 -- Posts
+drop policy if exists "Posts: select public age-verified or owner" on public.posts;
+drop policy if exists "Posts: creator insert" on public.posts;
+drop policy if exists "Posts: creator update" on public.posts;
+
 create policy "Posts: select public age-verified or owner"
   on public.posts
   for select
@@ -155,6 +160,9 @@ create policy "Posts: creator update"
   with check (auth.uid() = creator_id);
 
 -- Media assets (inherit post visibility)
+drop policy if exists "Media: select via post permission" on public.media_assets;
+drop policy if exists "Media: creator manage" on public.media_assets;
+
 create policy "Media: select via post permission"
   on public.media_assets
   for select
@@ -194,6 +202,9 @@ create policy "Media: creator manage"
 -- Subscriptions/Tips: same; managed through edge functions with service role
 
 -- Notifications: user can read/update own
+drop policy if exists "Notifications: self select" on public.notifications;
+drop policy if exists "Notifications: self update" on public.notifications;
+
 create policy "Notifications: self select"
   on public.notifications
   for select

@@ -35,6 +35,9 @@ create index if not exists user_wallet_ledger_user_created_idx
 alter table public.user_wallets enable row level security;
 alter table public.user_wallet_ledger enable row level security;
 
+drop policy if exists "User wallets: self select" on public.user_wallets;
+drop policy if exists "User wallet ledger: self select" on public.user_wallet_ledger;
+
 create policy "User wallets: self select"
   on public.user_wallets
   for select
@@ -64,6 +67,8 @@ create index if not exists ppv_purchases_creator_idx
   on public.ppv_purchases (creator_id, created_at desc);
 
 alter table public.ppv_purchases enable row level security;
+
+drop policy if exists "PPV purchases: self select" on public.ppv_purchases;
 
 create policy "PPV purchases: self select"
   on public.ppv_purchases

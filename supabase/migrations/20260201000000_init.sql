@@ -17,6 +17,10 @@ create index if not exists profiles_age_confirmed_idx on public.profiles (age_co
 
 alter table public.profiles enable row level security;
 
+drop policy if exists "Profiles: self read" on public.profiles;
+drop policy if exists "Profiles: self update" on public.profiles;
+drop policy if exists "Profiles: self insert" on public.profiles;
+
 create policy "Profiles: self read"
   on public.profiles
   for select
@@ -48,6 +52,9 @@ create index if not exists age_gate_events_user_idx on public.age_gate_events (u
 alter table public.age_gate_events enable row level security;
 
 -- Allow authenticated users to read their own events
+drop policy if exists "Age events: self read" on public.age_gate_events;
+drop policy if exists "Age events: insert" on public.age_gate_events;
+
 create policy "Age events: self read"
   on public.age_gate_events
   for select
@@ -76,6 +83,9 @@ create index if not exists feature_requests_user_idx on public.feature_requests 
 
 alter table public.feature_requests enable row level security;
 
+drop policy if exists "Feature requests: owner select" on public.feature_requests;
+drop policy if exists "Feature requests: insert self or anonymous" on public.feature_requests;
+
 create policy "Feature requests: owner select"
   on public.feature_requests
   for select
@@ -101,6 +111,10 @@ create index if not exists creators_popularity_idx on public.creators (popularit
 create index if not exists creators_handle_idx on public.creators (lower(handle));
 
 alter table public.creators enable row level security;
+
+drop policy if exists "Creators: public select" on public.creators;
+drop policy if exists "Creators: self upsert" on public.creators;
+drop policy if exists "Creators: self update" on public.creators;
 
 create policy "Creators: public select" on public.creators for select using (true);
 

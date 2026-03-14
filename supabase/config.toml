@@ -8,3 +8,6 @@ enabled = true
 
 [studio]
 enabled = true
+
+[functions.upload-creator-profile-asset]
+verify_jwt = false

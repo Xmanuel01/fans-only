@@ -86,6 +86,11 @@ alter table public.payout_transfers enable row level security;
 alter table public.creator_balance_ledger enable row level security;
 alter table public.provider_webhook_events enable row level security;
 
+drop policy if exists "Payout account: creator select" on public.creator_payout_accounts;
+drop policy if exists "Creator balances: self select" on public.creator_balances;
+drop policy if exists "Payout transfers: self select" on public.payout_transfers;
+drop policy if exists "Balance ledger: self select" on public.creator_balance_ledger;
+
 create policy "Payout account: creator select"
   on public.creator_payout_accounts
   for select

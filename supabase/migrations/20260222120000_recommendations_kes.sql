@@ -13,6 +13,8 @@ alter table public.posts
   add column if not exists currency text not null default 'KES';
 
 -- Subscriptions select policy for members
+drop policy if exists "Subscriptions: self select" on public.subscriptions;
+
 create policy "Subscriptions: self select"
   on public.subscriptions
   for select
@@ -200,6 +202,8 @@ create policy "Media: creator manage"
   );
 
 -- Creator stats + recommendations
+drop view if exists public.creator_stats;
+
 create or replace view public.creator_stats as
 select
   c.id as creator_id,
@@ -263,6 +267,11 @@ $$;
 insert into storage.buckets (id, name, public)
 values ('creator-media', 'creator-media', false)
 on conflict (id) do nothing;
+
+drop policy if exists "Creator media: insert own" on storage.objects;
+drop policy if exists "Creator media: select via post" on storage.objects;
+drop policy if exists "Creator media: update own" on storage.objects;
+drop policy if exists "Creator media: delete own" on storage.objects;
 
 create policy "Creator media: insert own"
   on storage.objects

@@ -1,5 +1,7 @@
 begin;
 
+drop view if exists public.creator_stats;
+
 create or replace view public.creator_stats as
 select
   c.id as creator_id,
