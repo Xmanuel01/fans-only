@@ -7,7 +7,12 @@ const CREATOR_PROFILE_BUCKET = Deno.env.get("CREATOR_PROFILE_BUCKET") ?? "creato
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return jsonWithCors({ error: "Method not allowed" }, 405);
-  if (!supabase) return jsonWithCors({ error: "Supabase not configured" }, 500);
+  if (!supabase) {
+    return jsonWithCors(
+      { error: "Edge function is missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY." },
+      500,
+    );
+  }
 
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.replace("Bearer ", "");
@@ -39,7 +44,7 @@ serve(async (req) => {
   });
 
   if (uploadError) {
-    return jsonWithCors({ error: uploadError.message ?? "Upload failed" }, 500);
+    return jsonWithCors({ error: `Storage upload failed: ${uploadError.message ?? "Upload failed"}` }, 500);
   }
 
   const { data } = supabase.storage.from(CREATOR_PROFILE_BUCKET).getPublicUrl(path);
@@ -62,7 +67,10 @@ async function ensureCreatorProfileBucket() {
         public: true,
       });
       if (updateError) {
-        return { ok: false as const, error: updateError.message ?? "Could not update bucket" };
+        return {
+          ok: false as const,
+          error: `Could not update bucket ${CREATOR_PROFILE_BUCKET}: ${updateError.message ?? "unknown error"}`,
+        };
       }
     }
     return { ok: true as const };
@@ -73,7 +81,10 @@ async function ensureCreatorProfileBucket() {
   });
 
   if (createError && !/already exists/i.test(createError.message ?? "")) {
-    return { ok: false as const, error: createError.message ?? "Could not create bucket" };
+    return {
+      ok: false as const,
+      error: `Could not create bucket ${CREATOR_PROFILE_BUCKET}: ${createError.message ?? "unknown error"}`,
+    };
   }
 
   return { ok: true as const };

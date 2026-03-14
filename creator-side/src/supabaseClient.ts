@@ -326,16 +326,15 @@ async function uploadCreatorProfileAsset(userId: string, folder: 'avatar' | 'ban
   formData.set('folder', folder);
   formData.set('file', file);
 
-  const { data, error } = await supabase.functions.invoke('upload-creator-profile-asset', {
-    body: formData,
-  });
-
-  if (!error && data && typeof data.publicUrl === 'string') {
-    return data.publicUrl;
-  }
-
-  if (error && !isMissingEdgeFunction(error)) {
-    throw error;
+  try {
+    const data = await invokeProfileUploadFunction(formData);
+    if (data && typeof data.publicUrl === 'string') {
+      return data.publicUrl;
+    }
+  } catch (error) {
+    if (!isMissingEdgeFunction(error)) {
+      throw error;
+    }
   }
 
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -358,7 +357,7 @@ async function uploadCreatorProfileAsset(userId: string, folder: 'avatar' | 'ban
 
 function isMissingEdgeFunction(error: unknown) {
   const message = getErrorMessage(error);
-  return /404|not found|failed to send a request to the edge function/i.test(message);
+  return /404|not found|failed to send a request to the edge function|failed to fetch/i.test(message);
 }
 
 function isBucketMissingError(error: unknown) {
@@ -374,6 +373,54 @@ function getErrorMessage(error: unknown) {
     return error.message;
   }
   return '';
+}
+
+async function invokeProfileUploadFunction(formData: FormData) {
+  if (!supabase || !supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase not configured');
+  }
+
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    throw sessionError;
+  }
+
+  if (!session?.access_token) {
+    throw new Error('Authentication required');
+  }
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/upload-creator-profile-asset`, {
+    method: 'POST',
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: formData,
+  });
+
+  const responseText = await response.text();
+  let payload: any = null;
+  if (responseText.trim()) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      payload = { error: responseText.trim() };
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.error?.trim?.() ||
+        payload?.message?.trim?.() ||
+        `Profile upload failed (${response.status}).`,
+    );
+  }
+
+  return payload;
 }
 
 export async function requestCreatorPayout(params: {
