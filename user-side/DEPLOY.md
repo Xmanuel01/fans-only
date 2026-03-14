@@ -5,6 +5,9 @@ User app is served at `/user/` under the main domain.
 ## Required env
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- `VITE_HELP_CENTER_URL`
+- `VITE_EXIT_URL`
+- `VITE_SUPPORT_EMAIL`
 
 ## Recommended env
 - `VITE_PUBLIC_APP_ORIGIN=https://fans-only-olive.vercel.app` (forces auth callbacks to primary domain)

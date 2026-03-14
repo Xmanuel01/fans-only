@@ -1,0 +1,278 @@
+body {
+  margin: 0;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  background: #0a0f1a;
+  color: #ebeff8;
+}
+
+.creator-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+}
+
+.creator-sidebar {
+  background: #0d1423;
+  border-right: 1px solid #1f2a3d;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.creator-brand {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.creator-nav {
+  display: grid;
+  gap: 8px;
+}
+
+.creator-nav-link {
+  border: 1px solid #1f2a3d;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #c9d4ea;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.creator-nav-link:hover {
+  border-color: #2e3d57;
+  background: #131d31;
+}
+
+.creator-nav-link.active {
+  border-color: #5b8dff;
+  background: #162744;
+  color: #ffffff;
+}
+
+.creator-sidebar-footer {
+  margin-top: auto;
+  display: grid;
+  gap: 10px;
+}
+
+.creator-link-btn,
+.creator-ghost-btn,
+.creator-primary-btn {
+  border-radius: 10px;
+  border: 1px solid #2a3a55;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.creator-link-btn,
+.creator-ghost-btn {
+  background: #111b2f;
+  color: #d5e3ff;
+}
+
+.creator-primary-btn {
+  background: #4b7cff;
+  border-color: #4b7cff;
+  color: white;
+}
+
+.creator-primary-btn:disabled,
+.creator-ghost-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.creator-main {
+  padding: 28px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.creator-header h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.creator-header p {
+  margin: 8px 0 0;
+  color: #9eb2d6;
+}
+
+.creator-alert {
+  border-radius: 10px;
+  padding: 12px;
+  font-weight: 600;
+}
+
+.creator-alert.ok {
+  background: #173827;
+  border: 1px solid #275b3d;
+}
+
+.creator-alert.error {
+  background: #38181a;
+  border: 1px solid #6b2a2d;
+}
+
+.creator-card,
+.creator-form {
+  border-radius: 14px;
+  border: 1px solid #1f2a3d;
+  background: #101a2d;
+  padding: 16px;
+}
+
+.creator-form,
+.creator-inline-form {
+  display: grid;
+  gap: 12px;
+}
+
+.creator-form label,
+.creator-inline-form label {
+  display: grid;
+  gap: 6px;
+  color: #d6e1f4;
+  font-size: 14px;
+}
+
+.creator-form input,
+.creator-form select,
+.creator-form textarea,
+.creator-inline-form input,
+.creator-inline-form select {
+  border-radius: 10px;
+  border: 1px solid #2a3a55;
+  background: #0d1526;
+  color: #eef2fb;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.creator-grid.two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.creator-hint {
+  color: #a7badc;
+  font-size: 13px;
+  border: 1px dashed #30466d;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.creator-file-list {
+  border-radius: 10px;
+  border: 1px solid #273956;
+  background: #0d1526;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.creator-metric-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.creator-metric-label {
+  color: #9db0d2;
+  font-size: 13px;
+}
+
+.creator-metric-value {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.creator-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.creator-table-wrap {
+  overflow-x: auto;
+}
+
+.creator-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.creator-table th,
+.creator-table td {
+  border-bottom: 1px solid #22314c;
+  padding: 10px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.creator-table th {
+  color: #9eb2d6;
+  font-weight: 600;
+}
+
+.creator-muted {
+  color: #9eb2d6;
+}
+
+.creator-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.creator-details-grid div {
+  display: grid;
+  gap: 4px;
+}
+
+.creator-details-grid span {
+  color: #9eb2d6;
+  font-size: 13px;
+}
+
+.creator-details-grid strong {
+  font-size: 15px;
+}
+
+@media (max-width: 900px) {
+  .creator-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .creator-sidebar {
+    border-right: none;
+    border-bottom: 1px solid #1f2a3d;
+    gap: 12px;
+  }
+
+  .creator-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .creator-main {
+    padding: 20px;
+  }
+
+  .creator-grid.two,
+  .creator-details-grid,
+  .creator-metric-row {
+    grid-template-columns: 1fr;
+  }
+}

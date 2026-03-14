@@ -20,8 +20,9 @@ const readOptional = (value: string | undefined): string | null => {
   return trimmed ? trimmed : null
 }
 
-const readEmail = (value: string | undefined, name: string): string | null => {
-  const email = readOptional(value)
+const readEmail = (value: string | null, name: string): string | null => {
+  if (!value) return null
+  const email = value.trim()
   if (!email) return null
   const isValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
   if (!isValid) {
@@ -71,19 +72,17 @@ const publicAppOrigin = normalizeUrl(
 )
 
 const helpCenterUrl = normalizeUrl(
-  readOptional(import.meta.env.VITE_HELP_CENTER_URL),
+  readRequired(import.meta.env.VITE_HELP_CENTER_URL, 'VITE_HELP_CENTER_URL'),
   'VITE_HELP_CENTER_URL'
 )
-const releaseNotesUrl = normalizeUrl(
-  readOptional(import.meta.env.VITE_RELEASE_NOTES_URL),
-  'VITE_RELEASE_NOTES_URL'
+const exitUrl = normalizeUrl(
+  readRequired(import.meta.env.VITE_EXIT_URL, 'VITE_EXIT_URL'),
+  'VITE_EXIT_URL'
 )
-const appDownloadUrl = normalizeUrl(
-  readOptional(import.meta.env.VITE_APP_DOWNLOAD_URL),
-  'VITE_APP_DOWNLOAD_URL'
+const supportEmail = readEmail(
+  readRequired(import.meta.env.VITE_SUPPORT_EMAIL, 'VITE_SUPPORT_EMAIL'),
+  'VITE_SUPPORT_EMAIL'
 )
-const exitUrl = normalizeUrl(readOptional(import.meta.env.VITE_EXIT_URL), 'VITE_EXIT_URL')
-const supportEmail = readEmail(import.meta.env.VITE_SUPPORT_EMAIL, 'VITE_SUPPORT_EMAIL')
 
 const giftCreatorId = readOptional(import.meta.env.VITE_GIFT_CREATOR_ID)
 const giftAmountRaw = readOptional(import.meta.env.VITE_GIFT_AMOUNT_MAJOR)
@@ -98,17 +97,11 @@ export const env = {
   creatorAppUrl,
   publicAppOrigin,
   helpCenterUrl,
-  releaseNotesUrl,
-  appDownloadUrl,
   exitUrl,
   supportEmail,
   giftCreatorId,
   giftAmountMajor,
   mpesaStkEnabled,
-  enableSampleData:
-    !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true',
-  enableDemoMode:
-    !import.meta.env.PROD && import.meta.env.VITE_ENABLE_DEMO_MODE !== 'false',
   isProd: Boolean(import.meta.env.PROD),
 }
 
@@ -119,6 +112,16 @@ export const envStatus = {
 }
 
 export const isSupabaseConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey)
+
+if (envStatus.hasIssues && import.meta.env.PROD) {
+  const details = [
+    missing.length ? `missing: ${missing.join(', ')}` : null,
+    invalid.length ? `invalid: ${invalid.join(', ')}` : null,
+  ]
+    .filter(Boolean)
+    .join(' | ')
+  throw new Error(`[env] Production configuration invalid (${details})`)
+}
 
 if (envStatus.hasIssues && import.meta.env.DEV) {
   const details = [

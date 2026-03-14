@@ -1262,6 +1262,22 @@ body {
   margin-top: 12px;
 }
 
+.payment-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.payment-label {
+  color: #c8d2e6;
+}
+
+.payment-value {
+  font-weight: 700;
+  color: #eef2fb;
+}
+
 .field-grid.two {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

@@ -8,6 +8,7 @@ export const supabase =
   isSupabaseConfigured && supabaseUrl && supabaseAnonKey
     ? createClient(supabaseUrl, supabaseAnonKey)
     : null;
+const CREATOR_PROFILE_BUCKET = 'creator-profiles';
 
 const FALLBACK_PUBLIC_APP_ORIGIN = 'https://fans-only-olive.vercel.app';
 const resolveAuthRedirectOrigin = () => {
@@ -220,6 +221,40 @@ export async function updateCreatorPricing(params: {
   if (error) throw error;
 }
 
+export async function upsertCreatorProfileSetup(params: {
+  handle: string;
+  display_name: string;
+  category: string;
+  subscription_price_cents: number;
+  subscription_currency?: string;
+  avatarFile?: File | null;
+  bannerFile?: File | null;
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const userId = await requireUserId();
+  const payload: Record<string, unknown> = {
+    id: userId,
+    handle: params.handle,
+    display_name: params.display_name,
+    category: params.category,
+    subscription_price_cents: params.subscription_price_cents,
+    subscription_currency: params.subscription_currency ?? 'KES',
+    updated_at: new Date().toISOString(),
+  };
+
+  if (params.avatarFile) {
+    payload.avatar_url = await uploadCreatorProfileAsset(userId, 'avatar', params.avatarFile);
+  }
+
+  if (params.bannerFile) {
+    payload.banner_url = await uploadCreatorProfileAsset(userId, 'banner', params.bannerFile);
+    payload.banner_media_type = params.bannerFile.type.startsWith('video/') ? 'video' : 'image';
+  }
+
+  const { error } = await supabase.from('creators').upsert(payload);
+  if (error) throw error;
+}
+
 export async function publishCreatorPost(params: {
   title: string;
   body?: string | null;
@@ -281,6 +316,19 @@ export async function publishCreatorPost(params: {
   }
 
   return post;
+}
+
+async function uploadCreatorProfileAsset(userId: string, folder: 'avatar' | 'banner', file: File) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = `${userId}/${folder}/${crypto.randomUUID?.() ?? Date.now()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage.from(CREATOR_PROFILE_BUCKET).upload(path, file, {
+    contentType: file.type || undefined,
+    upsert: false,
+  });
+  if (uploadError) throw uploadError;
+  const { data } = supabase.storage.from(CREATOR_PROFILE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
 }
 
 export async function requestCreatorPayout(params: {

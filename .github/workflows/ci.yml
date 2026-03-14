@@ -58,6 +58,9 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL != '' && secrets.VITE_SUPABASE_URL || 'https://example.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY != '' && secrets.VITE_SUPABASE_ANON_KEY || 'anon-key-placeholder' }}
+          VITE_HELP_CENTER_URL: ${{ secrets.VITE_HELP_CENTER_URL != '' && secrets.VITE_HELP_CENTER_URL || 'https://example.com/help' }}
+          VITE_EXIT_URL: ${{ secrets.VITE_EXIT_URL != '' && secrets.VITE_EXIT_URL || 'https://example.com/exit' }}
+          VITE_SUPPORT_EMAIL: ${{ secrets.VITE_SUPPORT_EMAIL != '' && secrets.VITE_SUPPORT_EMAIL || 'support@example.com' }}
         run: npm run build
 
   creator-app:
@@ -101,10 +104,15 @@ jobs:
             creator-side/package-lock.json
       - name: Install root dependencies
         run: npm ci
+      - name: Runtime mock guard
+        run: npm run check:no-mock-runtime
       - name: Build unified dist
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL != '' && secrets.VITE_SUPABASE_URL || 'https://example.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY != '' && secrets.VITE_SUPABASE_ANON_KEY || 'anon-key-placeholder' }}
+          VITE_HELP_CENTER_URL: ${{ secrets.VITE_HELP_CENTER_URL != '' && secrets.VITE_HELP_CENTER_URL || 'https://example.com/help' }}
+          VITE_EXIT_URL: ${{ secrets.VITE_EXIT_URL != '' && secrets.VITE_EXIT_URL || 'https://example.com/exit' }}
+          VITE_SUPPORT_EMAIL: ${{ secrets.VITE_SUPPORT_EMAIL != '' && secrets.VITE_SUPPORT_EMAIL || 'support@example.com' }}
         run: npm run build
       - name: Verify dist layout
         run: |

@@ -7,12 +7,16 @@ const envChecks = [
   {
     label: "user-side/.env",
     path: "user-side/.env",
-    required: ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY"],
+    required: [
+      "VITE_SUPABASE_URL",
+      "VITE_SUPABASE_ANON_KEY",
+      "VITE_HELP_CENTER_URL",
+      "VITE_EXIT_URL",
+      "VITE_SUPPORT_EMAIL",
+    ],
     optional: [
       "VITE_CREATOR_APP_URL",
       "VITE_PUBLIC_APP_ORIGIN",
-      "VITE_EXIT_URL",
-      "VITE_SUPPORT_EMAIL",
       "VITE_MPESA_STK_ENABLED",
     ],
   },

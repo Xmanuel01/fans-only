@@ -55,6 +55,9 @@ async function main() {
   await assertHtml200("/app/deep-link-check");
   await assertHtml200("/user/deep-link-check");
   await assertHtml200("/creator/deep-link-check");
+  await assertHtml200("/creator/my/chats");
+  await assertHtml200("/creator/my/settings");
+  await assertHtml200("/creator/my/payments/add_card");
 
   assertHeaderIncludes(appRes, "strict-transport-security", "max-age=63072000", "/app/");
   assertHeaderIncludes(appRes, "content-security-policy", "connect-src 'self'", "/app/");

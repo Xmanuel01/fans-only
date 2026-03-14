@@ -27,6 +27,7 @@ Primary host: `https://fans-only-olive.vercel.app` (redirects to `/app/`).
 ## Build and test
 - Lint all apps: `npm run lint`
 - Test all apps: `npm run test`
+- Runtime mock guard: `npm run check:no-mock-runtime`
 - Build unified static output: `npm run build`
 - Unified output structure:
   - `dist/app/`
@@ -43,6 +44,9 @@ Primary host: `https://fans-only-olive.vercel.app` (redirects to `/app/`).
 - User app (`user-side`) expects:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_ANON_KEY`
+  - `VITE_HELP_CENTER_URL`
+  - `VITE_EXIT_URL`
+  - `VITE_SUPPORT_EMAIL`
   - Optional: `VITE_CREATOR_APP_URL` (defaults to `/creator`)
   - Optional: `VITE_PUBLIC_APP_ORIGIN` (recommended: `https://fans-only-olive.vercel.app`)
 - Creator app (`creator-side`) expects:
