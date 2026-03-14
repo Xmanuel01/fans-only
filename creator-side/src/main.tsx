@@ -9,6 +9,8 @@ if (redirectPath) {
   window.history.replaceState(null, '', redirectPath);
 }
 
+document.body.classList.add('react-page');
+
 const rootElement = document.getElementById('react-root');
 
 if (!rootElement) {

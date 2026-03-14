@@ -1,4 +1,5 @@
-﻿import { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { env } from '../env';
 import SettingsShell from './SettingsShell';
 
 type ProfileForm = {
@@ -8,19 +9,28 @@ type ProfileForm = {
   location: string;
 };
 
-const INITIAL_FORM: ProfileForm = {
-  username: '@aiko.mitsuri',
-  displayName: 'Aiko Mitsuri',
-  bio:
-    'Osu!, Welcome to my Fanvue\n' +
-    '* I am Aiko, *\n' +
-    'I move with quiet confidence, soft curves, and a gaze that lingers longer than expected. ' +
-    'My world is built on beauty, lifestyle, fashion, fitness, and sensual aesthetics, captured ' +
-    'in high-quality visuals meant to feel close, warm, and irresistibly personal. I create ' +
-    'moments that invite you in from cozy, intimate indoor scenes to polished, magazine-worthy looks. ' +
-    'Expect exclusive refined glamour, confident',
-  location: '',
-};
+const USE_SAMPLE_DATA = !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true';
+
+const INITIAL_FORM: ProfileForm = USE_SAMPLE_DATA
+  ? {
+      username: '@aiko.mitsuri',
+      displayName: 'Aiko Mitsuri',
+      bio:
+        'Osu!, Welcome to my Fanvue\n' +
+        '* I am Aiko, *\n' +
+        'I move with quiet confidence, soft curves, and a gaze that lingers longer than expected. ' +
+        'My world is built on beauty, lifestyle, fashion, fitness, and sensual aesthetics, captured ' +
+        'in high-quality visuals meant to feel close, warm, and irresistibly personal. I create ' +
+        'moments that invite you in from cozy, intimate indoor scenes to polished, magazine-worthy looks. ' +
+        'Expect exclusive refined glamour, confident',
+      location: '',
+    }
+  : {
+      username: '',
+      displayName: '',
+      bio: '',
+      location: '',
+    };
 
 export default function SettingsProfile() {
   const [form, setForm] = useState<ProfileForm>(INITIAL_FORM);
@@ -37,6 +47,18 @@ export default function SettingsProfile() {
       form.location !== saved.location
     );
   }, [form, saved]);
+
+  const profileUrl = useMemo(() => {
+    const trimmed = form.username.trim();
+    if (!trimmed || !env.consumerAppUrl) {
+      return '';
+    }
+    const handle = trimmed.replace(/^@/, '');
+    if (!handle) {
+      return '';
+    }
+    return `${env.consumerAppUrl.replace(/\/$/, '')}/creator/${handle}`;
+  }, [form.username]);
 
   return (
     <SettingsShell activeItem="profile" userHandle={form.username}>
@@ -87,7 +109,7 @@ export default function SettingsProfile() {
                 <CheckIcon />
               </span>
             </div>
-            <small>https://onlyfans.com/aiko.mitsuri</small>
+            {profileUrl ? <small>{profileUrl}</small> : null}
           </label>
 
           <label className="field">

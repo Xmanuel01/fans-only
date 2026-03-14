@@ -1,6 +1,8 @@
+@import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap");
+
 body.of-profile-body {
   margin: 0;
-  font-family: "Roboto", "Segoe UI", sans-serif;
+  font-family: "Open Sans", "Segoe UI", sans-serif;
   background: #f3f5f8;
   color: #1f2a35;
 }

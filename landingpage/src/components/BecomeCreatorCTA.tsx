@@ -19,13 +19,13 @@ const BecomeCreatorCTA = () => {
             Turn Your Passion Into <span className="text-gradient-gold">Income</span>
           </h2>
           <p className="text-muted-foreground text-lg mb-10 max-w-xl mx-auto">
-            Join creators earning on their own terms. Share SFW or NSFW content -
+            Join thousands of creators earning on their own terms. Share SFW or NSFW content -
             you're in control.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12">
             {[
-              { icon: DollarSign, title: "Reliable payouts", desc: "Built for creator businesses" },
+              { icon: DollarSign, title: "85% Payouts", desc: "Keep more of what you earn" },
               { icon: TrendingUp, title: "Grow Fast", desc: "Built-in discovery tools" },
               { icon: Sparkles, title: "Full Freedom", desc: "SFW & NSFW welcome" },
             ].map((item, i) => (

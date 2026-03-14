@@ -94,16 +94,6 @@ export const envStatus = {
 export const isSupabaseConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey);
 export const isConsumerAppConfigured = Boolean(env.consumerAppUrl);
 
-if (envStatus.hasIssues && import.meta.env.PROD) {
-  const details = [
-    missing.length ? `missing: ${missing.join(', ')}` : null,
-    invalid.length ? `invalid: ${invalid.join(', ')}` : null,
-  ]
-    .filter(Boolean)
-    .join(' | ');
-  throw new Error(`[env] Production configuration invalid (${details}).`);
-}
-
 if (envStatus.hasIssues && import.meta.env.DEV) {
   const details = [
     missing.length ? `missing: ${missing.join(', ')}` : null,

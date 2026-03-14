@@ -1,6 +1,8 @@
 import { useEffect, type ComponentType } from 'react';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
 import { AuthGate } from './AuthGate';
+import { env } from './env';
+import { ErrorBoundary } from './ErrorBoundary';
 import { HtmlPage, normalizePath, resolveSnapshotFile } from './HtmlPage';
 import ProfileAiko from './pages/ProfileAiko';
 import { MyHome } from './pages/MyPages';
@@ -30,7 +32,6 @@ import {
 
 const REACT_ROUTES: Record<string, ComponentType> = {
   '/': MyHome,
-  '/aiko_mitsuri': ProfileAiko,
   '/my/settings/profile': SettingsProfile,
   '/my/settings': SettingsHome,
   '/my/settings/account': SettingsAccount,
@@ -52,10 +53,27 @@ const REACT_ROUTES: Record<string, ComponentType> = {
   '/posts/create': PostsCreate,
 };
 
+if (!import.meta.env.PROD) {
+  REACT_ROUTES['/aiko_mitsuri'] = ProfileAiko;
+}
+
+const CREATOR_BASE_PATH = env.creatorBasePath ?? '/creator';
+
+const stripBasePath = (path: string) => {
+  if (!CREATOR_BASE_PATH || CREATOR_BASE_PATH === '/') {
+    return path;
+  }
+  if (path.startsWith(CREATOR_BASE_PATH)) {
+    const stripped = path.slice(CREATOR_BASE_PATH.length);
+    return stripped || '/';
+  }
+  return path;
+};
+
 function RouteLoader() {
   const location = useLocation();
   const navigate = useNavigate();
-  const normalizedPath = normalizePath(location.pathname);
+  const normalizedPath = normalizePath(stripBasePath(location.pathname));
   const ReactPage = REACT_ROUTES[normalizedPath];
 
   useEffect(() => {
@@ -99,10 +117,12 @@ function RouteLoader() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthGate>
-        <RouteLoader />
-      </AuthGate>
+    <BrowserRouter basename={CREATOR_BASE_PATH === '/' ? undefined : CREATOR_BASE_PATH}>
+      <ErrorBoundary>
+        <AuthGate>
+          <RouteLoader />
+        </AuthGate>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }
@@ -160,13 +180,19 @@ function LinkInterceptor() {
         return;
       }
 
-      const url = new URL(href, window.location.href);
+      let url: URL;
+
+      try {
+        url = new URL(href, window.location.href);
+      } catch {
+        return;
+      }
 
       if (url.origin !== window.location.origin) {
         return;
       }
 
-      const nextPath = normalizePath(url.pathname);
+      const nextPath = normalizePath(stripBasePath(url.pathname));
 
       if (!resolveSnapshotFile(nextPath) && !REACT_ROUTES[nextPath]) {
         return;
