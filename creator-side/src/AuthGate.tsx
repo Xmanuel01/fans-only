@@ -1482,22 +1482,6 @@ function CreatorOnboardingProfileSetup({
   const [bannerPreviewUrl, setBannerPreviewUrl] = useState<string | null>(null);
   const [bannerPreviewType, setBannerPreviewType] = useState<'image' | 'video' | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (avatarPreviewUrl?.startsWith('blob:')) {
-        URL.revokeObjectURL(avatarPreviewUrl);
-      }
-    };
-  }, [avatarPreviewUrl]);
-
-  useEffect(() => {
-    return () => {
-      if (bannerPreviewUrl?.startsWith('blob:')) {
-        URL.revokeObjectURL(bannerPreviewUrl);
-      }
-    };
-  }, [bannerPreviewUrl]);
-
   const canContinue = Boolean(
     category.length === PROFILE_CATEGORY_SELECTION_COUNT && avatarFile && bannerFile,
   );
@@ -1545,13 +1529,15 @@ function CreatorOnboardingProfileSetup({
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
                   if (!file) return;
-                  setAvatarFile(file);
-                  setAvatarPreviewUrl((previous) => {
-                    if (previous?.startsWith('blob:')) {
-                      URL.revokeObjectURL(previous);
-                    }
-                    return URL.createObjectURL(file);
-                  });
+                  setError(null);
+                  void readPreviewSource(file)
+                    .then((previewUrl) => {
+                      setAvatarFile(file);
+                      setAvatarPreviewUrl(previewUrl);
+                    })
+                    .catch((nextError: any) => {
+                      setError(nextError?.message ?? 'Could not load preview.');
+                    });
                 }}
                 type="file"
               />
@@ -1581,14 +1567,17 @@ function CreatorOnboardingProfileSetup({
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
                   if (!file) return;
-                  setBannerFile(file);
-                  setBannerPreviewType(file.type.startsWith('video/') ? 'video' : 'image');
-                  setBannerPreviewUrl((previous) => {
-                    if (previous?.startsWith('blob:')) {
-                      URL.revokeObjectURL(previous);
-                    }
-                    return URL.createObjectURL(file);
-                  });
+                  const nextPreviewType = file.type.startsWith('video/') ? 'video' : 'image';
+                  setError(null);
+                  void readPreviewSource(file)
+                    .then((previewUrl) => {
+                      setBannerFile(file);
+                      setBannerPreviewType(nextPreviewType);
+                      setBannerPreviewUrl(previewUrl);
+                    })
+                    .catch((nextError: any) => {
+                      setError(nextError?.message ?? 'Could not load preview.');
+                    });
                 }}
                 type="file"
               />
@@ -1689,6 +1678,21 @@ function CreatorOnboardingProfileSetup({
       </div>
     </div>
   );
+}
+
+function readPreviewSource(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not load preview.'));
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('Could not load preview.'));
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function shouldShowPostSignupOnboarding(user: CreatorAuthUser | null | undefined) {

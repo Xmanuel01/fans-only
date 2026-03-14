@@ -322,15 +322,58 @@ export async function publishCreatorPost(params: {
 
 async function uploadCreatorProfileAsset(userId: string, folder: 'avatar' | 'banner', file: File) {
   if (!supabase) throw new Error('Supabase not configured');
+  const formData = new FormData();
+  formData.set('folder', folder);
+  formData.set('file', file);
+
+  const { data, error } = await supabase.functions.invoke('upload-creator-profile-asset', {
+    body: formData,
+  });
+
+  if (!error && data && typeof data.publicUrl === 'string') {
+    return data.publicUrl;
+  }
+
+  if (error && !isMissingEdgeFunction(error)) {
+    throw error;
+  }
+
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const path = `${userId}/${folder}/${crypto.randomUUID?.() ?? Date.now()}-${safeName}`;
   const { error: uploadError } = await supabase.storage.from(CREATOR_PROFILE_BUCKET).upload(path, file, {
     contentType: file.type || undefined,
     upsert: false,
   });
-  if (uploadError) throw uploadError;
-  const { data } = supabase.storage.from(CREATOR_PROFILE_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
+  if (uploadError) {
+    if (isBucketMissingError(uploadError)) {
+      throw new Error(
+        'Profile uploads are not configured yet. Deploy the upload-creator-profile-asset edge function or create the creator-profiles bucket in Supabase.',
+      );
+    }
+    throw uploadError;
+  }
+  const { data: publicUrlData } = supabase.storage.from(CREATOR_PROFILE_BUCKET).getPublicUrl(path);
+  return publicUrlData.publicUrl;
+}
+
+function isMissingEdgeFunction(error: unknown) {
+  const message = getErrorMessage(error);
+  return /404|not found|failed to send a request to the edge function/i.test(message);
+}
+
+function isBucketMissingError(error: unknown) {
+  const message = getErrorMessage(error);
+  return /bucket not found/i.test(message);
+}
+
+function getErrorMessage(error: unknown) {
+  if (!error) return '';
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message;
+  }
+  return '';
 }
 
 export async function requestCreatorPayout(params: {
