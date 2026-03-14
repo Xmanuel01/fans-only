@@ -207,12 +207,12 @@ body {
 
 .onboarding-card {
   position: relative;
-  width: min(760px, 100%);
+  width: min(700px, 100%);
   display: grid;
   justify-items: center;
-  gap: 28px;
+  gap: 24px;
   text-align: center;
-  padding: 36px 56px 44px;
+  padding: 32px 48px 40px;
 }
 
 .onboarding-flow {
@@ -736,6 +736,8 @@ body {
   top: 34%;
   width: 42px;
   height: 42px;
+  padding: 0;
+  border: none;
   border-radius: 999px;
   display: grid;
   place-items: center;
@@ -743,6 +745,12 @@ body {
   color: rgba(255, 255, 255, 0.95);
   font-size: 30px;
   line-height: 1;
+  cursor: pointer;
+}
+
+.onboarding-nav:disabled {
+  opacity: 0.72;
+  cursor: default;
 }
 
 .onboarding-nav-prev {
@@ -755,7 +763,7 @@ body {
 
 .onboarding-globe {
   position: relative;
-  width: 276px;
+  width: 248px;
   aspect-ratio: 1;
   border-radius: 50%;
   background:
@@ -811,11 +819,12 @@ body {
 
 .onboarding-title {
   margin: 0;
-  max-width: 620px;
-  font-size: clamp(44px, 6.2vw, 60px);
-  line-height: 0.98;
+  max-width: 700px;
+  font-size: clamp(36px, 5.4vw, 52px);
+  line-height: 1.02;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
 }
 
 .onboarding-title__accent {
@@ -823,13 +832,13 @@ body {
 }
 
 .onboarding-cta {
-  width: min(600px, 100%);
+  width: min(560px, 100%);
   border: none;
   border-radius: 999px;
-  padding: 18px 24px;
+  padding: 17px 24px;
   background: #ffffff;
   color: #111111;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 800;
   cursor: pointer;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
@@ -882,10 +891,11 @@ body {
 
 .onboarding-legal {
   margin: 0;
-  max-width: 640px;
+  max-width: 620px;
   color: rgba(255, 255, 255, 0.82);
-  font-size: 16px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 
 .onboarding-legal a {
@@ -899,7 +909,7 @@ body {
 
 @media (max-width: 760px) {
   .onboarding-card {
-    padding: 24px 24px 40px;
+    padding: 24px 24px 36px;
     gap: 24px;
   }
 
@@ -936,11 +946,11 @@ body {
   }
 
   .onboarding-globe {
-    width: 220px;
+    width: 208px;
   }
 
   .onboarding-title {
-    font-size: clamp(28px, 7vw, 42px);
+    font-size: clamp(26px, 6.6vw, 38px);
   }
 
   .onboarding-screen__title {

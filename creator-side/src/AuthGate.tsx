@@ -344,6 +344,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   if (state === 'post-signup-intro') {
     return (
       <CreatorOnboardingIntro
+        onBack={async () => {
+          await signOut();
+          setState('unauthenticated');
+        }}
         onContinue={async () => {
           const session = await getSession();
           const userId = session?.user?.id;
@@ -762,19 +766,51 @@ function TopLinks({ consumerUrl }: { consumerUrl: string | null }) {
   );
 }
 
-function CreatorOnboardingIntro({ onContinue }: { onContinue: () => Promise<void> }) {
+function CreatorOnboardingIntro({
+  onBack,
+  onContinue,
+}: {
+  onBack: () => Promise<void>;
+  onContinue: () => Promise<void>;
+}) {
   const [submitting, setSubmitting] = useState(false);
   const legalBase = CONSUMER_APP_URL ? CONSUMER_APP_URL.replace(/\/$/, '') : '/user';
 
   return (
     <div className="onboarding-shell">
       <div className="onboarding-card">
-        <div className="onboarding-nav onboarding-nav-prev" aria-hidden="true">
+        <button
+          aria-label="Back to sign in"
+          className="onboarding-nav onboarding-nav-prev"
+          disabled={submitting}
+          onClick={async () => {
+            setSubmitting(true);
+            try {
+              await onBack();
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+          type="button"
+        >
           <span>&lsaquo;</span>
-        </div>
-        <div className="onboarding-nav onboarding-nav-next" aria-hidden="true">
+        </button>
+        <button
+          aria-label="Go to next step"
+          className="onboarding-nav onboarding-nav-next"
+          disabled={submitting}
+          onClick={async () => {
+            setSubmitting(true);
+            try {
+              await onContinue();
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+          type="button"
+        >
           <span>&rsaquo;</span>
-        </div>
+        </button>
 
         <div className="onboarding-globe" aria-hidden="true">
           <span className="onboarding-globe__continent onboarding-globe__continent--one" />
