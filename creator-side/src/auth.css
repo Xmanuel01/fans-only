@@ -518,7 +518,7 @@ body {
 }
 
 .onboarding-upload-card__surface--banner {
-  aspect-ratio: 3 / 1;
+  height: 180px;
   border-radius: 22px;
 }
 
@@ -1024,7 +1024,7 @@ body {
   }
 
   .onboarding-upload-card__surface--banner {
-    aspect-ratio: 3 / 1;
+    height: 150px;
   }
 
   .onboarding-choice-card {
