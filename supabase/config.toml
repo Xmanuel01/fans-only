@@ -1,14 +1,7 @@
-# Supabase CLI config (placeholder project ref)
-[project]
-ref = "your-project-ref"
+# Supabase CLI config for this workspace.
+# `project_id` is a local identifier for the repo, not your remote project ref.
 
-[db]
-shadow_port = 54322
-host = "localhost"
-port = 54321
-user = "postgres"
-password = "postgres"
-dbname = "postgres"
+project_id = "onlyfans"
 
 [api]
 enabled = true
