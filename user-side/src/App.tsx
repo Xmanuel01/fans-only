@@ -52,6 +52,8 @@ const BASE_URL = import.meta.env.BASE_URL ?? '/'
 const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`
 const isExternalUrl = (value: string | null) => Boolean(value && /^https?:\/\//i.test(value))
 const CREATOR_APP_EXTERNAL = isExternalUrl(CREATOR_APP_URL)
+const HAS_HELP_CENTER_URL = Boolean(HELP_CENTER_URL)
+const HAS_SUPPORT_EMAIL = Boolean(SUPPORT_EMAIL)
 
 const navItems = [
   { icon: FiHome, label: 'Home', key: 'home' as const },
@@ -514,6 +516,8 @@ function SettingsPage({
   onTopup,
   onOpenHelp,
   onOpenSupportEmail,
+  hasHelpCenterUrl,
+  hasSupportEmail,
 }: {
   session: any
   userProfile: UserProfile | null
@@ -525,6 +529,8 @@ function SettingsPage({
   onTopup: () => void
   onOpenHelp: () => void
   onOpenSupportEmail: () => void
+  hasHelpCenterUrl: boolean
+  hasSupportEmail: boolean
 }) {
   const displayName =
     session?.user?.user_metadata?.full_name ??
@@ -601,8 +607,8 @@ function SettingsPage({
       <div className="settings-card">
         <div className="card-title">Support & legal</div>
         <div className="button-row">
-          <button className="pill ghost" onClick={onOpenHelp}>Open Help Center</button>
-          <button className="pill light" onClick={onOpenSupportEmail}>Email support</button>
+          <button className="pill ghost" disabled={!hasHelpCenterUrl} onClick={onOpenHelp}>Open Help Center</button>
+          <button className="pill light" disabled={!hasSupportEmail} onClick={onOpenSupportEmail}>Email support</button>
         </div>
         <div className="footer-links" style={{ marginTop: 12 }}>
           <a href={assetUrl('pages/terms.html')}>Terms</a>
@@ -616,15 +622,25 @@ function SettingsPage({
   )
 }
 
-function HelpPage({ onOpenHelp, onOpenSupportEmail }: { onOpenHelp: () => void; onOpenSupportEmail: () => void }) {
+function HelpPage({
+  onOpenHelp,
+  onOpenSupportEmail,
+  hasHelpCenterUrl,
+  hasSupportEmail,
+}: {
+  onOpenHelp: () => void
+  onOpenSupportEmail: () => void
+  hasHelpCenterUrl: boolean
+  hasSupportEmail: boolean
+}) {
   return (
     <div className="settings-page">
       <h2>Help Center</h2>
       <div className="settings-card">
         <p>Find quick answers, report account issues, or contact support directly.</p>
         <div className="button-row">
-          <button className="pill light" onClick={onOpenHelp}>Open Help Center</button>
-          <button className="pill ghost" onClick={onOpenSupportEmail}>Email support</button>
+          <button className="pill light" disabled={!hasHelpCenterUrl} onClick={onOpenHelp}>Open Help Center</button>
+          <button className="pill ghost" disabled={!hasSupportEmail} onClick={onOpenSupportEmail}>Email support</button>
         </div>
       </div>
     </div>
@@ -811,10 +827,18 @@ export default function App() {
   }, [toast])
 
   const openHelpCenter = () => {
+    if (!HAS_HELP_CENTER_URL) {
+      setToast('Help center is unavailable right now')
+      return
+    }
     window.open(HELP_CENTER_URL, '_blank', 'noopener,noreferrer')
   }
 
   const openSupportEmail = () => {
+    if (!HAS_SUPPORT_EMAIL) {
+      setToast('Support email is unavailable right now')
+      return
+    }
     window.location.href = `mailto:${SUPPORT_EMAIL}`
   }
 
@@ -1154,10 +1178,19 @@ export default function App() {
             onTopup={handleWalletTopup}
             onOpenHelp={openHelpCenter}
             onOpenSupportEmail={openSupportEmail}
+            hasHelpCenterUrl={HAS_HELP_CENTER_URL}
+            hasSupportEmail={HAS_SUPPORT_EMAIL}
           />
         ) : null}
 
-        {page === 'help' ? <HelpPage onOpenHelp={openHelpCenter} onOpenSupportEmail={openSupportEmail} /> : null}
+        {page === 'help' ? (
+          <HelpPage
+            onOpenHelp={openHelpCenter}
+            onOpenSupportEmail={openSupportEmail}
+            hasHelpCenterUrl={HAS_HELP_CENTER_URL}
+            hasSupportEmail={HAS_SUPPORT_EMAIL}
+          />
+        ) : null}
 
         {page === 'features' ? (
           <FeaturePage

@@ -72,7 +72,7 @@ const publicAppOrigin = normalizeUrl(
 )
 
 const helpCenterUrl = normalizeUrl(
-  readRequired(import.meta.env.VITE_HELP_CENTER_URL, 'VITE_HELP_CENTER_URL'),
+  readOptional(import.meta.env.VITE_HELP_CENTER_URL),
   'VITE_HELP_CENTER_URL'
 )
 const exitUrl = normalizeUrl(
@@ -80,7 +80,7 @@ const exitUrl = normalizeUrl(
   'VITE_EXIT_URL'
 )
 const supportEmail = readEmail(
-  readRequired(import.meta.env.VITE_SUPPORT_EMAIL, 'VITE_SUPPORT_EMAIL'),
+  readOptional(import.meta.env.VITE_SUPPORT_EMAIL),
   'VITE_SUPPORT_EMAIL'
 )
 
