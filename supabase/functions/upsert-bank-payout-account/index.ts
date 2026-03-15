@@ -4,6 +4,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { supabase } from "../_shared/client.ts";
 import { corsHeaders, jsonWithCors } from "../_shared/cors.ts";
+import { requireCreatorPaymentAccess } from "../_shared/guards.ts";
 
 const PAYSTACK_API = "https://api.paystack.co";
 const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
@@ -14,7 +15,6 @@ type Body = {
   bankCode: string;
   bankName?: string;
   currency?: string;
-  kycStatus?: "pending" | "verified" | "rejected";
 };
 
 serve(async (req) => {
@@ -23,21 +23,8 @@ serve(async (req) => {
   if (!supabase) return jsonWithCors({ error: "Supabase not configured" }, 500);
   if (!secret) return jsonWithCors({ error: "PAYSTACK_SECRET_KEY missing" }, 500);
 
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const token = authHeader.replace("Bearer ", "");
-  if (!token) return jsonWithCors({ error: "Missing bearer token" }, 401);
-
-  const { data: userData, error: userErr } = await supabase.auth.getUser(token);
-  if (userErr || !userData?.user?.id) return jsonWithCors({ error: "Invalid token" }, 401);
-  const creatorId = userData.user.id;
-
-  const { data: creatorRow, error: creatorErr } = await supabase
-    .from("creators")
-    .select("id")
-    .eq("id", creatorId)
-    .maybeSingle();
-  if (creatorErr) return jsonWithCors({ error: "Creator lookup failed" }, 500);
-  if (!creatorRow) return jsonWithCors({ error: "Creator profile required" }, 403);
+  const { creatorId, errorResponse } = await requireCreatorPaymentAccess(supabase, req);
+  if (errorResponse) return jsonWithCors(await errorResponse.json(), errorResponse.status);
 
   let body: Body;
   try {
@@ -79,9 +66,6 @@ serve(async (req) => {
     return jsonWithCors({ error: "Paystack recipient create failed", details: recipientJson }, 400);
   }
 
-  const kycStatus =
-    body.kycStatus ?? (recipientJson?.data?.active === true ? "verified" : "pending");
-
   const accountNumberLast4 = accountNumber.slice(-4);
   const { error: upsertErr } = await supabase.from("creator_payout_accounts").upsert({
     creator_id: creatorId,
@@ -95,11 +79,21 @@ serve(async (req) => {
     recipient_active: Boolean(recipientJson.data.active ?? true),
     provider_account_id: recipientJson.data.id?.toString?.() ?? null,
     recipient_type: recipientJson.data.type ?? "bank_account",
-    kyc_status: kycStatus,
+    kyc_status: "pending",
     kyc_last_checked_at: new Date().toISOString(),
+    verified_at: null,
+    verified_by: null,
+    verification_source: "manual_review_required",
+    verification_metadata: {
+      manual_review_required: true,
+      provider_active: Boolean(recipientJson.data.active ?? true),
+      recipient_type: recipientJson.data.type ?? "bank_account",
+      bank_name: bankName,
+    },
     metadata: {
       recipient_name: recipientJson.data.name ?? null,
       bank_name: bankName,
+      provider_active: Boolean(recipientJson.data.active ?? true),
     },
     last_error: null,
     updated_at: new Date().toISOString(),
@@ -116,6 +110,7 @@ serve(async (req) => {
       accountName,
       accountNumberMasked: `****${accountNumberLast4}`,
       recipientCode: recipientJson.data.recipient_code,
+      kycStatus: "pending",
     },
   });
 });

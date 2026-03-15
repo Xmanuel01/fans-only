@@ -25,6 +25,19 @@ serve(async (req) => {
 
   if (!checkoutRequestId) return json({ error: "Missing CheckoutRequestID" }, 400);
 
+  const { error: eventInsertErr } = await supabase.from("provider_webhook_events").insert({
+    provider: "mpesa",
+    provider_event_id: checkoutRequestId,
+    event_type: resultCode === 0 ? "stk.success" : "stk.failed",
+    payload,
+  });
+  if (eventInsertErr) {
+    if (eventInsertErr.code === "23505") {
+      return json({ ok: true, already_processed: true });
+    }
+    return json({ error: "Webhook event persistence failed" }, 500);
+  }
+
   const metadataItems = stk.CallbackMetadata?.Item ?? [];
   const lookup = (name: string) =>
     metadataItems.find((item: any) => item.Name === name)?.Value ?? null;

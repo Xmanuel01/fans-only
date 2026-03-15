@@ -46,6 +46,45 @@ export async function requireAgeConfirmed(
   return { userId };
 }
 
+/**
+ * Verifies bearer token, creator profile existence, and age confirmation.
+ * Responds with 401 if no/invalid token, 403 if age not confirmed or creator missing.
+ */
+export async function requireCreatorPaymentAccess(
+  supabase: SupabaseClient,
+  req: Request,
+): Promise<{ creatorId: string; errorResponse?: Response }> {
+  const { userId, errorResponse } = await requireAgeConfirmed(supabase, req);
+  if (errorResponse) {
+    return {
+      creatorId: "",
+      errorResponse,
+    };
+  }
+
+  const { data: creatorRow, error: creatorErr } = await supabase
+    .from("creators")
+    .select("id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (creatorErr) {
+    return {
+      creatorId: "",
+      errorResponse: json({ error: "Creator lookup failed" }, 500),
+    };
+  }
+
+  if (!creatorRow) {
+    return {
+      creatorId: "",
+      errorResponse: json({ error: "Creator profile required" }, 403),
+    };
+  }
+
+  return { creatorId: userId };
+}
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,

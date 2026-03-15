@@ -4,12 +4,13 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { supabase } from "../_shared/client.ts";
 import { corsHeaders, jsonWithCors } from "../_shared/cors.ts";
+import { requireCreatorPaymentAccess } from "../_shared/guards.ts";
 
 const PAYSTACK_API = "https://api.paystack.co";
 const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
 
 type Body = {
-  amountMinor?: number;
+  amountMinor: number;
   currency?: string;
   reason?: string;
   provider?: "mpesa" | "bank";
@@ -21,21 +22,8 @@ serve(async (req) => {
   if (!supabase) return jsonWithCors({ error: "Supabase not configured" }, 500);
   if (!secret) return jsonWithCors({ error: "PAYSTACK_SECRET_KEY missing" }, 500);
 
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const token = authHeader.replace("Bearer ", "");
-  if (!token) return jsonWithCors({ error: "Missing bearer token" }, 401);
-
-  const { data: userData, error: userErr } = await supabase.auth.getUser(token);
-  if (userErr || !userData?.user?.id) return jsonWithCors({ error: "Invalid token" }, 401);
-  const creatorId = userData.user.id;
-
-  const { data: creatorRow, error: creatorErr } = await supabase
-    .from("creators")
-    .select("id")
-    .eq("id", creatorId)
-    .maybeSingle();
-  if (creatorErr) return jsonWithCors({ error: "Creator lookup failed" }, 500);
-  if (!creatorRow) return jsonWithCors({ error: "Creator profile required" }, 403);
+  const { creatorId, errorResponse } = await requireCreatorPaymentAccess(supabase, req);
+  if (errorResponse) return jsonWithCors(await errorResponse.json(), errorResponse.status);
 
   let body: Body = {};
   try {
@@ -79,8 +67,7 @@ serve(async (req) => {
   if (!balanceRow) return jsonWithCors({ error: "No available balance" }, 400);
   if (balanceRow.currency !== currency) return jsonWithCors({ error: "Balance currency mismatch" }, 400);
 
-  const requestedAmount = Number(body.amountMinor ?? 0);
-  const amountMinor = requestedAmount > 0 ? Math.round(requestedAmount) : balanceRow.available_amount_minor;
+  const amountMinor = Math.round(Number(body.amountMinor));
   if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
     return jsonWithCors({ error: "amountMinor must be positive" }, 400);
   }
@@ -225,7 +212,23 @@ async function submitTransferNow({
     p_paystack_transfer_id: transferJson.data.id?.toString() ?? null,
     p_metadata: { source: "paystack.transfer", phase: "submit" },
   });
-  if (markErr) return { ok: false, error: "Payout state update failed" };
+  if (markErr) {
+    const { error: fallbackErr } = await supabase!
+      .from("payout_transfers")
+      .update({
+        status: internalStatus,
+        paystack_transfer_code: transferJson.data.transfer_code?.toString() ?? null,
+        paystack_transfer_id: transferJson.data.id?.toString() ?? null,
+        attempt_count: 1,
+        last_attempt_at: new Date().toISOString(),
+        next_retry_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+        locked_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", payoutTransferId);
+    if (fallbackErr) return { ok: false, error: "Payout state update failed" };
+    return { ok: true, status: internalStatus };
+  }
 
   await supabase!
     .from("payout_transfers")

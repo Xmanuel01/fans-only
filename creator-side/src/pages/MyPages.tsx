@@ -13,6 +13,7 @@ import {
   type CreatorContentItem,
   type PayoutAccount,
   type PayoutSummary,
+  type PayoutTransfer,
   upsertBankPayoutAccount,
   upsertMpesaPayoutAccount,
   upsertPaypalPayoutAccount,
@@ -72,14 +73,6 @@ type PersonItem = {
   detail: string;
   status: string;
   order: number;
-};
-
-type PaymentItem = {
-  id: string;
-  label: string;
-  date: string;
-  amount: string;
-  status: 'paid' | 'pending' | 'failed';
 };
 
 type HomePost = {
@@ -162,6 +155,90 @@ const formatExpiryLabel = (expiresAt: string | null) => {
   if (diffHours < 24) return `Expires in ${diffHours}h`;
   const diffDays = Math.round(diffHours / 24);
   return `Expires in ${diffDays}d`;
+};
+
+const parseMajorAmountToMinor = (value: string) => {
+  const normalized = value.replace(/,/g, '').trim();
+  if (!normalized) return null;
+  const numeric = Number(normalized);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.round(numeric * 100);
+};
+
+const getPayoutProviderLabel = (provider?: PayoutAccount['provider'] | null) => {
+  if (provider === 'mpesa') return 'M-PESA';
+  if (provider === 'bank') return 'Bank';
+  if (provider === 'paypal') return 'PayPal';
+  return 'Not configured';
+};
+
+const getPayoutVerificationState = (
+  account: PayoutAccount | null,
+): 'unconfigured' | 'pending' | 'verified' | 'rejected' | 'inactive' => {
+  if (!account) return 'unconfigured';
+  if (account.recipient_active === false) return 'inactive';
+  if (account.kyc_status === 'verified') return 'verified';
+  if (account.kyc_status === 'rejected') return 'rejected';
+  return 'pending';
+};
+
+const getPayoutVerificationLabel = (
+  state: ReturnType<typeof getPayoutVerificationState>,
+) => {
+  if (state === 'verified') return 'Verified';
+  if (state === 'pending') return 'Pending review';
+  if (state === 'rejected') return 'Rejected';
+  if (state === 'inactive') return 'Inactive';
+  return 'Not configured';
+};
+
+const getPayoutDestinationLabel = (account: PayoutAccount | null) => {
+  if (!account) return 'No payout destination configured';
+
+  if (account.provider === 'paypal') {
+    return account.paypal_email ?? 'PayPal destination';
+  }
+
+  if (account.account_number_last4) {
+    return `${getPayoutProviderLabel(account.provider)} ••••${account.account_number_last4}`;
+  }
+
+  return `${getPayoutProviderLabel(account.provider)} destination`;
+};
+
+const getPayoutDestinationMeta = (account: PayoutAccount | null) => {
+  if (!account) return 'Save a payout destination in Banking before requesting a transfer.';
+
+  if (account.provider === 'bank') {
+    if (account.bank_name) return account.bank_name;
+    if (account.bank_code) return `Bank code ${account.bank_code}`;
+  }
+
+  if (account.provider === 'mpesa') {
+    return account.account_name || 'Mobile money destination';
+  }
+
+  return account.account_name || 'PayPal destination';
+};
+
+const formatPayoutTransferStatus = (status: PayoutTransfer['status']) => {
+  if (status === 'success') return 'Success';
+  if (status === 'submitted') return 'Submitted';
+  if (status === 'queued') return 'Queued';
+  if (status === 'reversed') return 'Reversed';
+  return 'Failed';
+};
+
+const formatPayoutTransferDate = (value: string) => {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return 'Unknown date';
+  return timestamp.toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 };
 
 const describeVisibility = (post: CreatorContentItem) => {
@@ -276,179 +353,6 @@ const clearCreatorDraft = () => {
   } catch (error) {
     console.warn('Could not clear creator draft', error);
   }
-};
-
-type WalletCardBrand = 'mastercard' | 'visa' | 'amex';
-
-type WalletCardItem = {
-  id: string;
-  brand: WalletCardBrand;
-  maskedNumber: string;
-  expiry: string;
-  holder: string;
-  isDefault: boolean;
-};
-
-type WalletCardDraft = {
-  id?: string;
-  brand: WalletCardBrand;
-  maskedNumber: string;
-  expiry: string;
-  holder: string;
-};
-
-type WalletPagePreferences = {
-  paymentAmount: string;
-  nextPaymentDate: string;
-  paymentMethod: string;
-  cards: WalletCardItem[];
-};
-
-const WALLET_PAGE_STORAGE_KEY = 'creator-wallet-preferences-v1';
-const WALLET_PAYMENT_METHODS = ['Credit Card', 'Debit Card', 'M-PESA', 'PayPal'] as const;
-
-const createWalletCardId = () => {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `card-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-};
-
-const createWalletSeedCards = (): WalletCardItem[] =>
-  USE_SAMPLE_DATA
-    ? [
-        {
-          id: 'wallet-card-1',
-          brand: 'mastercard',
-          maskedNumber: '•••• •••• •••• 7654',
-          expiry: '06 / 25',
-          holder: 'Gorde Omkar',
-          isDefault: true,
-        },
-        {
-          id: 'wallet-card-2',
-          brand: 'visa',
-          maskedNumber: '•••• •••• •••• 7654',
-          expiry: '02 / 24',
-          holder: 'Gorde Omkar',
-          isDefault: false,
-        },
-      ]
-    : [];
-
-const normalizeWalletCards = (cards: WalletCardItem[]) => {
-  if (!cards.length) return [];
-  const hasDefault = cards.some((card) => card.isDefault);
-  return cards.map((card, index) => ({
-    ...card,
-    isDefault: hasDefault ? card.isDefault : index === 0,
-  }));
-};
-
-const buildDefaultWalletPaymentDate = () => {
-  const date = new Date();
-  date.setDate(date.getDate() + 7);
-  return date.toISOString().slice(0, 10);
-};
-
-const formatWalletAmountInput = (amountMinor?: number | null) => {
-  const major = Math.max(0, amountMinor ?? 0) / 100;
-  return major.toLocaleString(undefined, {
-    minimumFractionDigits: major % 1 === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
-  });
-};
-
-const deriveWalletPaymentMethod = (account: PayoutAccount | null) => {
-  if (!account) return 'Credit Card';
-  if (account.provider === 'mpesa') return 'M-PESA';
-  if (account.provider === 'paypal') return 'PayPal';
-  return 'Debit Card';
-};
-
-const readWalletPreferences = (): WalletPagePreferences | null => {
-  if (typeof window === 'undefined') return null;
-
-  try {
-    const raw = window.localStorage.getItem(WALLET_PAGE_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<WalletPagePreferences>;
-    const cards = Array.isArray(parsed.cards)
-      ? normalizeWalletCards(
-          parsed.cards.flatMap((card) => {
-            if (
-              !card ||
-              typeof card !== 'object' ||
-              typeof card.id !== 'string' ||
-              typeof (card as WalletCardItem).maskedNumber !== 'string' ||
-              typeof (card as WalletCardItem).expiry !== 'string' ||
-              typeof (card as WalletCardItem).holder !== 'string'
-            ) {
-              return [];
-            }
-
-            const brand = (card as WalletCardItem).brand;
-            return [
-              {
-                id: card.id,
-                brand:
-                  brand === 'mastercard' || brand === 'visa' || brand === 'amex'
-                    ? brand
-                    : 'visa',
-                maskedNumber: (card as WalletCardItem).maskedNumber,
-                expiry: (card as WalletCardItem).expiry,
-                holder: (card as WalletCardItem).holder,
-                isDefault: Boolean((card as WalletCardItem).isDefault),
-              },
-            ];
-          }),
-        )
-      : createWalletSeedCards();
-
-    return {
-      paymentAmount:
-        typeof parsed.paymentAmount === 'string' ? parsed.paymentAmount : formatWalletAmountInput(0),
-      nextPaymentDate:
-        typeof parsed.nextPaymentDate === 'string' && parsed.nextPaymentDate
-          ? parsed.nextPaymentDate
-          : buildDefaultWalletPaymentDate(),
-      paymentMethod:
-        typeof parsed.paymentMethod === 'string' && parsed.paymentMethod
-          ? parsed.paymentMethod
-          : 'Credit Card',
-      cards,
-    };
-  } catch (error) {
-    console.warn('Could not restore wallet preferences', error);
-    return null;
-  }
-};
-
-const writeWalletPreferences = (preferences: WalletPagePreferences) => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    window.localStorage.setItem(WALLET_PAGE_STORAGE_KEY, JSON.stringify(preferences));
-  } catch (error) {
-    console.warn('Could not save wallet preferences', error);
-  }
-};
-
-const formatWalletDateLabel = (value: string) => {
-  if (!value) return 'Not scheduled';
-  const timestamp = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(timestamp.getTime())) return 'Not scheduled';
-  return timestamp.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-};
-
-const getWalletCardBrandLabel = (brand: WalletCardBrand) => {
-  if (brand === 'mastercard') return 'Mastercard';
-  if (brand === 'amex') return 'Amex';
-  return 'Visa';
 };
 
 const NOTIFICATION_TABS: Array<{ key: NotificationTab; label: string }> = [
@@ -574,15 +478,6 @@ const SUBSCRIBERS_ACTIVE: PersonItem[] = USE_SAMPLE_DATA
         status: 'New',
         order: 3,
       },
-    ]
-  : [];
-
-const PAYMENTS: PaymentItem[] = USE_SAMPLE_DATA
-  ? [
-      { id: 'p-1', label: 'Weekly payout', date: 'Today', amount: '$1,280.00', status: 'pending' },
-      { id: 'p-2', label: 'Weekly payout', date: 'Jan 3', amount: '$1,410.00', status: 'paid' },
-      { id: 'p-3', label: 'Tips', date: 'Jan 1', amount: '$215.00', status: 'paid' },
-      { id: 'p-4', label: 'Chargeback', date: 'Dec 29', amount: '-$42.00', status: 'failed' },
     ]
   : [];
 
@@ -2261,44 +2156,28 @@ export function MySubscribersActive() {
 }
 
 export function MyPayments() {
-  const [filter, setFilter] = useState<'all' | 'pending' | 'paid'>('all');
-  const [showRequest, setShowRequest] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'in_flight' | 'completed' | 'failed'>('all');
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
+  const [noticeText, setNoticeText] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
-  const [summary, setSummary] = useState<{
-    currency: string;
-    available_amount_minor: number;
-    pending_amount_minor: number;
-  } | null>(null);
-  const [transferRows, setTransferRows] = useState<PaymentItem[]>([]);
-
-  const formatMoney = (amountMinor: number, currency: string) =>
-    new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amountMinor / 100);
+  const [summary, setSummary] = useState<PayoutSummary | null>(null);
+  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
+  const [transferRows, setTransferRows] = useState<PayoutTransfer[]>([]);
+  const [amountMajor, setAmountMajor] = useState('');
 
   const loadPayments = async () => {
     try {
       setLoading(true);
       setErrorText(null);
-      const [nextSummary, transfers] = await Promise.all([
+      const [nextSummary, nextPayoutAccount, transfers] = await Promise.all([
         fetchPayoutSummary(),
+        fetchPayoutAccount(),
         fetchPayoutTransfers(30),
       ]);
       setSummary(nextSummary);
-      setTransferRows(
-        transfers.map((transfer) => ({
-          id: `t-${transfer.id}`,
-          label: 'Payout transfer',
-          date: new Date(transfer.created_at).toLocaleDateString(),
-          amount: formatMoney(transfer.amount_minor, transfer.currency),
-          status:
-            transfer.status === 'success'
-              ? 'paid'
-              : transfer.status === 'failed' || transfer.status === 'reversed'
-                ? 'failed'
-                : 'pending',
-        })),
-      );
+      setPayoutAccount(nextPayoutAccount);
+      setTransferRows(transfers);
     } catch (err) {
       console.error(err);
       setErrorText('Could not load payout data.');
@@ -2311,158 +2190,302 @@ export function MyPayments() {
     void loadPayments();
   }, []);
 
+  const verificationState = getPayoutVerificationState(payoutAccount);
+  const amountMinor = parseMajorAmountToMinor(amountMajor);
+  const currency = summary?.currency ?? payoutAccount?.currency ?? 'KES';
+  const canRequestPayout =
+    verificationState === 'verified' &&
+    amountMinor !== null &&
+    amountMinor > 0 &&
+    Boolean(summary) &&
+    amountMinor <= (summary?.available_amount_minor ?? 0) &&
+    !requesting;
+
   const filtered = useMemo(() => {
     if (filter === 'all') {
-      return transferRows.length ? transferRows : PAYMENTS;
+      return transferRows;
     }
 
-    if (filter === 'paid') {
-      return (transferRows.length ? transferRows : PAYMENTS).filter((item) => item.status === 'paid');
+    if (filter === 'completed') {
+      return transferRows.filter((item) => item.status === 'success');
     }
 
-    return (transferRows.length ? transferRows : PAYMENTS).filter((item) => item.status === 'pending');
+    if (filter === 'failed') {
+      return transferRows.filter((item) => item.status === 'failed' || item.status === 'reversed');
+    }
+
+    return transferRows.filter((item) => item.status === 'queued' || item.status === 'submitted');
   }, [filter, transferRows]);
+
+  const successfulTransfers = useMemo(
+    () => transferRows.filter((transfer) => transfer.status === 'success').length,
+    [transferRows],
+  );
+
+  const requestDisabledText =
+    verificationState === 'unconfigured'
+      ? 'Save a payout destination in Banking before requesting a payout.'
+      : verificationState === 'pending'
+        ? 'Your payout destination is pending manual verification.'
+        : verificationState === 'rejected'
+          ? 'Your payout destination was rejected. Update it in Banking.'
+          : verificationState === 'inactive'
+            ? 'Your payout destination is inactive. Update it in Banking.'
+            : amountMajor.trim().length === 0
+              ? 'Enter the payout amount you want to withdraw.'
+              : amountMinor === null || amountMinor <= 0
+                ? 'Enter a valid payout amount.'
+                : amountMinor > (summary?.available_amount_minor ?? 0)
+                  ? 'Requested amount exceeds your available balance.'
+                  : null;
 
   return (
     <MyLayout
       title="Payments"
-      subtitle="Track payouts, tips, and statements"
+      subtitle="Request verified payouts and review transfer history."
       activeNav="payments"
       headerActions={
-        <button
-          className="my-button"
-          type="button"
-          disabled={requesting}
-          onClick={async () => {
-            try {
-              setRequesting(true);
-              setErrorText(null);
-              const amountInput = window.prompt('Enter payout amount in major units (leave blank for full balance):');
-              const normalized = amountInput?.trim() ?? '';
-              const amountMinor =
-                normalized.length > 0 ? Math.round(Number(normalized) * 100) : undefined;
-              if (normalized.length > 0 && (!Number.isFinite(amountMinor) || amountMinor! <= 0)) {
-                setErrorText('Invalid payout amount');
-                return;
-              }
-              await requestCreatorPayout({
-                amountMinor,
-                reason: 'Creator initiated payout',
-              });
-              setShowRequest(true);
-              await loadPayments();
-            } catch (err) {
-              console.error(err);
-              setErrorText('Payout request failed. Confirm payout destination and available balance.');
-            } finally {
-              setRequesting(false);
-            }
-          }}
-        >
-          Request payout
-        </button>
-      }
-    >
-      <div className="my-stat-grid">
-        <div className="my-stat">
-          <div className="my-muted">Available balance</div>
-          <div className="my-chat-name">
-            {summary ? formatMoney(summary.available_amount_minor, summary.currency) : '$0.00'}
-          </div>
-        </div>
-        <div className="my-stat">
-          <div className="my-muted">Pending payout</div>
-          <div className="my-chat-name">
-            {summary ? formatMoney(summary.pending_amount_minor, summary.currency) : '$0.00'}
-          </div>
-        </div>
-        <div className="my-stat">
-          <div className="my-muted">Transfer count</div>
-          <div className="my-chat-name">{transferRows.length}</div>
-        </div>
-      </div>
-
-      {showRequest ? (
-        <div className="my-alert">Payout requested. Processing within 24 hours.</div>
-      ) : null}
-      {errorText ? <div className="my-alert">{errorText}</div> : null}
-      {loading ? <div className="my-muted">Loading payout data...</div> : null}
-
-      <div className="my-card">
-        <div className="my-row">
-          <div className="my-tabs">
-            <button
-              className={`my-tab${filter === 'all' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => setFilter('all')}
-            >
-              All
-            </button>
-            <button
-              className={`my-tab${filter === 'pending' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => setFilter('pending')}
-            >
-              Pending
-            </button>
-            <button
-              className={`my-tab${filter === 'paid' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => setFilter('paid')}
-            >
-              Paid
-            </button>
-          </div>
-          <a className="my-button secondary" href="/my/payments/add_card">
+        <div className="wallet-actions wallet-actions--header">
+          <a className="wallet-action-button wallet-action-button--ghost" href="/my/banking">
+            Banking
+          </a>
+          <a className="my-button" href="/my/payments/add_card">
             Add card
           </a>
         </div>
-        <div className="my-divider" />
-        <div className="my-list">
-          {filtered.length
-            ? filtered.map((item) => (
-                <div key={item.id} className="my-list-item">
-                  <div>
-                    <div className="my-chat-name">{item.label}</div>
-                    <div className="my-muted">{item.date}</div>
+      }
+    >
+      <div className="wallet-page wallet-page--payout">
+        {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
+        {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
+
+        <section className="wallet-panel wallet-panel--summary">
+          <div className="wallet-panel__title-row">
+            <div>
+              <h2 className="wallet-panel__title">Creator payout workspace</h2>
+              <p className="wallet-panel__subtitle">
+                Withdraw from your verified creator balance using your approved payout rail.
+              </p>
+            </div>
+            <span className={`wallet-status wallet-status--${verificationState}`}>
+              {getPayoutVerificationLabel(verificationState)}
+            </span>
+          </div>
+
+          <div className="wallet-balance-grid">
+            <div className="wallet-balance-card">
+              <span className="wallet-balance-card__label">Available balance</span>
+              <strong className="wallet-balance-card__value">
+                {formatMinorCurrency(summary?.available_amount_minor, currency)}
+              </strong>
+            </div>
+            <div className="wallet-balance-card">
+              <span className="wallet-balance-card__label">Pending balance</span>
+              <strong className="wallet-balance-card__value">
+                {formatMinorCurrency(summary?.pending_amount_minor, currency)}
+              </strong>
+            </div>
+            <div className="wallet-balance-card">
+              <span className="wallet-balance-card__label">Completed payouts</span>
+              <strong className="wallet-balance-card__value">{successfulTransfers}</strong>
+            </div>
+          </div>
+
+          <div className="wallet-payout-grid">
+            <div className="wallet-payout-card">
+              <div className="wallet-payout-card__label">Verified payout destination</div>
+              <div className="wallet-payout-card__value">{getPayoutDestinationLabel(payoutAccount)}</div>
+              <div className="wallet-payout-card__meta">{getPayoutDestinationMeta(payoutAccount)}</div>
+              <div className="wallet-payout-card__details">
+                <span>{getPayoutProviderLabel(payoutAccount?.provider)}</span>
+                {payoutAccount?.verified_at ? (
+                  <span>Verified {formatPayoutTransferDate(payoutAccount.verified_at)}</span>
+                ) : null}
+                {payoutAccount?.verification_source ? (
+                  <span>{payoutAccount.verification_source.replace(/_/g, ' ')}</span>
+                ) : null}
+              </div>
+              <div className="wallet-payout-card__actions">
+                <a className="wallet-inline-button wallet-inline-button--ghost" href="/my/banking">
+                  Update destination
+                </a>
+                <a className="wallet-inline-button" href="/my/payments/add_card">
+                  Card payouts
+                </a>
+              </div>
+            </div>
+
+            <div className="wallet-payout-card">
+              <div className="wallet-payout-card__label">Request payout</div>
+              <label className="wallet-money-field wallet-money-field--large">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={amountMajor}
+                  onChange={(event) => setAmountMajor(event.target.value)}
+                  placeholder="0"
+                  aria-label="Payout amount"
+                />
+                <span>{currency === 'KES' ? 'KSh' : currency}</span>
+              </label>
+              <div className="wallet-payout-card__meta">
+                Enter the exact amount to withdraw. Maximum available:{' '}
+                {formatMinorCurrency(summary?.available_amount_minor, currency)}.
+              </div>
+              {requestDisabledText ? (
+                <div className="wallet-warning">{requestDisabledText}</div>
+              ) : null}
+              <button
+                className="wallet-action-button"
+                type="button"
+                disabled={!canRequestPayout}
+                onClick={async () => {
+                  if (!summary || amountMinor === null || amountMinor <= 0) {
+                    setErrorText('Enter a valid payout amount.');
+                    return;
+                  }
+                  if (amountMinor > summary.available_amount_minor) {
+                    setErrorText('Requested amount exceeds your available balance.');
+                    return;
+                  }
+                  if (!payoutAccount) {
+                    setErrorText('Save a payout destination first.');
+                    return;
+                  }
+
+                  try {
+                    setRequesting(true);
+                    setNoticeText(null);
+                    setErrorText(null);
+
+                    if (payoutAccount.provider === 'paypal') {
+                      await requestPaypalPayout({
+                        amountMinor,
+                        reason: 'Creator initiated payout',
+                      });
+                    } else {
+                      await requestCreatorPayout({
+                        amountMinor,
+                        reason: 'Creator initiated payout',
+                        provider: payoutAccount.provider === 'bank' ? 'bank' : 'mpesa',
+                      });
+                    }
+
+                    setNoticeText(
+                      'Payout request submitted. We will update the transfer once the provider confirms it.',
+                    );
+                    setAmountMajor('');
+                    await loadPayments();
+                  } catch (err) {
+                    console.error(err);
+                    setErrorText(
+                      err instanceof Error
+                        ? err.message
+                        : 'Payout request failed. Confirm payout destination and available balance.',
+                    );
+                  } finally {
+                    setRequesting(false);
+                  }
+                }}
+              >
+                {requesting ? 'Requesting...' : 'Request payout'}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="wallet-panel">
+          <div className="wallet-panel__title-row">
+            <div>
+              <h2 className="wallet-panel__title">Payout history</h2>
+              <p className="wallet-panel__subtitle">
+                Review queued, submitted, successful, and failed transfers.
+              </p>
+            </div>
+            <div className="my-tabs">
+              <button
+                className={`my-tab${filter === 'all' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setFilter('all')}
+              >
+                All
+              </button>
+              <button
+                className={`my-tab${filter === 'in_flight' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setFilter('in_flight')}
+              >
+                In flight
+              </button>
+              <button
+                className={`my-tab${filter === 'completed' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setFilter('completed')}
+              >
+                Completed
+              </button>
+              <button
+                className={`my-tab${filter === 'failed' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setFilter('failed')}
+              >
+                Failed
+              </button>
+            </div>
+          </div>
+
+          {loading ? <div className="my-muted">Loading payout data...</div> : null}
+
+          <div className="wallet-history-list">
+            {filtered.length ? (
+              filtered.map((transfer) => (
+                <div key={transfer.id} className="wallet-history-item">
+                  <div className="wallet-history-item__meta">
+                    <div className="wallet-history-item__title">Payout transfer #{transfer.id}</div>
+                    <div className="wallet-history-item__subtext">
+                      {formatPayoutTransferDate(transfer.created_at)}
+                    </div>
+                    {transfer.failure_reason ? (
+                      <div className="wallet-history-item__failure">{transfer.failure_reason}</div>
+                    ) : null}
                   </div>
-                  <div className="my-row">
-                    <span className="my-pill">{item.status}</span>
-                    <strong>{item.amount}</strong>
+                  <div className="wallet-history-item__right">
+                    <span className={`wallet-status wallet-status--${transfer.status}`}>
+                      {formatPayoutTransferStatus(transfer.status)}
+                    </span>
+                    <strong>{formatMinorCurrency(transfer.amount_minor, transfer.currency)}</strong>
                   </div>
                 </div>
               ))
-            : !loading
-              ? <div className="my-empty">No payouts yet.</div>
-              : null}
-        </div>
+            ) : (
+              !loading && (
+                <div className="wallet-card-empty">
+                  Your payout history will appear here once you request a transfer.
+                </div>
+              )
+            )}
+          </div>
+        </section>
       </div>
     </MyLayout>
   );
 }
 
 export function MyPaymentsAddCard() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [errorText, setErrorText] = useState<string | null>(null);
   const [summary, setSummary] = useState<PayoutSummary | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [nextPaymentDate, setNextPaymentDate] = useState(buildDefaultWalletPaymentDate);
-  const [paymentMethod, setPaymentMethod] = useState<string>('Credit Card');
-  const [cards, setCards] = useState<WalletCardItem[]>(createWalletSeedCards);
-  const [editor, setEditor] = useState<WalletCardDraft | null>(null);
-  const [showBreakdown, setShowBreakdown] = useState(false);
-  const [baseline, setBaseline] = useState<WalletPagePreferences | null>(null);
+  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
 
   useEffect(() => {
     let active = true;
 
-    const loadWalletPage = async () => {
+    const loadPayoutContext = async () => {
       try {
         setLoading(true);
-        setLoadError(null);
-
-        const [nextSummary, payoutAccount] = await Promise.all([
+        setErrorText(null);
+        const [nextSummary, nextAccount] = await Promise.all([
           fetchPayoutSummary().catch((error) => {
             console.warn('Could not load payout summary', error);
             return null;
@@ -2474,45 +2497,12 @@ export function MyPaymentsAddCard() {
         ]);
 
         if (!active) return;
-
         setSummary(nextSummary);
-        const stored = readWalletPreferences();
-        const fallback: WalletPagePreferences = {
-          paymentAmount: formatWalletAmountInput(nextSummary?.available_amount_minor),
-          nextPaymentDate: buildDefaultWalletPaymentDate(),
-          paymentMethod: deriveWalletPaymentMethod(payoutAccount),
-          cards: createWalletSeedCards(),
-        };
-        const initial = stored ?? fallback;
-        const normalizedCards = normalizeWalletCards(initial.cards);
-        const normalizedState = {
-          paymentAmount: initial.paymentAmount || fallback.paymentAmount,
-          nextPaymentDate: initial.nextPaymentDate || fallback.nextPaymentDate,
-          paymentMethod: initial.paymentMethod || fallback.paymentMethod,
-          cards: normalizedCards,
-        };
-
-        setPaymentAmount(normalizedState.paymentAmount);
-        setNextPaymentDate(normalizedState.nextPaymentDate);
-        setPaymentMethod(normalizedState.paymentMethod);
-        setCards(normalizedCards);
-        setBaseline(normalizedState);
+        setPayoutAccount(nextAccount);
       } catch (error) {
         console.error(error);
         if (!active) return;
-
-        const fallback: WalletPagePreferences = {
-          paymentAmount: formatWalletAmountInput(0),
-          nextPaymentDate: buildDefaultWalletPaymentDate(),
-          paymentMethod: 'Credit Card',
-          cards: createWalletSeedCards(),
-        };
-        setLoadError('Could not load wallet data. You can still style and save local preferences.');
-        setPaymentAmount(fallback.paymentAmount);
-        setNextPaymentDate(fallback.nextPaymentDate);
-        setPaymentMethod(fallback.paymentMethod);
-        setCards(fallback.cards);
-        setBaseline(fallback);
+        setErrorText('Could not load payout context.');
       } finally {
         if (active) {
           setLoading(false);
@@ -2520,436 +2510,107 @@ export function MyPaymentsAddCard() {
       }
     };
 
-    void loadWalletPage();
+    void loadPayoutContext();
 
     return () => {
       active = false;
     };
   }, []);
 
-  const currentPreferences = useMemo<WalletPagePreferences>(
-    () => ({
-      paymentAmount,
-      nextPaymentDate,
-      paymentMethod,
-      cards: normalizeWalletCards(cards),
-    }),
-    [cards, nextPaymentDate, paymentAmount, paymentMethod],
-  );
-
-  const isDirty =
-    baseline !== null && JSON.stringify(currentPreferences) !== JSON.stringify(baseline);
-
-  const defaultCard = currentPreferences.cards.find((card) => card.isDefault) ?? null;
-  const additionalCards = currentPreferences.cards.filter((card) => card.id !== defaultCard?.id);
-  const totalMinor =
-    (summary?.available_amount_minor ?? 0) + (summary?.pending_amount_minor ?? 0);
-  const breakdownRows = [
-    {
-      label: 'Available balance',
-      value: formatMinorCurrency(summary?.available_amount_minor, summary?.currency),
-    },
-    {
-      label: 'Pending transfers',
-      value: formatMinorCurrency(summary?.pending_amount_minor, summary?.currency),
-    },
-    {
-      label: 'Total on account',
-      value: formatMinorCurrency(totalMinor, summary?.currency),
-    },
-  ];
-
-  const resetToBaseline = () => {
-    if (!baseline) return;
-    setPaymentAmount(baseline.paymentAmount);
-    setNextPaymentDate(baseline.nextPaymentDate);
-    setPaymentMethod(baseline.paymentMethod);
-    setCards(baseline.cards);
-    setEditor(null);
-    setNotice(null);
-  };
-
-  const savePreferences = () => {
-    writeWalletPreferences(currentPreferences);
-    setBaseline(currentPreferences);
-    setNotice('Wallet preferences saved for this browser.');
-  };
-
-  const openAddCard = () => {
-    setEditor({
-      brand: 'mastercard',
-      maskedNumber: '•••• •••• •••• 0000',
-      expiry: '12 / 28',
-      holder: 'Creator Name',
-    });
-    setNotice(null);
-  };
-
-  const openEditCard = (card: WalletCardItem) => {
-    setEditor({
-      id: card.id,
-      brand: card.brand,
-      maskedNumber: card.maskedNumber,
-      expiry: card.expiry,
-      holder: card.holder,
-    });
-    setNotice(null);
-  };
-
-  const saveCardDraft = () => {
-    if (!editor) return;
-    if (!editor.maskedNumber.trim() || !editor.expiry.trim() || !editor.holder.trim()) {
-      setNotice('Complete the card details before saving.');
-      return;
-    }
-
-    setCards((previous) => {
-      const nextCards = editor.id
-        ? previous.map((card) =>
-            card.id === editor.id
-              ? {
-                  ...card,
-                  brand: editor.brand,
-                  maskedNumber: editor.maskedNumber.trim(),
-                  expiry: editor.expiry.trim(),
-                  holder: editor.holder.trim(),
-                }
-              : card,
-          )
-        : [
-            ...previous,
-            {
-              id: createWalletCardId(),
-              brand: editor.brand,
-              maskedNumber: editor.maskedNumber.trim(),
-              expiry: editor.expiry.trim(),
-              holder: editor.holder.trim(),
-              isDefault: previous.length === 0,
-            },
-          ];
-
-      return normalizeWalletCards(nextCards);
-    });
-    setEditor(null);
-    setNotice(editor.id ? 'Card updated. Save changes to keep it.' : 'Card added. Save changes to keep it.');
-  };
-
-  const removeCard = (cardId: string) => {
-    if (typeof window !== 'undefined' && !window.confirm('Remove this linked card?')) {
-      return;
-    }
-
-    setCards((previous) => normalizeWalletCards(previous.filter((card) => card.id !== cardId)));
-    setNotice('Card removed. Save changes to keep it.');
-    if (editor?.id === cardId) {
-      setEditor(null);
-    }
-  };
-
-  const setDefaultCard = (cardId: string) => {
-    setCards((previous) =>
-      previous.map((card) => ({
-        ...card,
-        isDefault: card.id === cardId,
-      })),
-    );
-    setNotice('Default card updated. Save changes to keep it.');
-  };
+  const verificationState = getPayoutVerificationState(payoutAccount);
 
   return (
     <MyLayout
-      title="Add card"
-      subtitle="Manage payment timing and linked cards from your payments workspace."
+      title="Card payouts"
+      subtitle="Withdrawal to cards is not live yet. Use verified payout destinations for real creator transfers."
       activeNav="payments"
+      headerActions={
+        <div className="wallet-actions wallet-actions--header">
+          <button
+            className="wallet-action-button wallet-action-button--ghost"
+            type="button"
+            onClick={() => navigate('/my/banking')}
+          >
+            Open banking
+          </button>
+          <button className="wallet-action-button" type="button" onClick={() => navigate('/my/payments')}>
+            Back to payments
+          </button>
+        </div>
+      }
     >
-      <div className="wallet-page">
-        {loadError ? <div className="wallet-notice wallet-notice--warning">{loadError}</div> : null}
-        {notice ? <div className="wallet-notice">{notice}</div> : null}
+      <div className="wallet-page wallet-page--single">
+        {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
+
+        <section className="wallet-panel wallet-coming-soon">
+          <div className="wallet-panel__title-row">
+            <div>
+              <h2 className="wallet-panel__title">Card payouts are coming soon</h2>
+              <p className="wallet-panel__subtitle">
+                Creator withdrawals are currently supported on verified M-PESA, Bank, and PayPal
+                destinations only.
+              </p>
+            </div>
+            <span className="wallet-status wallet-status--inactive">Coming soon</span>
+          </div>
+
+          <div className="wallet-support-list wallet-support-list--rails">
+            <div className="wallet-support-list__item">
+              <strong>Live payout rails</strong>
+              <span>M-PESA, Bank, and PayPal can receive creator transfers after verification.</span>
+            </div>
+            <div className="wallet-support-list__item">
+              <strong>Why cards are blocked</strong>
+              <span>
+                Withdrawal-to-card is intentionally disabled until a dedicated card payout provider
+                and compliance workflow are integrated.
+              </span>
+            </div>
+            <div className="wallet-support-list__item">
+              <strong>What to do now</strong>
+              <span>Set up a payout destination in Banking, then request payouts from Payments.</span>
+            </div>
+          </div>
+        </section>
 
         <section className="wallet-panel">
           <div className="wallet-panel__title-row">
             <div>
-              <h2 className="wallet-panel__title">Payment</h2>
+              <h2 className="wallet-panel__title">Current payout setup</h2>
               <p className="wallet-panel__subtitle">
-                Keep your payout preferences and wallet funding options in one place.
+                This reflects the real creator payout workflow connected to your balance.
               </p>
             </div>
             {loading ? <span className="wallet-status">Syncing...</span> : null}
           </div>
 
-          <div className="wallet-config-row">
-            <div className="wallet-config-row__meta">
-              <div className="wallet-config-row__label">Total payable amount</div>
-              <p className="wallet-config-row__help">
-                The amount can reflect your available creator balance and any pending transfers.
-              </p>
-            </div>
-            <div className="wallet-config-row__control wallet-config-row__control--stack">
-              <label className="wallet-money-field">
-                <input
-                  type="text"
-                  value={paymentAmount}
-                  onChange={(event) => setPaymentAmount(event.target.value)}
-                  aria-label="Total payable amount"
-                />
-                <span>KSh</span>
-              </label>
-              <button
-                className="wallet-inline-button"
-                type="button"
-                onClick={() => setShowBreakdown((prev) => !prev)}
-              >
-                {showBreakdown ? 'Hide amount breakdown' : 'View amount breakdown'}
-              </button>
-            </div>
+          <div className="wallet-balance-grid wallet-balance-grid--banking">
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Available balance</div>
+              <div className="wallet-balance-card__value">
+                {formatMinorCurrency(summary?.available_amount_minor, summary?.currency)}
+              </div>
+            </article>
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Destination status</div>
+              <div className="wallet-balance-card__value wallet-balance-card__value--small">
+                {getPayoutVerificationLabel(verificationState)}
+              </div>
+            </article>
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Current rail</div>
+              <div className="wallet-balance-card__value wallet-balance-card__value--small">
+                {getPayoutProviderLabel(payoutAccount?.provider)}
+              </div>
+              <div className="wallet-balance-card__meta">{getPayoutDestinationLabel(payoutAccount)}</div>
+            </article>
           </div>
 
-          {showBreakdown ? (
-            <div className="wallet-breakdown">
-              {breakdownRows.map((row) => (
-                <div className="wallet-breakdown__row" key={row.label}>
-                  <span>{row.label}</span>
-                  <strong>{row.value}</strong>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="wallet-config-row">
-            <div className="wallet-config-row__meta">
-              <div className="wallet-config-row__label">Next payment date</div>
-            </div>
-            <div className="wallet-config-row__control">
-              <label className="wallet-input-shell">
-                <input
-                  type="date"
-                  value={nextPaymentDate}
-                  onChange={(event) => setNextPaymentDate(event.target.value)}
-                  aria-label="Next payment date"
-                />
-              </label>
-              <div className="wallet-input-caption">{formatWalletDateLabel(nextPaymentDate)}</div>
-            </div>
-          </div>
-
-          <div className="wallet-config-row">
-            <div className="wallet-config-row__meta">
-              <div className="wallet-config-row__label">Payment method</div>
-            </div>
-            <div className="wallet-config-row__control">
-              <label className="wallet-input-shell wallet-input-shell--select">
-                <select
-                  value={paymentMethod}
-                  onChange={(event) => setPaymentMethod(event.target.value)}
-                  aria-label="Payment method"
-                >
-                  {WALLET_PAYMENT_METHODS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDownIcon />
-              </label>
-            </div>
+          <div className="wallet-warning">
+            Card payouts are not part of the live creator payout workflow yet. Use Banking to manage
+            the verified destination that will receive your real creator transfers.
           </div>
         </section>
-
-        <section className="wallet-panel">
-          <div className="wallet-panel__title-row">
-            <div>
-              <h2 className="wallet-panel__title">Linked cards</h2>
-              <p className="wallet-panel__subtitle">
-                Choose which card should be used first for wallet top-ups and future billing.
-              </p>
-            </div>
-          </div>
-
-          <div className="wallet-card-section">
-            <div className="wallet-card-section__meta">
-              <div className="wallet-card-section__label">Default card:</div>
-              <p className="wallet-card-section__help">
-                Scheduled payments will prefer this card first.
-              </p>
-            </div>
-            <div className="wallet-card-section__body">
-              {defaultCard ? (
-                <article className="wallet-linked-card wallet-linked-card--default">
-                  <div className="wallet-linked-card__top">
-                    <div
-                      className={`wallet-linked-card__brand wallet-linked-card__brand--${defaultCard.brand}`}
-                    >
-                      {defaultCard.brand === 'mastercard' ? (
-                        <>
-                          <span className="wallet-linked-card__circle wallet-linked-card__circle--left" />
-                          <span className="wallet-linked-card__circle wallet-linked-card__circle--right" />
-                        </>
-                      ) : (
-                        <span className="wallet-linked-card__brand-text">
-                          {getWalletCardBrandLabel(defaultCard.brand)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="wallet-linked-card__number">{defaultCard.maskedNumber}</div>
-                  </div>
-                  <div className="wallet-linked-card__details">
-                    <span>{defaultCard.expiry}</span>
-                    <span>{defaultCard.holder}</span>
-                  </div>
-                  <div className="wallet-linked-card__actions">
-                    <button className="wallet-chip wallet-chip--active" type="button">
-                      Default
-                    </button>
-                    <button type="button" onClick={() => openEditCard(defaultCard)}>
-                      Edit
-                    </button>
-                    <button type="button" onClick={() => removeCard(defaultCard.id)}>
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              ) : (
-                <div className="wallet-card-empty">No default card linked yet.</div>
-              )}
-            </div>
-          </div>
-
-          <div className="wallet-card-section">
-            <div className="wallet-card-section__meta">
-              <div className="wallet-card-section__label">Additional cards:</div>
-            </div>
-            <div className="wallet-card-section__body">
-              {additionalCards.length ? (
-                <div className="wallet-linked-card-list">
-                  {additionalCards.map((card) => (
-                    <article className="wallet-linked-card" key={card.id}>
-                      <div className="wallet-linked-card__top">
-                        <div
-                          className={`wallet-linked-card__brand wallet-linked-card__brand--${card.brand}`}
-                        >
-                          {card.brand === 'mastercard' ? (
-                            <>
-                              <span className="wallet-linked-card__circle wallet-linked-card__circle--left" />
-                              <span className="wallet-linked-card__circle wallet-linked-card__circle--right" />
-                            </>
-                          ) : (
-                            <span className="wallet-linked-card__brand-text">
-                              {getWalletCardBrandLabel(card.brand)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="wallet-linked-card__number">{card.maskedNumber}</div>
-                      </div>
-                      <div className="wallet-linked-card__details">
-                        <span>{card.expiry}</span>
-                        <span>{card.holder}</span>
-                      </div>
-                      <div className="wallet-linked-card__actions">
-                        <button type="button" onClick={() => setDefaultCard(card.id)}>
-                          Set as default
-                        </button>
-                        <button type="button" onClick={() => openEditCard(card)}>
-                          Edit
-                        </button>
-                        <button type="button" onClick={() => removeCard(card.id)}>
-                          Delete
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="wallet-card-empty">No secondary cards linked yet.</div>
-              )}
-
-              <button className="wallet-inline-button wallet-inline-button--ghost" type="button" onClick={openAddCard}>
-                Add new card
-              </button>
-            </div>
-          </div>
-
-          {editor ? (
-            <div className="wallet-editor">
-              <div className="wallet-editor__header">
-                <strong>{editor.id ? 'Edit card' : 'Add new card'}</strong>
-                <button type="button" onClick={() => setEditor(null)}>
-                  Cancel
-                </button>
-              </div>
-              <div className="wallet-editor__grid">
-                <label className="wallet-editor__field">
-                  <span>Brand</span>
-                  <select
-                    value={editor.brand}
-                    onChange={(event) =>
-                      setEditor((prev) =>
-                        prev ? { ...prev, brand: event.target.value as WalletCardBrand } : prev,
-                      )
-                    }
-                  >
-                    <option value="mastercard">Mastercard</option>
-                    <option value="visa">Visa</option>
-                    <option value="amex">Amex</option>
-                  </select>
-                </label>
-                <label className="wallet-editor__field">
-                  <span>Card label / number</span>
-                  <input
-                    type="text"
-                    value={editor.maskedNumber}
-                    onChange={(event) =>
-                      setEditor((prev) =>
-                        prev ? { ...prev, maskedNumber: event.target.value } : prev,
-                      )
-                    }
-                  />
-                </label>
-                <label className="wallet-editor__field">
-                  <span>Expiry</span>
-                  <input
-                    type="text"
-                    value={editor.expiry}
-                    onChange={(event) =>
-                      setEditor((prev) => (prev ? { ...prev, expiry: event.target.value } : prev))
-                    }
-                  />
-                </label>
-                <label className="wallet-editor__field">
-                  <span>Cardholder</span>
-                  <input
-                    type="text"
-                    value={editor.holder}
-                    onChange={(event) =>
-                      setEditor((prev) => (prev ? { ...prev, holder: event.target.value } : prev))
-                    }
-                  />
-                </label>
-              </div>
-              <div className="wallet-editor__actions">
-                <button className="wallet-inline-button wallet-inline-button--ghost" type="button" onClick={() => setEditor(null)}>
-                  Cancel
-                </button>
-                <button className="wallet-inline-button" type="button" onClick={saveCardDraft}>
-                  Save card
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </section>
-
-        <div className="wallet-actions">
-          <button className="wallet-action-button wallet-action-button--ghost" type="button" onClick={resetToBaseline}>
-            Cancel
-          </button>
-          <button
-            className="wallet-action-button"
-            type="button"
-            onClick={savePreferences}
-            disabled={!isDirty}
-          >
-            Save changes
-          </button>
-        </div>
       </div>
     </MyLayout>
   );
@@ -3425,9 +3086,13 @@ export function PostsCreate() {
 }
 
 export function MyBanking() {
-  const [autoPayout, setAutoPayout] = useState(true);
-  const [schedule, setSchedule] = useState('weekly');
-  const [transferRequested, setTransferRequested] = useState(false);
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [bankingError, setBankingError] = useState<string | null>(null);
+  const [noticeText, setNoticeText] = useState<string | null>(null);
+  const [summary, setSummary] = useState<PayoutSummary | null>(null);
+  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
   const [payoutMethod, setPayoutMethod] = useState<'mpesa' | 'bank' | 'paypal'>('mpesa');
   const [mpesaNumber, setMpesaNumber] = useState('');
   const [mpesaName, setMpesaName] = useState('');
@@ -3437,290 +3102,371 @@ export function MyBanking() {
   const [bankCode, setBankCode] = useState('');
   const [bankName, setBankName] = useState('');
   const [paypalEmail, setPaypalEmail] = useState('');
-  const [savingAccount, setSavingAccount] = useState(false);
-  const [bankingError, setBankingError] = useState<string | null>(null);
-  const [savedDestination, setSavedDestination] = useState<string | null>(null);
+
+  const hydrateForm = (account: PayoutAccount | null) => {
+    setPayoutMethod(account?.provider ?? 'mpesa');
+    setMpesaNumber(account?.provider === 'mpesa' ? account.msisdn_e164 ?? '' : '');
+    setMpesaName(account?.provider === 'mpesa' ? account.account_name ?? '' : '');
+    setMpesaBankCode(account?.provider === 'mpesa' ? account.bank_code ?? 'MPESA' : 'MPESA');
+    setBankAccountNumber('');
+    setBankAccountName(account?.provider === 'bank' ? account.account_name ?? '' : '');
+    setBankCode(account?.provider === 'bank' ? account.bank_code ?? '' : '');
+    setBankName(account?.provider === 'bank' ? account.bank_name ?? '' : '');
+    setPaypalEmail(account?.provider === 'paypal' ? account.paypal_email ?? '' : '');
+  };
 
   useEffect(() => {
-    (async () => {
+    let active = true;
+
+    const loadBanking = async () => {
       try {
-        const account = await fetchPayoutAccount();
-        if (!account) return;
-        setPayoutMethod(account.provider ?? 'mpesa');
-        setSavedDestination(
-          account.provider === 'paypal'
-            ? account.paypal_email ?? null
-            : account.account_number_last4
-              ? `****${account.account_number_last4}`
-              : null
-        );
-        if (account.provider === 'paypal') {
-          setPaypalEmail(account.paypal_email ?? '');
-        } else if (account.provider === 'bank') {
-          setBankAccountName(account.account_name ?? '');
-          setBankCode(account.bank_code ?? '');
-          setBankName(account.bank_name ?? '');
-        } else {
-          setMpesaName(account.account_name ?? '');
-          setMpesaBankCode(account.bank_code ?? 'MPESA');
-          setMpesaNumber(account.msisdn_e164 ?? '');
+        setLoading(true);
+        setBankingError(null);
+        const [nextSummary, nextAccount] = await Promise.all([
+          fetchPayoutSummary().catch((error) => {
+            console.warn('Could not load payout summary', error);
+            return null;
+          }),
+          fetchPayoutAccount().catch((error) => {
+            console.warn('Could not load payout account', error);
+            return null;
+          }),
+        ]);
+
+        if (!active) return;
+        setSummary(nextSummary);
+        setPayoutAccount(nextAccount);
+        hydrateForm(nextAccount);
+      } catch (error) {
+        console.error(error);
+        if (!active) return;
+        setBankingError('Could not load payout destination settings.');
+      } finally {
+        if (active) {
+          setLoading(false);
         }
-      } catch (err) {
-        console.error(err);
       }
-    })();
+    };
+
+    void loadBanking();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
+  const verificationState = getPayoutVerificationState(payoutAccount);
+  const destinationMeta = getPayoutDestinationMeta(payoutAccount);
+
+  const handleSave = async () => {
+    try {
+      setSavingAccount(true);
+      setBankingError(null);
+      setNoticeText(null);
+
+      if (payoutMethod === 'paypal') {
+        const email = paypalEmail.trim().toLowerCase();
+        if (!email) {
+          setBankingError('Enter a valid PayPal email.');
+          return;
+        }
+        await upsertPaypalPayoutAccount({ paypalEmail: email, currency: 'KES' });
+      } else if (payoutMethod === 'bank') {
+        const normalizedAccount = bankAccountNumber.replace(/\D/g, '');
+        const normalizedName = bankAccountName.trim();
+        const normalizedBankCode = bankCode.trim().toUpperCase();
+        const normalizedBankName = bankName.trim();
+        if (!normalizedAccount || !normalizedName || !normalizedBankCode) {
+          setBankingError('Enter a valid bank account number, account name, and bank code.');
+          return;
+        }
+        await upsertBankPayoutAccount({
+          accountNumber: normalizedAccount,
+          accountName: normalizedName,
+          bankCode: normalizedBankCode,
+          bankName: normalizedBankName,
+          currency: 'KES',
+        });
+      } else {
+        const normalizedAccount = mpesaNumber.replace(/\D/g, '');
+        const normalizedName = mpesaName.trim();
+        const normalizedBankCode = mpesaBankCode.trim().toUpperCase() || 'MPESA';
+        if (!normalizedAccount || !normalizedName) {
+          setBankingError('Enter a valid M-PESA number and account name.');
+          return;
+        }
+        await upsertMpesaPayoutAccount({
+          accountNumber: normalizedAccount,
+          accountName: normalizedName,
+          bankCode: normalizedBankCode,
+          currency: 'KES',
+        });
+      }
+
+      const refreshedAccount = await fetchPayoutAccount();
+      setPayoutAccount(refreshedAccount);
+      hydrateForm(refreshedAccount);
+      setNoticeText('Payout destination saved. Manual review is required before payouts can be requested.');
+    } catch (error) {
+      console.error(error);
+      setBankingError(error instanceof Error && error.message ? error.message : 'Could not save payout destination.');
+    } finally {
+      setSavingAccount(false);
+    }
+  };
+
   return (
-    <MyLayout title="Banking" subtitle="Manage payout destinations" activeNav="more">
-      <div className="my-card">
-        <div className="my-row">
-          <div>
-            <div className="my-chat-name">Payout destination</div>
-            <div className="my-muted">
-              {savedDestination ? `Active destination ${savedDestination}` : 'No payout destination set'}
-            </div>
-          </div>
+    <MyLayout
+      title="Banking"
+      subtitle="Save the payout destination that will receive verified creator transfers."
+      activeNav="payments"
+      headerActions={
+        <div className="wallet-actions wallet-actions--header">
           <button
-            className="my-button secondary"
+            className="wallet-action-button wallet-action-button--ghost"
             type="button"
-            disabled={savingAccount}
-            onClick={async () => {
-              try {
-                setSavingAccount(true);
-                setBankingError(null);
-                if (payoutMethod === 'paypal') {
-                  const email = paypalEmail.trim().toLowerCase();
-                  if (!email) {
-                    setBankingError('Enter a valid PayPal email');
-                    return;
-                  }
-                  await upsertPaypalPayoutAccount({ paypalEmail: email, currency: 'KES' });
-                  setSavedDestination(email);
-                } else if (payoutMethod === 'bank') {
-                  const normalizedAccount = bankAccountNumber.replace(/\D/g, '');
-                  const normalizedName = bankAccountName.trim();
-                  const normalizedBankCode = bankCode.trim().toUpperCase();
-                  const normalizedBankName = bankName.trim();
-                  if (!normalizedAccount || !normalizedName || !normalizedBankCode) {
-                    setBankingError('Enter a valid bank account, name, and bank code');
-                    return;
-                  }
-                  const response = await upsertBankPayoutAccount({
-                    accountNumber: normalizedAccount,
-                    accountName: normalizedName,
-                    bankCode: normalizedBankCode,
-                    bankName: normalizedBankName,
-                    currency: 'KES',
-                  });
-                  const masked =
-                    response?.payoutAccount?.accountNumberMasked ??
-                    `****${normalizedAccount.slice(-4)}`;
-                  setSavedDestination(masked);
-                } else {
-                  const normalizedAccount = mpesaNumber.replace(/\D/g, '');
-                  const normalizedName = mpesaName.trim();
-                  const normalizedBankCode = mpesaBankCode.trim().toUpperCase() || 'MPESA';
-                  if (!normalizedAccount || !normalizedName) {
-                    setBankingError('Enter a valid M-PESA number and account name');
-                    return;
-                  }
-                  const response = await upsertMpesaPayoutAccount({
-                    accountNumber: normalizedAccount,
-                    accountName: normalizedName,
-                    bankCode: normalizedBankCode,
-                    currency: 'KES',
-                  });
-                  const masked =
-                    response?.payoutAccount?.accountNumberMasked ??
-                    `****${normalizedAccount.slice(-4)}`;
-                  setSavedDestination(masked);
-                }
-                setTransferRequested(false);
-              } catch (err) {
-                console.error(err);
-                setBankingError('Could not save payout destination.');
-              } finally {
-                setSavingAccount(false);
-              }
-            }}
+            onClick={() => navigate('/my/payments/add_card')}
           >
-            {savingAccount ? 'Saving...' : 'Save'}
+            Card payouts
+          </button>
+          <button className="wallet-action-button" type="button" onClick={() => navigate('/my/payments')}>
+            Open payments
           </button>
         </div>
-        <div className="my-divider" />
-        <div className="my-form">
-          <div className="my-row my-row--start">
+      }
+    >
+      <div className="wallet-page wallet-page--single">
+        {bankingError ? <div className="wallet-notice wallet-notice--warning">{bankingError}</div> : null}
+        {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
+
+        <section className="wallet-panel">
+          <div className="wallet-panel__title-row">
             <div>
-              <div className="my-chat-name">Payout method</div>
-              <div className="my-muted">Choose where payouts should be sent.</div>
+              <h2 className="wallet-panel__title">Verification status</h2>
+              <p className="wallet-panel__subtitle">
+                Payout requests stay blocked until the destination passes manual review.
+              </p>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                className={`my-button ${payoutMethod === 'mpesa' ? '' : 'secondary'}`}
-                type="button"
-                onClick={() => setPayoutMethod('mpesa')}
-              >
-                M-PESA
-              </button>
-              <button
-                className={`my-button ${payoutMethod === 'bank' ? '' : 'secondary'}`}
-                type="button"
-                onClick={() => setPayoutMethod('bank')}
-              >
-                Bank
-              </button>
-              <button
-                className={`my-button ${payoutMethod === 'paypal' ? '' : 'secondary'}`}
-                type="button"
-                onClick={() => setPayoutMethod('paypal')}
-              >
-                PayPal
-              </button>
+            {loading ? <span className="wallet-status">Syncing...</span> : null}
+          </div>
+
+          <div className="wallet-balance-grid wallet-balance-grid--banking">
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Status</div>
+              <div className="wallet-balance-card__value wallet-balance-card__value--small">
+                {getPayoutVerificationLabel(verificationState)}
+              </div>
+            </article>
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Destination</div>
+              <div className="wallet-balance-card__value wallet-balance-card__value--small">
+                {getPayoutDestinationLabel(payoutAccount)}
+              </div>
+              <div className="wallet-balance-card__meta">{destinationMeta}</div>
+            </article>
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Verified rail</div>
+              <div className="wallet-balance-card__value wallet-balance-card__value--small">
+                {getPayoutProviderLabel(payoutAccount?.provider)}
+              </div>
+              <div className="wallet-balance-card__meta">
+                {payoutAccount?.verified_at
+                  ? `Verified ${new Date(payoutAccount.verified_at).toLocaleDateString()}`
+                  : payoutAccount?.verification_source === 'manual_review_required'
+                    ? 'Manual review required'
+                    : 'Waiting for verification'}
+              </div>
+            </article>
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Available balance</div>
+              <div className="wallet-balance-card__value">
+                {formatMinorCurrency(summary?.available_amount_minor, summary?.currency)}
+              </div>
+            </article>
+          </div>
+
+          <div className="wallet-warning">
+            Saving a destination does not verify it. M-PESA, Bank, and PayPal destinations default to
+            pending until they are manually approved server-side.
+          </div>
+        </section>
+
+        <section className="wallet-panel">
+          <div className="wallet-panel__title-row">
+            <div>
+              <h2 className="wallet-panel__title">Payout destination</h2>
+              <p className="wallet-panel__subtitle">
+                Choose the payout rail you want to use for verified creator withdrawals.
+              </p>
             </div>
           </div>
-          {payoutMethod === 'paypal' ? (
-            <>
-              <label className="my-muted">PayPal email</label>
-              <input
-                className="my-input"
-                type="email"
-                autoComplete="email"
-                value={paypalEmail}
-                onChange={(event) => setPaypalEmail(event.target.value)}
-                placeholder="you@example.com"
-              />
-              <div className="my-muted">Payouts follow your balance currency.</div>
-            </>
-          ) : payoutMethod === 'bank' ? (
-            <>
-              <label className="my-muted">Bank account number</label>
-              <input
-                className="my-input"
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                value={bankAccountNumber}
-                onChange={(event) => setBankAccountNumber(event.target.value)}
-                placeholder="Account number"
-              />
-              <label className="my-muted">Account name</label>
-              <input
-                className="my-input"
-                autoComplete="name"
-                value={bankAccountName}
-                onChange={(event) => setBankAccountName(event.target.value)}
-                placeholder="Account holder name"
-              />
-              <label className="my-muted">Bank code</label>
-              <input
-                className="my-input"
-                autoCapitalize="characters"
-                autoComplete="off"
-                value={bankCode}
-                onChange={(event) => setBankCode(event.target.value.toUpperCase())}
-                placeholder="BANK CODE"
-              />
-              <label className="my-muted">Bank name (optional)</label>
-              <input
-                className="my-input"
-                autoComplete="organization"
-                value={bankName}
-                onChange={(event) => setBankName(event.target.value)}
-                placeholder="e.g. Equity Bank"
-              />
-            </>
-          ) : (
-            <>
-              <label className="my-muted">M-PESA number</label>
-              <input
-                className="my-input"
-                type="tel"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                autoComplete="tel"
-                value={mpesaNumber}
-                onChange={(event) => setMpesaNumber(event.target.value)}
-                placeholder="2547XXXXXXXX"
-              />
-              <label className="my-muted">Account name</label>
-              <input
-                className="my-input"
-                autoComplete="name"
-                value={mpesaName}
-                onChange={(event) => setMpesaName(event.target.value)}
-                placeholder="Creator full name"
-              />
-              <label className="my-muted">Bank code</label>
-              <input
-                className="my-input"
-                autoCapitalize="characters"
-                autoComplete="off"
-                value={mpesaBankCode}
-                onChange={(event) => setMpesaBankCode(event.target.value.toUpperCase())}
-                placeholder="MPESA"
-              />
-            </>
-          )}
-        </div>
-        <div className="my-divider" />
-        <div className="my-row">
-          <div>
-            <div className="my-chat-name">Auto payout</div>
-            <div className="my-muted">Send balance on a schedule.</div>
+
+          <div className="wallet-rail-picker">
+            <button
+              className={`wallet-rail-picker__button${payoutMethod === 'mpesa' ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => setPayoutMethod('mpesa')}
+            >
+              M-PESA
+            </button>
+            <button
+              className={`wallet-rail-picker__button${payoutMethod === 'bank' ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => setPayoutMethod('bank')}
+            >
+              Bank
+            </button>
+            <button
+              className={`wallet-rail-picker__button${payoutMethod === 'paypal' ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => setPayoutMethod('paypal')}
+            >
+              PayPal
+            </button>
           </div>
-          <button
-            className={`my-toggle__switch${autoPayout ? ' is-on' : ''}`}
-            type="button"
-            aria-pressed={autoPayout}
-            onClick={() => setAutoPayout((prev) => !prev)}
-          />
-        </div>
-        <div className="my-row">
-          <div>
-            <div className="my-chat-name">Payout schedule</div>
-            <div className="my-muted">Choose your cadence.</div>
+
+          <div className="wallet-banking-grid">
+            {payoutMethod === 'paypal' ? (
+              <>
+                <label className="create-post__field">
+                  <span>PayPal email</span>
+                  <input
+                    className="my-input"
+                    type="email"
+                    autoComplete="email"
+                    value={paypalEmail}
+                    onChange={(event) => setPaypalEmail(event.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </label>
+                <div className="wallet-balance-card__meta">PayPal payouts stay pending until approved.</div>
+              </>
+            ) : payoutMethod === 'bank' ? (
+              <>
+                <label className="create-post__field">
+                  <span>Bank account number</span>
+                  <input
+                    className="my-input"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={bankAccountNumber}
+                    onChange={(event) => setBankAccountNumber(event.target.value)}
+                    placeholder="Account number"
+                  />
+                </label>
+                <label className="create-post__field">
+                  <span>Account name</span>
+                  <input
+                    className="my-input"
+                    autoComplete="name"
+                    value={bankAccountName}
+                    onChange={(event) => setBankAccountName(event.target.value)}
+                    placeholder="Account holder name"
+                  />
+                </label>
+                <label className="create-post__field">
+                  <span>Bank code</span>
+                  <input
+                    className="my-input"
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    value={bankCode}
+                    onChange={(event) => setBankCode(event.target.value.toUpperCase())}
+                    placeholder="BANK CODE"
+                  />
+                </label>
+                <label className="create-post__field">
+                  <span>Bank name (optional)</span>
+                  <input
+                    className="my-input"
+                    autoComplete="organization"
+                    value={bankName}
+                    onChange={(event) => setBankName(event.target.value)}
+                    placeholder="e.g. Equity Bank"
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                <label className="create-post__field">
+                  <span>M-PESA number</span>
+                  <input
+                    className="my-input"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    value={mpesaNumber}
+                    onChange={(event) => setMpesaNumber(event.target.value)}
+                    placeholder="2547XXXXXXXX"
+                  />
+                </label>
+                <label className="create-post__field">
+                  <span>Account name</span>
+                  <input
+                    className="my-input"
+                    autoComplete="name"
+                    value={mpesaName}
+                    onChange={(event) => setMpesaName(event.target.value)}
+                    placeholder="Creator full name"
+                  />
+                </label>
+                <label className="create-post__field">
+                  <span>Bank code</span>
+                  <input
+                    className="my-input"
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    value={mpesaBankCode}
+                    onChange={(event) => setMpesaBankCode(event.target.value.toUpperCase())}
+                    placeholder="MPESA"
+                  />
+                </label>
+              </>
+            )}
           </div>
-          <select
-            className="my-input"
-            style={{ maxWidth: 180 }}
-            value={schedule}
-            onChange={(event) => setSchedule(event.target.value)}
-          >
-            <option value="weekly">Weekly</option>
-            <option value="biweekly">Every 2 weeks</option>
-            <option value="monthly">Monthly</option>
-          </select>
-        </div>
-        <div className="my-divider" />
-        <button
-          className="my-button"
-          type="button"
-          onClick={async () => {
-            try {
-              setBankingError(null);
-              if (payoutMethod === 'paypal') {
-                await requestPaypalPayout({ reason: 'Manual transfer now' });
-              } else {
-                await requestCreatorPayout({
-                  reason: 'Manual transfer now',
-                  provider: payoutMethod === 'bank' ? 'bank' : 'mpesa',
-                });
-              }
-              setTransferRequested(true);
-            } catch (err) {
-              console.error(err);
-              setBankingError('Transfer request failed.');
-            }
-          }}
-        >
-          Transfer now
-        </button>
+
+          <div className="wallet-actions">
+            <button
+              className="wallet-action-button wallet-action-button--ghost"
+              type="button"
+              onClick={() => navigate('/my/payments/add_card')}
+            >
+              Card payouts coming soon
+            </button>
+            <button className="wallet-action-button" type="button" disabled={savingAccount} onClick={handleSave}>
+              {savingAccount ? 'Saving...' : 'Save destination'}
+            </button>
+          </div>
+        </section>
+
+        <section className="wallet-panel">
+          <div className="wallet-panel__title-row">
+            <div>
+              <h2 className="wallet-panel__title">Verification workflow</h2>
+              <p className="wallet-panel__subtitle">
+                Payouts are production-safe only when the destination and the transfer request both pass
+                the backend checks.
+              </p>
+            </div>
+          </div>
+
+          <div className="wallet-support-list">
+            <div className="wallet-support-list__item">
+              <strong>1. Save destination</strong>
+              <span>M-PESA, Bank, and PayPal destinations are stored in pending status by default.</span>
+            </div>
+            <div className="wallet-support-list__item">
+              <strong>2. Manual verification</strong>
+              <span>Only verified destinations can request payouts from the Payments page.</span>
+            </div>
+            <div className="wallet-support-list__item">
+              <strong>3. Request payout</strong>
+              <span>The payout amount must be explicit and cannot exceed your available balance.</span>
+            </div>
+          </div>
+        </section>
       </div>
-      {transferRequested ? (
-        <div className="my-alert">Transfer request sent.</div>
-      ) : null}
-      {bankingError ? <div className="my-alert">{bankingError}</div> : null}
     </MyLayout>
   );
 }
@@ -4309,14 +4055,6 @@ function ChevronRightIcon() {
   );
 }
 
-function ChevronDownIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  );
-}
-
 function MoreVerticalIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -4441,3 +4179,4 @@ function LogOutIcon() {
     </svg>
   );
 }
+

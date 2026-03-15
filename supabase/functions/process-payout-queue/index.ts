@@ -19,7 +19,10 @@ serve(async (req) => {
 
   const authToken = req.headers.get("Authorization")?.replace("Bearer ", "") ?? "";
   const expectedToken = Deno.env.get("PAYOUT_QUEUE_CRON_TOKEN");
-  if (expectedToken && authToken !== expectedToken) {
+  if (!expectedToken) {
+    return json({ error: "PAYOUT_QUEUE_CRON_TOKEN missing" }, 500);
+  }
+  if (authToken !== expectedToken) {
     return json({ error: "Unauthorized" }, 401);
   }
 
@@ -113,7 +116,18 @@ serve(async (req) => {
     });
 
     if (markErr) {
-      outcomes.push({ id: transferId, action: "error", detail: "mark_payout_result failed" });
+      const fallbackUpdated = await fallbackMarkSubmitted({
+        transferId,
+        attemptCount,
+        status: internalStatus,
+        paystackTransferCode: transferJson.data.transfer_code?.toString() ?? null,
+        paystackTransferId: transferJson.data.id?.toString() ?? null,
+      });
+      outcomes.push({
+        id: transferId,
+        action: fallbackUpdated ? internalStatus : "error",
+        detail: fallbackUpdated ? "fallback_state_update" : "mark_payout_result failed",
+      });
       continue;
     }
 
@@ -246,7 +260,18 @@ async function handlePaypalPayout({
       provider_transfer_id: itemId,
     },
   });
-  if (markErr) return { id: transferId, action: "error", detail: "mark_payout_result failed" };
+  if (markErr) {
+    const fallbackUpdated = await fallbackMarkSubmitted({
+      transferId,
+      attemptCount,
+      status: "submitted",
+      providerTransferId: itemId,
+      providerBatchId: batchId,
+    });
+    return fallbackUpdated
+      ? { id: transferId, action: "submitted", detail: "fallback_state_update" }
+      : { id: transferId, action: "error", detail: "mark_payout_result failed" };
+  }
 
   await supabase!
     .from("payout_transfers")
@@ -260,6 +285,41 @@ async function handlePaypalPayout({
     .eq("id", transferId);
 
   return { id: transferId, action: "submitted" };
+}
+
+async function fallbackMarkSubmitted({
+  transferId,
+  attemptCount,
+  status,
+  paystackTransferCode = null,
+  paystackTransferId = null,
+  providerTransferId = null,
+  providerBatchId = null,
+}: {
+  transferId: number;
+  attemptCount: number;
+  status: "submitted" | "success";
+  paystackTransferCode?: string | null;
+  paystackTransferId?: string | null;
+  providerTransferId?: string | null;
+  providerBatchId?: string | null;
+}) {
+  const { error } = await supabase!
+    .from("payout_transfers")
+    .update({
+      status,
+      paystack_transfer_code: paystackTransferCode,
+      paystack_transfer_id: paystackTransferId,
+      provider_transfer_id: providerTransferId,
+      provider_batch_id: providerBatchId,
+      attempt_count: attemptCount,
+      last_attempt_at: new Date().toISOString(),
+      next_retry_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+      locked_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", transferId);
+  return !error;
 }
 
 async function scheduleRetry({

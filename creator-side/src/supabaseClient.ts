@@ -100,6 +100,10 @@ export type PayoutAccount = {
   paypal_email?: string | null;
   recipient_type?: string | null;
   msisdn_e164?: string | null;
+  recipient_active?: boolean | null;
+  kyc_status?: 'pending' | 'verified' | 'rejected' | null;
+  verified_at?: string | null;
+  verification_source?: string | null;
 };
 
 async function requireUserId() {
@@ -140,7 +144,7 @@ export async function fetchPayoutAccount(): Promise<PayoutAccount | null> {
   const { data, error } = await supabase
     .from('creator_payout_accounts')
     .select(
-      'provider, currency, account_name, account_number_last4, bank_code, bank_name, recipient_code, paypal_email, recipient_type, msisdn_e164'
+      'provider, currency, account_name, account_number_last4, bank_code, bank_name, recipient_code, paypal_email, recipient_type, msisdn_e164, recipient_active, kyc_status, verified_at, verification_source'
     )
     .eq('creator_id', userId)
     .maybeSingle();
@@ -849,7 +853,7 @@ async function invokeProfileUploadFunction(formData: FormData) {
 }
 
 export async function requestCreatorPayout(params: {
-  amountMinor?: number;
+  amountMinor: number;
   currency?: string;
   reason?: string;
   provider?: 'mpesa' | 'bank';
@@ -868,7 +872,7 @@ export async function requestCreatorPayout(params: {
 }
 
 export async function requestPaypalPayout(params: {
-  amountMinor?: number;
+  amountMinor: number;
   currency?: string;
   reason?: string;
 }) {

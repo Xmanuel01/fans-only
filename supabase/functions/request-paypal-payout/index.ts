@@ -5,13 +5,14 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { supabase } from "../_shared/client.ts";
 import { corsHeaders, jsonWithCors } from "../_shared/cors.ts";
+import { requireCreatorPaymentAccess } from "../_shared/guards.ts";
 
 const PAYPAL_BASE = Deno.env.get("PAYPAL_API_BASE") ?? "https://api-m.sandbox.paypal.com";
 const clientId = Deno.env.get("PAYPAL_CLIENT_ID");
 const clientSecret = Deno.env.get("PAYPAL_CLIENT_SECRET");
 
 type Body = {
-  amountMinor?: number;
+  amountMinor: number;
   currency?: string;
   reason?: string;
 };
@@ -22,21 +23,8 @@ serve(async (req) => {
   if (!supabase) return jsonWithCors({ error: "Supabase not configured" }, 500);
   if (!clientId || !clientSecret) return jsonWithCors({ error: "PayPal env missing" }, 500);
 
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const token = authHeader.replace("Bearer ", "");
-  if (!token) return jsonWithCors({ error: "Missing bearer token" }, 401);
-
-  const { data: userData, error: userErr } = await supabase.auth.getUser(token);
-  if (userErr || !userData?.user?.id) return jsonWithCors({ error: "Invalid token" }, 401);
-  const creatorId = userData.user.id;
-
-  const { data: creatorRow, error: creatorErr } = await supabase
-    .from("creators")
-    .select("id")
-    .eq("id", creatorId)
-    .maybeSingle();
-  if (creatorErr) return jsonWithCors({ error: "Creator lookup failed" }, 500);
-  if (!creatorRow) return jsonWithCors({ error: "Creator profile required" }, 403);
+  const { creatorId, errorResponse } = await requireCreatorPaymentAccess(supabase, req);
+  if (errorResponse) return jsonWithCors(await errorResponse.json(), errorResponse.status);
 
   let body: Body = {};
   try {
@@ -73,8 +61,7 @@ serve(async (req) => {
   if (!balanceRow) return jsonWithCors({ error: "No available balance" }, 400);
   const currency = (balanceRow.currency ?? payoutAccount.currency ?? body.currency ?? "USD").toUpperCase();
 
-  const requestedAmount = Number(body.amountMinor ?? 0);
-  const amountMinor = requestedAmount > 0 ? Math.round(requestedAmount) : balanceRow.available_amount_minor;
+  const amountMinor = Math.round(Number(body.amountMinor));
   if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
     return jsonWithCors({ error: "amountMinor must be positive" }, 400);
   }
@@ -238,7 +225,23 @@ async function submitPaypalPayout({
       provider_transfer_id: itemId,
     },
   });
-  if (markErr) return { ok: false, error: "Payout state update failed" };
+  if (markErr) {
+    const { error: fallbackErr } = await supabase!
+      .from("payout_transfers")
+      .update({
+        status: "submitted",
+        provider_transfer_id: itemId,
+        provider_batch_id: batchId,
+        attempt_count: 1,
+        last_attempt_at: new Date().toISOString(),
+        next_retry_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+        locked_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", payoutTransferId);
+    if (fallbackErr) return { ok: false, error: "Payout state update failed" };
+    return { ok: true, status: "submitted" };
+  }
 
   await supabase!
     .from("payout_transfers")

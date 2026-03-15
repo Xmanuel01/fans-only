@@ -12,5 +12,32 @@ enabled = true
 [functions.ensure-profile]
 verify_jwt = false
 
+[functions.request-creator-payout]
+verify_jwt = true
+
+[functions.request-paypal-payout]
+verify_jwt = true
+
+[functions.upsert-mpesa-payout-account]
+verify_jwt = true
+
+[functions.upsert-bank-payout-account]
+verify_jwt = true
+
+[functions.upsert-paypal-payout-account]
+verify_jwt = true
+
+[functions.paystack-webhook]
+verify_jwt = false
+
+[functions.paypal-webhook]
+verify_jwt = false
+
+[functions.mpesa-stk-callback]
+verify_jwt = false
+
+[functions.process-payout-queue]
+verify_jwt = false
+
 [functions.upload-creator-profile-asset]
 verify_jwt = false
