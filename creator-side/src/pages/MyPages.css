@@ -395,13 +395,25 @@ button,
 
 .my-input {
   width: 100%;
-  border: 1px solid #e1e7ef;
+  border: 1px solid #2a3444;
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 14px;
   font-family: inherit;
   color: #e8edf5;
-  background: transparent;
+  background: #0f1724;
+  color-scheme: dark;
+}
+
+.my-input:focus {
+  outline: none;
+  border-color: #3c8dff;
+  box-shadow: 0 0 0 1px rgba(60, 141, 255, 0.35);
+}
+
+.my-input option {
+  background: #141b26;
+  color: #eef4ff;
 }
 
 .my-input-group {
@@ -444,8 +456,8 @@ button,
   width: 44px;
   height: 24px;
   border-radius: 999px;
-  background: #ffffff;
-  border: 1px solid #8a8f9b;
+  background: #252d3a;
+  border: 1px solid #3b4557;
   position: relative;
   cursor: pointer;
   transition: background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
@@ -456,7 +468,7 @@ button,
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #6c6c6c;
+  background: #c6ceda;
   position: absolute;
   top: 3px;
   left: 4px;
@@ -3841,9 +3853,9 @@ button,
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid #e1e7ef;
-  background: #f8fafc;
-  color: #526170;
+  border: 1px solid #2a3444;
+  background: #141b26;
+  color: #c7d3e6;
   border-radius: 999px;
   padding: 6px 12px;
   font-weight: 600;
@@ -3862,9 +3874,9 @@ button,
 }
 
 .create-post__tool.is-active {
-  border-color: #96d6f3;
-  background: #e8f6ff;
-  color: #007fb4;
+  border-color: rgba(60, 141, 255, 0.55);
+  background: rgba(35, 77, 150, 0.28);
+  color: #b8d7ff;
 }
 
 .create-post__count {
@@ -3954,14 +3966,14 @@ button,
 }
 
 .create-post__attachments-empty {
-  border: 1px dashed #dbe3ec;
+  border: 1px dashed #2a3444;
   border-radius: 12px;
   padding: 16px;
   text-align: center;
-  color: #a3adbb;
+  color: #8d99aa;
   font-weight: 600;
   font-size: 13px;
-  background: #f8fafc;
+  background: #141b26;
 }
 
 .create-post__side {
