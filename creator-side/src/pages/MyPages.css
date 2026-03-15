@@ -3438,6 +3438,32 @@ button,
   grid-template-columns: minmax(0, 1fr);
 }
 
+.wallet-page--banking {
+  gap: 14px;
+}
+
+.wallet-panel--compact {
+  padding: 16px 18px;
+  border-radius: 18px;
+  gap: 12px;
+}
+
+.wallet-page--banking .wallet-panel__title {
+  font-size: 17px;
+}
+
+.wallet-page--banking .wallet-panel__subtitle {
+  margin-top: 4px;
+  max-width: 680px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.wallet-page--banking .wallet-status {
+  padding: 7px 11px;
+  font-size: 12px;
+}
+
 .wallet-status--verified,
 .wallet-status--success {
   background: rgba(40, 167, 69, 0.16);
@@ -3472,6 +3498,10 @@ button,
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.wallet-page--banking .wallet-balance-grid--banking {
+  gap: 10px;
+}
+
 .wallet-balance-card {
   display: grid;
   gap: 8px;
@@ -3504,6 +3534,25 @@ button,
   color: #97a6bc;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.wallet-page--banking .wallet-balance-card {
+  padding: 12px 14px;
+  gap: 6px;
+  border-radius: 14px;
+}
+
+.wallet-page--banking .wallet-balance-card__value {
+  font-size: 20px;
+}
+
+.wallet-page--banking .wallet-balance-card__value--small {
+  font-size: 16px;
+}
+
+.wallet-page--banking .wallet-balance-card__meta {
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .wallet-payout-grid {
@@ -3564,6 +3613,13 @@ button,
   line-height: 1.5;
 }
 
+.wallet-page--banking .wallet-warning {
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .wallet-history-list {
   display: grid;
   gap: 10px;
@@ -3615,6 +3671,11 @@ button,
   gap: 12px;
 }
 
+.wallet-banking-main {
+  display: grid;
+  gap: 14px;
+}
+
 .wallet-support-list--rails {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
@@ -3639,6 +3700,24 @@ button,
   line-height: 1.5;
 }
 
+.wallet-page--banking .wallet-support-list {
+  gap: 10px;
+}
+
+.wallet-page--banking .wallet-support-list__item {
+  padding: 12px 14px;
+  border-radius: 14px;
+}
+
+.wallet-page--banking .wallet-support-list__item strong {
+  font-size: 12px;
+}
+
+.wallet-page--banking .wallet-support-list__item span {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .wallet-coming-soon {
   background:
     radial-gradient(circle at top right, rgba(55, 108, 190, 0.16), transparent 30%),
@@ -3652,6 +3731,10 @@ button,
   flex-wrap: wrap;
 }
 
+.wallet-page--banking .wallet-rail-picker {
+  gap: 8px;
+}
+
 .wallet-rail-picker__button {
   border: 1px solid rgba(110, 134, 168, 0.3);
   background: rgba(13, 20, 32, 0.78);
@@ -3661,6 +3744,11 @@ button,
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.wallet-page--banking .wallet-rail-picker__button {
+  padding: 8px 14px;
+  font-size: 12px;
 }
 
 .wallet-rail-picker__button.is-active {
@@ -3675,6 +3763,36 @@ button,
   gap: 12px;
 }
 
+.wallet-page--banking .wallet-banking-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.wallet-page--banking .my-input {
+  min-height: 46px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.wallet-page--banking .create-post__field {
+  gap: 6px;
+}
+
+.wallet-page--banking .create-post__field span {
+  font-size: 12px;
+}
+
+.wallet-page--banking .wallet-actions {
+  gap: 8px;
+}
+
+.wallet-page--banking .wallet-action-button {
+  min-width: 0;
+  padding: 10px 16px;
+  font-size: 12px;
+}
+
 @media (min-width: 1180px) {
   .wallet-page {
     grid-template-columns: minmax(320px, 0.78fr) minmax(400px, 1fr);
@@ -3687,6 +3805,31 @@ button,
   }
 
   .wallet-page--single {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wallet-page--banking .wallet-balance-grid--banking {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .wallet-banking-main {
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.78fr);
+    align-items: start;
+  }
+}
+
+@media (max-width: 1220px) {
+  .wallet-page--banking .wallet-balance-grid--banking {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .wallet-page--banking .wallet-balance-grid--banking {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wallet-page--banking .wallet-banking-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

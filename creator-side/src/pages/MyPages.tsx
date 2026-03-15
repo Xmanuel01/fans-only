@@ -2539,7 +2539,7 @@ export function MyPaymentsAddCard() {
         </div>
       }
     >
-      <div className="wallet-page wallet-page--single">
+      <div className="wallet-page wallet-page--single wallet-page--banking">
         {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
 
         <section className="wallet-panel wallet-coming-soon">
@@ -2573,7 +2573,7 @@ export function MyPaymentsAddCard() {
           </div>
         </section>
 
-        <section className="wallet-panel">
+        <section className="wallet-panel wallet-panel--compact">
           <div className="wallet-panel__title-row">
             <div>
               <h2 className="wallet-panel__title">Current payout setup</h2>
@@ -3291,181 +3291,183 @@ export function MyBanking() {
           </div>
         </section>
 
-        <section className="wallet-panel">
-          <div className="wallet-panel__title-row">
-            <div>
-              <h2 className="wallet-panel__title">Payout destination</h2>
-              <p className="wallet-panel__subtitle">
-                Choose the payout rail you want to use for verified creator withdrawals.
-              </p>
+        <div className="wallet-banking-main">
+          <section className="wallet-panel wallet-panel--compact wallet-banking-main__form">
+            <div className="wallet-panel__title-row">
+              <div>
+                <h2 className="wallet-panel__title">Payout destination</h2>
+                <p className="wallet-panel__subtitle">
+                  Choose the payout rail you want to use for verified creator withdrawals.
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="wallet-rail-picker">
-            <button
-              className={`wallet-rail-picker__button${payoutMethod === 'mpesa' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => setPayoutMethod('mpesa')}
-            >
-              M-PESA
-            </button>
-            <button
-              className={`wallet-rail-picker__button${payoutMethod === 'bank' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => setPayoutMethod('bank')}
-            >
-              Bank
-            </button>
-            <button
-              className={`wallet-rail-picker__button${payoutMethod === 'paypal' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => setPayoutMethod('paypal')}
-            >
-              PayPal
-            </button>
-          </div>
-
-          <div className="wallet-banking-grid">
-            {payoutMethod === 'paypal' ? (
-              <>
-                <label className="create-post__field">
-                  <span>PayPal email</span>
-                  <input
-                    className="my-input"
-                    type="email"
-                    autoComplete="email"
-                    value={paypalEmail}
-                    onChange={(event) => setPaypalEmail(event.target.value)}
-                    placeholder="you@example.com"
-                  />
-                </label>
-                <div className="wallet-balance-card__meta">PayPal payouts stay pending until approved.</div>
-              </>
-            ) : payoutMethod === 'bank' ? (
-              <>
-                <label className="create-post__field">
-                  <span>Bank account number</span>
-                  <input
-                    className="my-input"
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    value={bankAccountNumber}
-                    onChange={(event) => setBankAccountNumber(event.target.value)}
-                    placeholder="Account number"
-                  />
-                </label>
-                <label className="create-post__field">
-                  <span>Account name</span>
-                  <input
-                    className="my-input"
-                    autoComplete="name"
-                    value={bankAccountName}
-                    onChange={(event) => setBankAccountName(event.target.value)}
-                    placeholder="Account holder name"
-                  />
-                </label>
-                <label className="create-post__field">
-                  <span>Bank code</span>
-                  <input
-                    className="my-input"
-                    autoCapitalize="characters"
-                    autoComplete="off"
-                    value={bankCode}
-                    onChange={(event) => setBankCode(event.target.value.toUpperCase())}
-                    placeholder="BANK CODE"
-                  />
-                </label>
-                <label className="create-post__field">
-                  <span>Bank name (optional)</span>
-                  <input
-                    className="my-input"
-                    autoComplete="organization"
-                    value={bankName}
-                    onChange={(event) => setBankName(event.target.value)}
-                    placeholder="e.g. Equity Bank"
-                  />
-                </label>
-              </>
-            ) : (
-              <>
-                <label className="create-post__field">
-                  <span>M-PESA number</span>
-                  <input
-                    className="my-input"
-                    type="tel"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                    value={mpesaNumber}
-                    onChange={(event) => setMpesaNumber(event.target.value)}
-                    placeholder="2547XXXXXXXX"
-                  />
-                </label>
-                <label className="create-post__field">
-                  <span>Account name</span>
-                  <input
-                    className="my-input"
-                    autoComplete="name"
-                    value={mpesaName}
-                    onChange={(event) => setMpesaName(event.target.value)}
-                    placeholder="Creator full name"
-                  />
-                </label>
-                <label className="create-post__field">
-                  <span>Bank code</span>
-                  <input
-                    className="my-input"
-                    autoCapitalize="characters"
-                    autoComplete="off"
-                    value={mpesaBankCode}
-                    onChange={(event) => setMpesaBankCode(event.target.value.toUpperCase())}
-                    placeholder="MPESA"
-                  />
-                </label>
-              </>
-            )}
-          </div>
-
-          <div className="wallet-actions">
-            <button
-              className="wallet-action-button wallet-action-button--ghost"
-              type="button"
-              onClick={() => navigate('/my/payments/add_card')}
-            >
-              Card payouts coming soon
-            </button>
-            <button className="wallet-action-button" type="button" disabled={savingAccount} onClick={handleSave}>
-              {savingAccount ? 'Saving...' : 'Save destination'}
-            </button>
-          </div>
-        </section>
-
-        <section className="wallet-panel">
-          <div className="wallet-panel__title-row">
-            <div>
-              <h2 className="wallet-panel__title">Verification workflow</h2>
-              <p className="wallet-panel__subtitle">
-                Payouts are production-safe only when the destination and the transfer request both pass
-                the backend checks.
-              </p>
+            <div className="wallet-rail-picker">
+              <button
+                className={`wallet-rail-picker__button${payoutMethod === 'mpesa' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setPayoutMethod('mpesa')}
+              >
+                M-PESA
+              </button>
+              <button
+                className={`wallet-rail-picker__button${payoutMethod === 'bank' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setPayoutMethod('bank')}
+              >
+                Bank
+              </button>
+              <button
+                className={`wallet-rail-picker__button${payoutMethod === 'paypal' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setPayoutMethod('paypal')}
+              >
+                PayPal
+              </button>
             </div>
-          </div>
 
-          <div className="wallet-support-list">
-            <div className="wallet-support-list__item">
-              <strong>1. Save destination</strong>
-              <span>M-PESA, Bank, and PayPal destinations are stored in pending status by default.</span>
+            <div className="wallet-banking-grid">
+              {payoutMethod === 'paypal' ? (
+                <>
+                  <label className="create-post__field">
+                    <span>PayPal email</span>
+                    <input
+                      className="my-input"
+                      type="email"
+                      autoComplete="email"
+                      value={paypalEmail}
+                      onChange={(event) => setPaypalEmail(event.target.value)}
+                      placeholder="you@example.com"
+                    />
+                  </label>
+                  <div className="wallet-balance-card__meta">PayPal payouts stay pending until approved.</div>
+                </>
+              ) : payoutMethod === 'bank' ? (
+                <>
+                  <label className="create-post__field">
+                    <span>Bank account number</span>
+                    <input
+                      className="my-input"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={bankAccountNumber}
+                      onChange={(event) => setBankAccountNumber(event.target.value)}
+                      placeholder="Account number"
+                    />
+                  </label>
+                  <label className="create-post__field">
+                    <span>Account name</span>
+                    <input
+                      className="my-input"
+                      autoComplete="name"
+                      value={bankAccountName}
+                      onChange={(event) => setBankAccountName(event.target.value)}
+                      placeholder="Account holder name"
+                    />
+                  </label>
+                  <label className="create-post__field">
+                    <span>Bank code</span>
+                    <input
+                      className="my-input"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      value={bankCode}
+                      onChange={(event) => setBankCode(event.target.value.toUpperCase())}
+                      placeholder="BANK CODE"
+                    />
+                  </label>
+                  <label className="create-post__field">
+                    <span>Bank name (optional)</span>
+                    <input
+                      className="my-input"
+                      autoComplete="organization"
+                      value={bankName}
+                      onChange={(event) => setBankName(event.target.value)}
+                      placeholder="e.g. Equity Bank"
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="create-post__field">
+                    <span>M-PESA number</span>
+                    <input
+                      className="my-input"
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                      value={mpesaNumber}
+                      onChange={(event) => setMpesaNumber(event.target.value)}
+                      placeholder="2547XXXXXXXX"
+                    />
+                  </label>
+                  <label className="create-post__field">
+                    <span>Account name</span>
+                    <input
+                      className="my-input"
+                      autoComplete="name"
+                      value={mpesaName}
+                      onChange={(event) => setMpesaName(event.target.value)}
+                      placeholder="Creator full name"
+                    />
+                  </label>
+                  <label className="create-post__field">
+                    <span>Bank code</span>
+                    <input
+                      className="my-input"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      value={mpesaBankCode}
+                      onChange={(event) => setMpesaBankCode(event.target.value.toUpperCase())}
+                      placeholder="MPESA"
+                    />
+                  </label>
+                </>
+              )}
             </div>
-            <div className="wallet-support-list__item">
-              <strong>2. Manual verification</strong>
-              <span>Only verified destinations can request payouts from the Payments page.</span>
+
+            <div className="wallet-actions">
+              <button
+                className="wallet-action-button wallet-action-button--ghost"
+                type="button"
+                onClick={() => navigate('/my/payments/add_card')}
+              >
+                Card payouts coming soon
+              </button>
+              <button className="wallet-action-button" type="button" disabled={savingAccount} onClick={handleSave}>
+                {savingAccount ? 'Saving...' : 'Save destination'}
+              </button>
             </div>
-            <div className="wallet-support-list__item">
-              <strong>3. Request payout</strong>
-              <span>The payout amount must be explicit and cannot exceed your available balance.</span>
+          </section>
+
+          <section className="wallet-panel wallet-panel--compact wallet-banking-main__workflow">
+            <div className="wallet-panel__title-row">
+              <div>
+                <h2 className="wallet-panel__title">Verification workflow</h2>
+                <p className="wallet-panel__subtitle">
+                  Payouts are production-safe only when the destination and the transfer request both pass
+                  the backend checks.
+                </p>
+              </div>
             </div>
-          </div>
-        </section>
+
+            <div className="wallet-support-list">
+              <div className="wallet-support-list__item">
+                <strong>1. Save destination</strong>
+                <span>M-PESA, Bank, and PayPal destinations are stored in pending status by default.</span>
+              </div>
+              <div className="wallet-support-list__item">
+                <strong>2. Manual verification</strong>
+                <span>Only verified destinations can request payouts from the Payments page.</span>
+              </div>
+              <div className="wallet-support-list__item">
+                <strong>3. Request payout</strong>
+                <span>The payout amount must be explicit and cannot exceed your available balance.</span>
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
     </MyLayout>
   );
