@@ -218,7 +218,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (state === 'loading') {
-    return <ScreenShell title="Checking account...">Hold tight while we verify your session.</ScreenShell>;
+    return (
+      <div className="auth-loading-shell" aria-live="polite" aria-busy="true">
+        <div className="auth-loading-spinner" />
+        <div className="auth-loading-copy">Checking account...</div>
+      </div>
+    );
   }
 
   if (state === 'misconfigured') {
