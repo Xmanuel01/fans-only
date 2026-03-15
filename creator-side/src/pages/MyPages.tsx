@@ -25,7 +25,7 @@ type NavKey =
   | 'messages'
   | 'collections'
   | 'subscriptions'
-  | 'add-card'
+  | 'payments'
   | 'profile'
   | 'more';
 
@@ -2327,7 +2327,7 @@ export function MyPayments() {
     <MyLayout
       title="Payments"
       subtitle="Track payouts, tips, and statements"
-      activeNav="more"
+      activeNav="payments"
       headerActions={
         <button
           className="my-button"
@@ -2658,9 +2658,9 @@ export function MyPaymentsAddCard() {
 
   return (
     <MyLayout
-      title="Wallet"
-      subtitle="Manage payment timing and linked cards in your creator workspace."
-      activeNav="add-card"
+      title="Add card"
+      subtitle="Manage payment timing and linked cards from your payments workspace."
+      activeNav="payments"
     >
       <div className="wallet-page">
         {loadError ? <div className="wallet-notice wallet-notice--warning">{loadError}</div> : null}
@@ -4034,11 +4034,11 @@ function MyLayout({
             onClick={closeNavPanel}
           />
           <NavItem
-            href="/my/payments/add_card"
-            label="Wallet"
+            href="/my/payments"
+            label="Payments"
             icon={<CardIcon />}
             trailing={<span className="wallet-pill">0.00</span>}
-            isActive={activeNav === 'add-card'}
+            isActive={activeNav === 'payments'}
             onClick={closeNavPanel}
           />
         </nav>
