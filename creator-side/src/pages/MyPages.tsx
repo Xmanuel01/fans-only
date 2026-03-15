@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  fetchCurrentCreatorProfile,
   fetchCreatorFeedPosts,
   fetchPayoutAccount,
   fetchPayoutSummary,
@@ -2532,6 +2533,7 @@ export function MyPaymentsAddCard() {
 
 export function PostsCreate() {
   const navigate = useNavigate();
+  const [composerProfile, setComposerProfile] = useState(NAV_PROFILE);
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isPaid, setIsPaid] = useState(false);
@@ -2557,7 +2559,7 @@ export function PostsCreate() {
     contentRating !== DEFAULT_CREATOR_DRAFT.contentRating ||
     storyDurationHours !== DEFAULT_CREATOR_DRAFT.storyDurationHours;
   const canPublish = hasContent && (!isPaid || price.trim().length > 0) && !publishing;
-  const creatorDisplayName = NAV_PROFILE.name || 'Creator';
+  const creatorDisplayName = composerProfile.name || 'Creator';
 
   useEffect(() => {
     const restored = readCreatorDraft();
@@ -2572,6 +2574,40 @@ export function PostsCreate() {
     setStoryDurationHours(restored.storyDurationHours);
     setIsPaid(restored.isPaid);
     setPrice(restored.price);
+  }, []);
+
+  useEffect(() => {
+    if (USE_SAMPLE_DATA) {
+      setComposerProfile(NAV_PROFILE);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadComposerProfile = async () => {
+      try {
+        const profile = await fetchCurrentCreatorProfile();
+        if (cancelled || !profile) {
+          return;
+        }
+
+        setComposerProfile((prev) => ({
+          ...prev,
+          name: profile.name || prev.name,
+          handle: profile.handle,
+          avatar: profile.avatar_url ?? '',
+          meta: prev.meta,
+        }));
+      } catch (error) {
+        console.error('Could not load composer profile', error);
+      }
+    };
+
+    void loadComposerProfile();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -2764,15 +2800,15 @@ export function PostsCreate() {
         <div className="create-post__grid">
           <section className="my-card create-post__editor">
             <div className="create-post__author">
-              {NAV_PROFILE.avatar ? (
-                <img className="create-post__avatar-image" src={NAV_PROFILE.avatar} alt={creatorDisplayName} />
+              {composerProfile.avatar ? (
+                <img className="create-post__avatar-image" src={composerProfile.avatar} alt={creatorDisplayName} />
               ) : (
                 <div className="create-post__avatar" aria-hidden="true" />
               )}
               <div>
                 <div className="create-post__name">{creatorDisplayName}</div>
-                {NAV_PROFILE.handle ? (
-                  <div className="create-post__handle">{NAV_PROFILE.handle}</div>
+                {composerProfile.handle ? (
+                  <div className="create-post__handle">{composerProfile.handle}</div>
                 ) : null}
               </div>
             </div>
@@ -3434,6 +3470,8 @@ function MyLayout({
   contentClassName,
   children,
 }: MyLayoutProps) {
+  const [navProfile, setNavProfile] = useState(NAV_PROFILE);
+
   useEffect(() => {
     document.body.classList.add('react-page');
     document.body.classList.add('of-my-body');
@@ -3445,24 +3483,61 @@ function MyLayout({
     };
   }, [title]);
 
+  useEffect(() => {
+    if (USE_SAMPLE_DATA) {
+      setNavProfile(NAV_PROFILE);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadNavProfile = async () => {
+      try {
+        const profile = await fetchCurrentCreatorProfile();
+        if (cancelled || !profile) {
+          return;
+        }
+
+        setNavProfile((prev) => ({
+          ...prev,
+          name: profile.name || prev.name,
+          handle: profile.handle,
+          avatar: profile.avatar_url ?? '',
+          meta: prev.meta,
+        }));
+      } catch (error) {
+        console.error('Could not load creator nav profile', error);
+      }
+    };
+
+    void loadNavProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const navInitial = navProfile.name.trim().charAt(0).toUpperCase() || 'C';
+
   return (
     <div className="my-shell">
       <aside className="my-nav my-nav--dark">
         <div className="my-nav__profile">
-          {NAV_PROFILE.avatar ? (
-            <img className="my-nav__avatar" src={NAV_PROFILE.avatar} alt="Profile avatar" />
+          {navProfile.avatar ? (
+            <img className="my-nav__avatar" src={navProfile.avatar} alt="Profile avatar" />
           ) : (
-            <div className="my-nav__avatar" aria-hidden="true" />
+            <div className="my-nav__avatar my-nav__avatar--placeholder" aria-hidden="true">
+              {navInitial}
+            </div>
           )}
           <div className="my-nav__identity">
-            <div className="name">{NAV_PROFILE.name}</div>
-            {NAV_PROFILE.handle ? (
-              <div className="handle">{NAV_PROFILE.handle}</div>
+            <div className="name">{navProfile.name}</div>
+            {navProfile.handle ? (
+              <div className="handle">{navProfile.handle}</div>
             ) : null}
-            {NAV_PROFILE.meta ? (
+            {navProfile.meta ? (
               <div className="meta">
-                <span>{NAV_PROFILE.meta.fans}</span> -{' '}
-                <span>{NAV_PROFILE.meta.followers}</span>
+                <span>{navProfile.meta.fans}</span> - <span>{navProfile.meta.followers}</span>
               </div>
             ) : null}
           </div>

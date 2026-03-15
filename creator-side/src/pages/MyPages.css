@@ -44,6 +44,8 @@ body.of-my-body a {
   border-radius: 50%;
   background: linear-gradient(135deg, #f4c6c6, #b79bd6);
   box-shadow: 0 6px 14px rgba(22, 28, 45, 0.15);
+  display: block;
+  object-fit: cover;
 }
 
 .my-nav__profile {
@@ -57,6 +59,14 @@ body.of-my-body a {
   width: 54px;
   height: 54px;
   box-shadow: none;
+}
+
+.my-nav__avatar--placeholder {
+  display: grid;
+  place-items: center;
+  color: #e8edf5;
+  font-size: 20px;
+  font-weight: 800;
 }
 
 .my-nav__identity .name {

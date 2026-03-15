@@ -221,6 +221,59 @@ export async function updateCreatorPricing(params: {
   if (error) throw error;
 }
 
+export type CurrentCreatorProfile = {
+  name: string;
+  handle: string;
+  avatar_url: string | null;
+};
+
+export async function fetchCurrentCreatorProfile(): Promise<CurrentCreatorProfile | null> {
+  if (!supabase) return null;
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError) throw authError;
+
+  const user = authData.user;
+  if (!user?.id) return null;
+
+  const { data, error } = await supabase
+    .from('creators')
+    .select('display_name, handle, avatar_url')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (error) throw error;
+
+  const metadata = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const metadataName = [
+    metadata.display_name,
+    metadata.full_name,
+    metadata.name,
+  ].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  const metadataAvatar = [
+    metadata.avatar_url,
+    metadata.picture,
+  ].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+  const handleValue =
+    typeof data?.handle === 'string' && data.handle.trim().length > 0
+      ? data.handle.startsWith('@')
+        ? data.handle
+        : `@${data.handle}`
+      : '';
+
+  return {
+    name:
+      (typeof data?.display_name === 'string' && data.display_name.trim().length > 0
+        ? data.display_name.trim()
+        : metadataName) || 'Creator',
+    handle: handleValue,
+    avatar_url:
+      (typeof data?.avatar_url === 'string' && data.avatar_url.trim().length > 0
+        ? data.avatar_url
+        : metadataAvatar) ?? null,
+  };
+}
+
 export type CreatorContentMedia = {
   id: number;
   url: string;

@@ -1,6 +1,8 @@
 ﻿import { useEffect, type ReactNode } from 'react';
 import './MyPages.css';
 import './SettingsProfile.css';
+import { useState } from 'react';
+import { fetchCurrentCreatorProfile } from '../supabaseClient';
 
 type SettingsItemKey =
   | 'profile'
@@ -60,6 +62,8 @@ export default function SettingsShell({
   children,
   userHandle = USE_SAMPLE_DATA ? NAV_PROFILE.handle : '',
 }: SettingsShellProps) {
+  const [navProfile, setNavProfile] = useState(NAV_PROFILE);
+
   useEffect(() => {
     document.body.classList.add('react-page');
     document.body.classList.add('of-settings-body');
@@ -77,22 +81,60 @@ export default function SettingsShell({
     };
   }, [activeItem]);
 
+  useEffect(() => {
+    if (USE_SAMPLE_DATA) {
+      setNavProfile(NAV_PROFILE);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadNavProfile = async () => {
+      try {
+        const profile = await fetchCurrentCreatorProfile();
+        if (cancelled || !profile) {
+          return;
+        }
+
+        setNavProfile((prev) => ({
+          ...prev,
+          name: profile.name || prev.name,
+          handle: profile.handle,
+          avatar: profile.avatar_url ?? '',
+          meta: prev.meta,
+        }));
+      } catch (error) {
+        console.error('Could not load creator nav profile', error);
+      }
+    };
+
+    void loadNavProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const navInitial = navProfile.name.trim().charAt(0).toUpperCase() || 'C';
+  const effectiveHandle = userHandle || navProfile.handle;
+
   return (
     <div className="settings-shell">
       <aside className="my-nav my-nav--dark">
         <div className="my-nav__profile">
-          {NAV_PROFILE.avatar ? (
-            <img className="my-nav__avatar" src={NAV_PROFILE.avatar} alt="Profile avatar" />
+          {navProfile.avatar ? (
+            <img className="my-nav__avatar" src={navProfile.avatar} alt="Profile avatar" />
           ) : (
-            <div className="my-nav__avatar" aria-hidden="true" />
+            <div className="my-nav__avatar my-nav__avatar--placeholder" aria-hidden="true">
+              {navInitial}
+            </div>
           )}
           <div className="my-nav__identity">
-            <div className="name">{NAV_PROFILE.name}</div>
-            {userHandle ? <div className="handle">{userHandle}</div> : null}
-            {NAV_PROFILE.meta ? (
+            <div className="name">{navProfile.name}</div>
+            {effectiveHandle ? <div className="handle">{effectiveHandle}</div> : null}
+            {navProfile.meta ? (
               <div className="meta">
-                <span>{NAV_PROFILE.meta.fans}</span> -{' '}
-                <span>{NAV_PROFILE.meta.followers}</span>
+                <span>{navProfile.meta.fans}</span> - <span>{navProfile.meta.followers}</span>
               </div>
             ) : null}
           </div>
@@ -151,7 +193,7 @@ export default function SettingsShell({
           </button>
           <h2>Settings</h2>
         </div>
-        {userHandle ? <div className="settings-menu__user">{userHandle}</div> : null}
+        {effectiveHandle ? <div className="settings-menu__user">{effectiveHandle}</div> : null}
         <div className="settings-menu__list">
           {PRIMARY_SETTINGS.map((item) => (
             <a
@@ -322,4 +364,3 @@ function LogOutIcon() {
     </svg>
   );
 }
-
