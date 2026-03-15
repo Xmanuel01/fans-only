@@ -1,52 +1,154 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { env } from '../env';
+import {
+  fetchCreatorProfileSettings,
+  updateCreatorProfileSettings,
+  type CreatorProfileSettings,
+} from '../supabaseClient';
 import SettingsShell from './SettingsShell';
 
 type ProfileForm = {
   username: string;
   displayName: string;
   bio: string;
-  location: string;
 };
 
 const USE_SAMPLE_DATA = !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true';
 
-const INITIAL_FORM: ProfileForm = USE_SAMPLE_DATA
-  ? {
-      username: '@aiko.mitsuri',
-      displayName: 'Aiko Mitsuri',
-      bio:
-        'Osu!, Welcome to my Fanvue\n' +
-        '* I am Aiko, *\n' +
-        'I move with quiet confidence, soft curves, and a gaze that lingers longer than expected. ' +
-        'My world is built on beauty, lifestyle, fashion, fitness, and sensual aesthetics, captured ' +
-        'in high-quality visuals meant to feel close, warm, and irresistibly personal. I create ' +
-        'moments that invite you in from cozy, intimate indoor scenes to polished, magazine-worthy looks. ' +
-        'Expect exclusive refined glamour, confident',
-      location: '',
-    }
-  : {
-      username: '',
-      displayName: '',
-      bio: '',
-      location: '',
+const SAMPLE_PROFILE: CreatorProfileSettings = {
+  username: '@aiko.mitsuri',
+  displayName: 'Aiko Mitsuri',
+  bio:
+    'Osu!, Welcome to my Fanvue\n' +
+    '* I am Aiko, *\n' +
+    'I move with quiet confidence, soft curves, and a gaze that lingers longer than expected. ' +
+    'My world is built on beauty, lifestyle, fashion, fitness, and sensual aesthetics.',
+  avatarUrl: 'https://i.pravatar.cc/240?img=21',
+  bannerUrl: null,
+  bannerMediaType: null,
+};
+
+const EMPTY_PROFILE: CreatorProfileSettings = {
+  username: '',
+  displayName: '',
+  bio: '',
+  avatarUrl: null,
+  bannerUrl: null,
+  bannerMediaType: null,
+};
+
+function toForm(profile: CreatorProfileSettings): ProfileForm {
+  return {
+    username: profile.username,
+    displayName: profile.displayName,
+    bio: profile.bio,
+  };
+}
+
+function readFilePreview(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not load preview.'));
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('Could not load preview.'));
     };
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function SettingsProfile() {
-  const [form, setForm] = useState<ProfileForm>(INITIAL_FORM);
-  const [saved, setSaved] = useState<ProfileForm>(INITIAL_FORM);
+  const [form, setForm] = useState<ProfileForm>(toForm(USE_SAMPLE_DATA ? SAMPLE_PROFILE : EMPTY_PROFILE));
+  const [saved, setSaved] = useState<ProfileForm>(toForm(USE_SAMPLE_DATA ? SAMPLE_PROFILE : EMPTY_PROFILE));
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(USE_SAMPLE_DATA ? SAMPLE_PROFILE.avatarUrl : null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(USE_SAMPLE_DATA ? SAMPLE_PROFILE.bannerUrl : null);
+  const [bannerMediaType, setBannerMediaType] = useState<'image' | 'video' | null>(
+    USE_SAMPLE_DATA ? SAMPLE_PROFILE.bannerMediaType : null,
+  );
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const [bannerPreviewUrl, setBannerPreviewUrl] = useState<string | null>(null);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
+  const [removeBanner, setRemoveBanner] = useState(false);
+  const [loading, setLoading] = useState(!USE_SAMPLE_DATA);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const bannerInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (USE_SAMPLE_DATA) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadProfile = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const profile = await fetchCreatorProfileSettings();
+        if (cancelled) {
+          return;
+        }
+
+        const resolved = profile ?? EMPTY_PROFILE;
+        setForm(toForm(resolved));
+        setSaved(toForm(resolved));
+        setAvatarUrl(resolved.avatarUrl);
+        setBannerUrl(resolved.bannerUrl);
+        setBannerMediaType(resolved.bannerMediaType);
+      } catch (nextError) {
+        console.error(nextError);
+        if (!cancelled) {
+          setError(
+            nextError instanceof Error && nextError.message
+              ? nextError.message
+              : 'Could not load your profile settings.',
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const displayCount = form.displayName.length;
   const bioCount = form.bio.length;
-
+  const currentAvatarSrc = removeAvatar ? null : avatarPreviewUrl ?? avatarUrl;
+  const currentBannerSrc = removeBanner ? null : bannerPreviewUrl ?? bannerUrl;
+  const currentBannerType =
+    bannerPreviewUrl && bannerFile
+      ? bannerFile.type.startsWith('video/')
+        ? 'video'
+        : 'image'
+      : removeBanner
+        ? null
+        : bannerMediaType;
   const hasChanges = useMemo(() => {
     return (
       form.username !== saved.username ||
       form.displayName !== saved.displayName ||
       form.bio !== saved.bio ||
-      form.location !== saved.location
+      Boolean(avatarFile) ||
+      Boolean(bannerFile) ||
+      removeAvatar ||
+      removeBanner
     );
-  }, [form, saved]);
+  }, [avatarFile, bannerFile, form, removeAvatar, removeBanner, saved]);
 
   const profileUrl = useMemo(() => {
     const trimmed = form.username.trim();
@@ -60,47 +162,220 @@ export default function SettingsProfile() {
     return `${env.consumerAppUrl.replace(/\/$/, '')}/creator/${handle}`;
   }, [form.username]);
 
+  const handleAvatarChange = async (file: File | null) => {
+    if (!file) return;
+    setError('');
+    try {
+      const preview = await readFilePreview(file);
+      setAvatarFile(file);
+      setAvatarPreviewUrl(preview);
+      setRemoveAvatar(false);
+    } catch (nextError) {
+      console.error(nextError);
+      setError(nextError instanceof Error ? nextError.message : 'Could not load avatar preview.');
+    }
+  };
+
+  const handleBannerChange = async (file: File | null) => {
+    if (!file) return;
+    setError('');
+    try {
+      const preview = await readFilePreview(file);
+      setBannerFile(file);
+      setBannerPreviewUrl(preview);
+      setBannerMediaType(file.type.startsWith('video/') ? 'video' : 'image');
+      setRemoveBanner(false);
+    } catch (nextError) {
+      console.error(nextError);
+      setError(nextError instanceof Error ? nextError.message : 'Could not load banner preview.');
+    }
+  };
+
+  const handleSave = async () => {
+    if (!hasChanges || saving) {
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const updated = await updateCreatorProfileSettings({
+        username: form.username,
+        displayName: form.displayName,
+        bio: form.bio,
+        avatarFile,
+        removeAvatar,
+        bannerFile,
+        removeBanner,
+      });
+
+      const nextForm = toForm(updated);
+      setForm(nextForm);
+      setSaved(nextForm);
+      setAvatarUrl(updated.avatarUrl);
+      setBannerUrl(updated.bannerUrl);
+      setBannerMediaType(updated.bannerMediaType);
+      setAvatarFile(null);
+      setBannerFile(null);
+      setAvatarPreviewUrl(null);
+      setBannerPreviewUrl(null);
+      setRemoveAvatar(false);
+      setRemoveBanner(false);
+      setNotice('Profile updated.');
+    } catch (nextError) {
+      console.error(nextError);
+      setError(
+        nextError instanceof Error && nextError.message
+          ? nextError.message
+          : 'Could not save your profile settings.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <SettingsShell activeItem="profile" userHandle={form.username}>
       <div className="settings-content__header">
         <h2>Edit Profile</h2>
-        <button
-          className="save-button"
-          type="button"
-          disabled={!hasChanges}
-          onClick={() => setSaved(form)}
-        >
-          Save
+        <button className="save-button" type="button" disabled={!hasChanges || saving || loading} onClick={handleSave}>
+          {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
 
+      {error ? <div className="settings-feedback settings-feedback--error">{error}</div> : null}
+      {notice ? <div className="settings-feedback settings-feedback--success">{notice}</div> : null}
+
       <div className="settings-card">
-        <div className="cover">
-          <button className="cover-action" type="button" aria-label="Change cover">
-            <CameraIcon />
-          </button>
-          <button className="cover-action remove" type="button" aria-label="Remove cover">
-            <CloseIcon />
-          </button>
-        </div>
-        <div className="avatar-row">
-          <div className="avatar">
-            <button className="avatar-action" type="button" aria-label="Change avatar">
+        <input
+          ref={bannerInputRef}
+          className="settings-hidden-input"
+          type="file"
+          accept="image/*,video/*"
+          onChange={(event) => void handleBannerChange(event.target.files?.[0] ?? null)}
+        />
+        <input
+          ref={avatarInputRef}
+          className="settings-hidden-input"
+          type="file"
+          accept="image/*"
+          onChange={(event) => void handleAvatarChange(event.target.files?.[0] ?? null)}
+        />
+
+        <div
+          className={`cover${currentBannerSrc ? ' has-media' : ''}`}
+          role="button"
+          tabIndex={0}
+          aria-label="Change banner"
+          onClick={() => bannerInputRef.current?.click()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              bannerInputRef.current?.click();
+            }
+          }}
+        >
+          {currentBannerSrc ? (
+            currentBannerType === 'video' ? (
+              <video className="cover-media" src={currentBannerSrc} muted playsInline autoPlay loop />
+            ) : (
+              <img className="cover-media" src={currentBannerSrc} alt="Banner preview" />
+            )
+          ) : (
+            <div className="cover-placeholder">
+              <span>Click to upload banner</span>
+              <small>Images or short videos</small>
+            </div>
+          )}
+          <div className="cover-actions">
+            <button
+              className="cover-action"
+              type="button"
+              aria-label="Change cover"
+              onClick={(event) => {
+                event.stopPropagation();
+                bannerInputRef.current?.click();
+              }}
+            >
               <CameraIcon />
             </button>
-            <button className="avatar-action remove" type="button" aria-label="Remove avatar">
+            <button
+              className="cover-action remove"
+              type="button"
+              aria-label="Remove cover"
+              disabled={!currentBannerSrc}
+              onClick={(event) => {
+                event.stopPropagation();
+                setBannerFile(null);
+                setBannerPreviewUrl(null);
+                setRemoveBanner(Boolean(bannerUrl));
+                setBannerMediaType(null);
+              }}
+            >
               <CloseIcon />
             </button>
           </div>
         </div>
 
-        <form className="settings-form">
+        <div className="avatar-row">
+          <div
+            className={`avatar${currentAvatarSrc ? ' has-media' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label="Change avatar"
+            onClick={() => avatarInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                avatarInputRef.current?.click();
+              }
+            }}
+          >
+            {currentAvatarSrc ? (
+              <img className="avatar-media" src={currentAvatarSrc} alt="Profile avatar" />
+            ) : (
+              <span className="avatar-placeholder" aria-hidden="true">
+                {(form.displayName.trim().charAt(0) || 'C').toUpperCase()}
+              </span>
+            )}
+            <button
+              className="avatar-action"
+              type="button"
+              aria-label="Change avatar"
+              onClick={(event) => {
+                event.stopPropagation();
+                avatarInputRef.current?.click();
+              }}
+            >
+              <CameraIcon />
+            </button>
+            <button
+              className="avatar-action remove"
+              type="button"
+              aria-label="Remove avatar"
+              disabled={!currentAvatarSrc}
+              onClick={(event) => {
+                event.stopPropagation();
+                setAvatarFile(null);
+                setAvatarPreviewUrl(null);
+                setRemoveAvatar(Boolean(avatarUrl));
+              }}
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        </div>
+
+        <form className="settings-form" onSubmit={(event) => event.preventDefault()}>
           <label className="field">
             <span>Username</span>
             <div className="field-control">
               <input
                 type="text"
                 value={form.username}
+                placeholder="@creator-name"
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, username: event.target.value }))
                 }
@@ -119,6 +394,7 @@ export default function SettingsProfile() {
             </div>
             <input
               type="text"
+              maxLength={40}
               value={form.displayName}
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, displayName: event.target.value }))
@@ -134,6 +410,7 @@ export default function SettingsProfile() {
             <div className="textarea-wrapper">
               <textarea
                 rows={6}
+                maxLength={1000}
                 value={form.bio}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, bio: event.target.value }))
@@ -143,16 +420,11 @@ export default function SettingsProfile() {
             </div>
           </label>
 
-          <label className="field">
+          <div className="field field--disabled">
             <span>Location</span>
-            <input
-              type="text"
-              value={form.location}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, location: event.target.value }))
-              }
-            />
-          </label>
+            <input type="text" value="Coming soon" disabled readOnly />
+            <small>Location is not wired to the current backend yet.</small>
+          </div>
         </form>
       </div>
     </SettingsShell>
@@ -185,4 +457,3 @@ function CheckIcon() {
     </svg>
   );
 }
-

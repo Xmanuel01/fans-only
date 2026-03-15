@@ -2604,9 +2604,14 @@ export function PostsCreate() {
     };
 
     void loadComposerProfile();
+    const handleProfileUpdated = () => {
+      void loadComposerProfile();
+    };
+    window.addEventListener('creator-profile-updated', handleProfileUpdated);
 
     return () => {
       cancelled = true;
+      window.removeEventListener('creator-profile-updated', handleProfileUpdated);
     };
   }, []);
 
@@ -3511,9 +3516,14 @@ function MyLayout({
     };
 
     void loadNavProfile();
+    const handleProfileUpdated = () => {
+      void loadNavProfile();
+    };
+    window.addEventListener('creator-profile-updated', handleProfileUpdated);
 
     return () => {
       cancelled = true;
+      window.removeEventListener('creator-profile-updated', handleProfileUpdated);
     };
   }, []);
 

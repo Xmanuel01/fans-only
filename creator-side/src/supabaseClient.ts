@@ -227,6 +227,15 @@ export type CurrentCreatorProfile = {
   avatar_url: string | null;
 };
 
+export type CreatorProfileSettings = {
+  username: string;
+  displayName: string;
+  bio: string;
+  avatarUrl: string | null;
+  bannerUrl: string | null;
+  bannerMediaType: 'image' | 'video' | null;
+};
+
 export async function fetchCurrentCreatorProfile(): Promise<CurrentCreatorProfile | null> {
   if (!supabase) return null;
 
@@ -272,6 +281,194 @@ export async function fetchCurrentCreatorProfile(): Promise<CurrentCreatorProfil
         ? data.avatar_url
         : metadataAvatar) ?? null,
   };
+}
+
+export async function fetchCreatorProfileSettings(): Promise<CreatorProfileSettings | null> {
+  if (!supabase) return null;
+
+  const userId = await requireUserId();
+  const [{ data: creator, error: creatorError }, { data: profile, error: profileError }] =
+    await Promise.all([
+      supabase
+        .from('creators')
+        .select('handle, display_name, avatar_url, banner_url, banner_media_type')
+        .eq('id', userId)
+        .maybeSingle(),
+      supabase
+        .from('profiles')
+        .select('username, display_name, avatar_url, bio')
+        .eq('id', userId)
+        .maybeSingle(),
+    ]);
+
+  if (creatorError) throw creatorError;
+  if (profileError) throw profileError;
+
+  if (!creator && !profile) {
+    return null;
+  }
+
+  const usernameSource =
+    (typeof creator?.handle === 'string' && creator.handle.trim().length > 0
+      ? creator.handle
+      : typeof profile?.username === 'string'
+        ? profile.username
+        : '') || '';
+  const normalizedUsername = usernameSource
+    ? usernameSource.startsWith('@')
+      ? usernameSource
+      : `@${usernameSource}`
+    : '';
+
+  return {
+    username: normalizedUsername,
+    displayName:
+      (typeof creator?.display_name === 'string' && creator.display_name.trim().length > 0
+        ? creator.display_name.trim()
+        : typeof profile?.display_name === 'string'
+          ? profile.display_name
+          : '') || '',
+    bio: typeof profile?.bio === 'string' ? profile.bio : '',
+    avatarUrl:
+      (typeof creator?.avatar_url === 'string' && creator.avatar_url.trim().length > 0
+        ? creator.avatar_url
+        : typeof profile?.avatar_url === 'string'
+          ? profile.avatar_url
+          : null) ?? null,
+    bannerUrl:
+      typeof creator?.banner_url === 'string' && creator.banner_url.trim().length > 0
+        ? creator.banner_url
+        : null,
+    bannerMediaType:
+      creator?.banner_media_type === 'video' || creator?.banner_media_type === 'image'
+        ? creator.banner_media_type
+        : null,
+  };
+}
+
+function normalizeHandle(value: string) {
+  return value
+    .trim()
+    .replace(/^@+/, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 32);
+}
+
+function extractCreatorProfileStoragePath(publicUrl: string | null | undefined) {
+  if (!publicUrl) return null;
+
+  try {
+    const url = new URL(publicUrl);
+    const marker = '/storage/v1/object/public/creator-profiles/';
+    const index = url.pathname.indexOf(marker);
+    if (index === -1) return null;
+    return decodeURIComponent(url.pathname.slice(index + marker.length));
+  } catch {
+    return null;
+  }
+}
+
+async function removeCreatorProfileAsset(publicUrl: string | null | undefined) {
+  if (!supabase) return;
+
+  const path = extractCreatorProfileStoragePath(publicUrl);
+  if (!path) return;
+
+  const { error } = await supabase.storage.from(CREATOR_PROFILE_BUCKET).remove([path]);
+  if (error) {
+    console.warn('Failed to remove creator profile asset', error);
+  }
+}
+
+export async function updateCreatorProfileSettings(params: {
+  username: string;
+  displayName: string;
+  bio: string;
+  avatarFile?: File | null;
+  removeAvatar?: boolean;
+  bannerFile?: File | null;
+  removeBanner?: boolean;
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+
+  const userId = await requireUserId();
+  const handle = normalizeHandle(params.username);
+  if (!handle) {
+    throw new Error('Enter a valid username.');
+  }
+
+  const current = await fetchCreatorProfileSettings();
+  let nextAvatarUrl = current?.avatarUrl ?? null;
+  let nextBannerUrl = current?.bannerUrl ?? null;
+  let nextBannerMediaType = current?.bannerMediaType ?? null;
+
+  if (params.removeAvatar && nextAvatarUrl) {
+    await removeCreatorProfileAsset(nextAvatarUrl);
+    nextAvatarUrl = null;
+  }
+
+  if (params.removeBanner && nextBannerUrl) {
+    await removeCreatorProfileAsset(nextBannerUrl);
+    nextBannerUrl = null;
+    nextBannerMediaType = null;
+  }
+
+  if (params.avatarFile) {
+    const uploadedAvatarUrl = await uploadCreatorProfileAsset(userId, 'avatar', params.avatarFile);
+    if (nextAvatarUrl && nextAvatarUrl !== uploadedAvatarUrl) {
+      await removeCreatorProfileAsset(nextAvatarUrl);
+    }
+    nextAvatarUrl = uploadedAvatarUrl;
+  }
+
+  if (params.bannerFile) {
+    const uploadedBannerUrl = await uploadCreatorProfileAsset(userId, 'banner', params.bannerFile);
+    if (nextBannerUrl && nextBannerUrl !== uploadedBannerUrl) {
+      await removeCreatorProfileAsset(nextBannerUrl);
+    }
+    nextBannerUrl = uploadedBannerUrl;
+    nextBannerMediaType = params.bannerFile.type.startsWith('video/') ? 'video' : 'image';
+  }
+
+  const creatorPayload = {
+    id: userId,
+    handle,
+    display_name: params.displayName.trim() || 'Creator',
+    avatar_url: nextAvatarUrl,
+    banner_url: nextBannerUrl,
+    banner_media_type: nextBannerMediaType,
+  };
+
+  const profilePayload = {
+    id: userId,
+    username: handle,
+    display_name: params.displayName.trim() || 'Creator',
+    avatar_url: nextAvatarUrl,
+    bio: params.bio.trim() || null,
+  };
+
+  const [{ error: creatorError }, { error: profileError }] = await Promise.all([
+    supabase.from('creators').upsert(creatorPayload),
+    supabase.from('profiles').upsert(profilePayload),
+  ]);
+
+  if (creatorError) throw creatorError;
+  if (profileError) throw profileError;
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('creator-profile-updated'));
+  }
+
+  return {
+    username: `@${handle}`,
+    displayName: profilePayload.display_name,
+    bio: params.bio.trim(),
+    avatarUrl: nextAvatarUrl,
+    bannerUrl: nextBannerUrl,
+    bannerMediaType: nextBannerMediaType,
+  } satisfies CreatorProfileSettings;
 }
 
 export type CreatorContentMedia = {
