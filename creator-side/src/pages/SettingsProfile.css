@@ -390,11 +390,6 @@ body.of-settings-body a {
   color: #5d6a79;
 }
 
-.cover-action.remove {
-  background: rgba(255, 255, 255, 0.35);
-  color: #fff;
-}
-
 .cover-action svg {
   width: 20px;
   height: 20px;
@@ -451,13 +446,6 @@ body.of-settings-body a {
   color: #5d6a79;
   position: absolute;
   left: 16px;
-}
-
-.avatar-action.remove {
-  left: auto;
-  right: 16px;
-  background: rgba(255, 255, 255, 0.45);
-  color: #fff;
 }
 
 .avatar-action svg {

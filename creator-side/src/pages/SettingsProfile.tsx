@@ -301,21 +301,6 @@ export default function SettingsProfile() {
             >
               <CameraIcon />
             </button>
-            <button
-              className="cover-action remove"
-              type="button"
-              aria-label="Remove cover"
-              disabled={!currentBannerSrc}
-              onClick={(event) => {
-                event.stopPropagation();
-                setBannerFile(null);
-                setBannerPreviewUrl(null);
-                setRemoveBanner(Boolean(bannerUrl));
-                setBannerMediaType(null);
-              }}
-            >
-              <CloseIcon />
-            </button>
           </div>
         </div>
 
@@ -350,20 +335,6 @@ export default function SettingsProfile() {
               }}
             >
               <CameraIcon />
-            </button>
-            <button
-              className="avatar-action remove"
-              type="button"
-              aria-label="Remove avatar"
-              disabled={!currentAvatarSrc}
-              onClick={(event) => {
-                event.stopPropagation();
-                setAvatarFile(null);
-                setAvatarPreviewUrl(null);
-                setRemoveAvatar(Boolean(avatarUrl));
-              }}
-            >
-              <CloseIcon />
             </button>
           </div>
         </div>
@@ -437,15 +408,6 @@ function CameraIcon() {
       <path d="M4 8h16v10H4z" />
       <path d="M8 8l2-2h4l2 2" />
       <circle cx="12" cy="13" r="3" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6 6l12 12" />
-      <path d="M18 6l-12 12" />
     </svg>
   );
 }
