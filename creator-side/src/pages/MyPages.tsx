@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
+  completeCreatorCardPayoutSetup,
   fetchCurrentCreatorProfile,
   fetchCreatorFeedPosts,
   fetchPayoutAccount,
@@ -10,6 +11,7 @@ import {
   publishCreatorPost,
   requestCreatorPayout,
   requestPaypalPayout,
+  startCreatorCardPayoutSetup,
   type CreatorContentItem,
   type PayoutAccount,
   type PayoutSummary,
@@ -165,11 +167,41 @@ const parseMajorAmountToMinor = (value: string) => {
   return Math.round(numeric * 100);
 };
 
+type PaymentsRail = 'paypal' | 'mpesa' | 'card-bank';
+type CardBankRail = 'card' | 'bank';
+
+const normalizePaymentsRail = (value: string | null): PaymentsRail | null => {
+  if (value === 'paypal' || value === 'mpesa' || value === 'card-bank') {
+    return value;
+  }
+  return null;
+};
+
+const normalizeCardBankRail = (value: string | null): CardBankRail | null => {
+  if (value === 'card' || value === 'bank') {
+    return value;
+  }
+  return null;
+};
+
+const getPaymentsRailFromAccount = (account: PayoutAccount | null): PaymentsRail => {
+  if (!account) return 'mpesa';
+  if (account?.provider === 'paypal') return 'paypal';
+  if (account?.provider === 'mpesa') return 'mpesa';
+  return 'card-bank';
+};
+
+const getCardBankRailFromAccount = (account: PayoutAccount | null): CardBankRail => {
+  if (account?.provider === 'bank') return 'bank';
+  return 'card';
+};
+
 const getPayoutProviderLabel = (provider?: PayoutAccount['provider'] | null) => {
   if (provider === 'mpesa') return 'M-PESA';
   if (provider === 'bank') return 'Bank';
   if (provider === 'paypal') return 'PayPal';
-  return 'Not configured';
+  if (provider === 'card') return 'Card';
+  return 'No payout method';
 };
 
 const getPayoutVerificationState = (
@@ -219,6 +251,59 @@ const getPayoutDestinationMeta = (account: PayoutAccount | null) => {
   }
 
   return account.account_name || 'PayPal destination';
+};
+
+const getUnifiedPayoutDestinationLabel = (account: PayoutAccount | null) => {
+  if (!account) return 'No payout method saved';
+
+  if (account.provider === 'paypal') {
+    return account.paypal_email ?? 'PayPal payout rail';
+  }
+
+  if (account.provider === 'card') {
+    const brand = account.card_brand?.trim();
+    const brandLabel = brand ? `${brand[0].toUpperCase()}${brand.slice(1).toLowerCase()} ` : '';
+    return account.account_number_last4
+      ? `${brandLabel}card ending ${account.account_number_last4}`
+      : `${brandLabel.trim() || 'Card'} payout rail`;
+  }
+
+  if (account.provider === 'bank' && account.account_number_last4) {
+    return `Bank account ending ${account.account_number_last4}`;
+  }
+
+  if (account.provider === 'mpesa' && account.account_number_last4) {
+    return `M-PESA ending ${account.account_number_last4}`;
+  }
+
+  return `${getPayoutProviderLabel(account.provider)} payout rail`;
+};
+
+const getUnifiedPayoutDestinationMeta = (account: PayoutAccount | null) => {
+  if (!account) return 'Choose a payout rail, save it, and wait for verification.';
+
+  if (account.provider === 'bank') {
+    return account.bank_name || (account.bank_code ? `Bank code ${account.bank_code}` : 'Bank payout rail');
+  }
+
+  if (account.provider === 'mpesa') {
+    return account.account_name || 'Mobile money payout rail';
+  }
+
+  if (account.provider === 'card') {
+    const details: string[] = [];
+    if (account.card_brand) {
+      details.push(account.card_brand[0].toUpperCase() + account.card_brand.slice(1).toLowerCase());
+    }
+    if (account.card_exp_month && account.card_exp_year) {
+      details.push(
+        `Exp ${String(account.card_exp_month).padStart(2, '0')}/${String(account.card_exp_year).slice(-2)}`,
+      );
+    }
+    return details.join(' · ') || 'Tokenized securely through Paystack';
+  }
+
+  return account.account_name || account.paypal_email || 'PayPal payout rail';
 };
 
 const formatPayoutTransferStatus = (status: PayoutTransfer['status']) => {
@@ -2155,7 +2240,7 @@ export function MySubscribersActive() {
   );
 }
 
-export function MyPayments() {
+function LegacyMyPayments() {
   const [filter, setFilter] = useState<'all' | 'in_flight' | 'completed' | 'failed'>('all');
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
@@ -2471,7 +2556,7 @@ export function MyPayments() {
   );
 }
 
-export function MyPaymentsAddCard() {
+function LegacyMyPaymentsAddCard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -2614,6 +2699,735 @@ export function MyPaymentsAddCard() {
       </div>
     </MyLayout>
   );
+}
+
+export function MyPayments() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const cardSetupCallbackRef = useRef<string | null>(null);
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const requestedRail = normalizePaymentsRail(searchParams.get('rail'));
+  const requestedSubrail = normalizeCardBankRail(searchParams.get('subrail'));
+  const cardSetupReference = searchParams.get('reference') ?? searchParams.get('trxref');
+  const hasCardSetupCallback =
+    searchParams.get('paystack_card_setup') === '1' && Boolean(cardSetupReference);
+  const [filter, setFilter] = useState<'all' | 'in_flight' | 'completed' | 'failed'>('all');
+  const [loading, setLoading] = useState(true);
+  const [savingMethod, setSavingMethod] = useState(false);
+  const [requestingPayout, setRequestingPayout] = useState(false);
+  const [linkingCard, setLinkingCard] = useState(false);
+  const [noticeText, setNoticeText] = useState<string | null>(null);
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [summary, setSummary] = useState<PayoutSummary | null>(null);
+  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
+  const [transferRows, setTransferRows] = useState<PayoutTransfer[]>([]);
+  const [amountMajor, setAmountMajor] = useState('');
+  const [selectedRail, setSelectedRail] = useState<PaymentsRail>('mpesa');
+  const [selectedCardBankRail, setSelectedCardBankRail] = useState<CardBankRail>('card');
+  const [mpesaNumber, setMpesaNumber] = useState('');
+  const [mpesaName, setMpesaName] = useState('');
+  const [mpesaBankCode, setMpesaBankCode] = useState('MPESA');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankAccountName, setBankAccountName] = useState('');
+  const [bankCode, setBankCode] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [paypalEmail, setPaypalEmail] = useState('');
+
+  const syncPaymentsRoute = (
+    nextRail: PaymentsRail,
+    nextSubrail?: CardBankRail,
+    setup = true,
+  ) => {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.delete('reference');
+    nextParams.delete('trxref');
+    nextParams.delete('paystack_card_setup');
+    nextParams.set('rail', nextRail);
+    if (nextRail === 'card-bank') {
+      nextParams.set('subrail', nextSubrail ?? selectedCardBankRail);
+    } else {
+      nextParams.delete('subrail');
+    }
+    if (setup) {
+      nextParams.set('setup', '1');
+    } else {
+      nextParams.delete('setup');
+    }
+    const nextSearch = nextParams.toString();
+    navigate(`/my/payments${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
+  };
+
+  const hydrateForm = (account: PayoutAccount | null) => {
+    setMpesaNumber(account?.provider === 'mpesa' ? account.msisdn_e164 ?? '' : '');
+    setMpesaName(account?.provider === 'mpesa' ? account.account_name ?? '' : '');
+    setMpesaBankCode(account?.provider === 'mpesa' ? account.bank_code ?? 'MPESA' : 'MPESA');
+    setBankAccountNumber('');
+    setBankAccountName(account?.provider === 'bank' ? account.account_name ?? '' : '');
+    setBankCode(account?.provider === 'bank' ? account.bank_code ?? '' : '');
+    setBankName(account?.provider === 'bank' ? account.bank_name ?? '' : '');
+    setPaypalEmail(account?.provider === 'paypal' ? account.paypal_email ?? '' : '');
+  };
+
+  const loadPayments = async () => {
+    try {
+      setLoading(true);
+      setErrorText(null);
+      const [nextSummary, nextPayoutAccount, transfers] = await Promise.all([
+        fetchPayoutSummary(),
+        fetchPayoutAccount(),
+        fetchPayoutTransfers(20),
+      ]);
+      setSummary(nextSummary);
+      setPayoutAccount(nextPayoutAccount);
+      setTransferRows(transfers);
+      hydrateForm(nextPayoutAccount);
+    } catch (error) {
+      console.error(error);
+      setErrorText('Could not load payments.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadPayments();
+  }, []);
+
+  useEffect(() => {
+    if (requestedRail) {
+      setSelectedRail(requestedRail);
+      return;
+    }
+    setSelectedRail(getPaymentsRailFromAccount(payoutAccount));
+  }, [requestedRail, payoutAccount]);
+
+  useEffect(() => {
+    if (requestedSubrail) {
+      setSelectedCardBankRail(requestedSubrail);
+      return;
+    }
+    setSelectedCardBankRail(getCardBankRailFromAccount(payoutAccount));
+  }, [requestedSubrail, payoutAccount]);
+
+  useEffect(() => {
+    if (!hasCardSetupCallback || !cardSetupReference) {
+      return;
+    }
+    if (cardSetupCallbackRef.current === cardSetupReference) {
+      return;
+    }
+    cardSetupCallbackRef.current = cardSetupReference;
+
+    let cancelled = false;
+
+    const finalizeCardSetup = async () => {
+      try {
+        setLinkingCard(true);
+        setErrorText(null);
+        setNoticeText('Finishing secure card setup...');
+        await completeCreatorCardPayoutSetup({ reference: cardSetupReference });
+        if (cancelled) return;
+        setNoticeText(
+          'Card payout method saved. Verification is still required before payouts can be requested.',
+        );
+        await loadPayments();
+      } catch (error) {
+        console.error(error);
+        if (cancelled) return;
+        setErrorText(
+          error instanceof Error ? error.message : 'Could not finish secure card setup.',
+        );
+      } finally {
+        if (!cancelled) {
+          const nextParams = new URLSearchParams(location.search);
+          nextParams.delete('reference');
+          nextParams.delete('trxref');
+          nextParams.delete('paystack_card_setup');
+          const nextSearch = nextParams.toString();
+          navigate(`/my/payments${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
+          setLinkingCard(false);
+        }
+      }
+    };
+
+    void finalizeCardSetup();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cardSetupReference, hasCardSetupCallback, location.search, navigate]);
+
+  const activeSetupProvider: PayoutAccount['provider'] =
+    selectedRail === 'card-bank' ? selectedCardBankRail : selectedRail;
+  const verificationState = getPayoutVerificationState(payoutAccount);
+  const currentMethodMatchesSelected = payoutAccount?.provider === activeSetupProvider;
+  const amountMinor = parseMajorAmountToMinor(amountMajor);
+  const currency = summary?.currency ?? payoutAccount?.currency ?? 'KES';
+  const selectedRailLabel =
+    selectedRail === 'card-bank'
+      ? selectedCardBankRail === 'card'
+        ? 'Card'
+        : 'Bank'
+      : selectedRail === 'mpesa'
+        ? 'M-PESA'
+        : 'PayPal';
+  const selectedRailDescription =
+    activeSetupProvider === 'paypal'
+      ? 'PayPal payouts are processed independently and saved as your creator payout method.'
+      : activeSetupProvider === 'mpesa'
+        ? 'M-PESA payouts run through Paystack once the saved destination is approved.'
+        : activeSetupProvider === 'bank'
+          ? 'Bank payouts run through Paystack once the saved destination is approved.'
+          : 'Paystack will open a secure hosted page and return only masked card details.';
+
+  const filteredTransfers = useMemo(() => {
+    if (filter === 'all') {
+      return transferRows;
+    }
+    if (filter === 'completed') {
+      return transferRows.filter((item) => item.status === 'success');
+    }
+    if (filter === 'failed') {
+      return transferRows.filter((item) => item.status === 'failed' || item.status === 'reversed');
+    }
+    return transferRows.filter((item) => item.status === 'queued' || item.status === 'submitted');
+  }, [filter, transferRows]);
+
+  const requestDisabledText =
+    verificationState === 'unconfigured'
+      ? 'Save a payout method first.'
+      : verificationState === 'pending'
+        ? 'Verification is still pending.'
+        : verificationState === 'rejected'
+          ? 'Your current payout method was rejected. Update it and resubmit.'
+          : verificationState === 'inactive'
+            ? 'Your current payout method is inactive.'
+            : amountMajor.trim().length === 0
+              ? 'Enter the amount you want to withdraw.'
+              : amountMinor === null || amountMinor <= 0
+                ? 'Enter a valid payout amount.'
+                : amountMinor > (summary?.available_amount_minor ?? 0)
+                  ? 'Requested amount exceeds your available balance.'
+                  : null;
+
+  const handleSaveMethod = async () => {
+    try {
+      setSavingMethod(true);
+      setErrorText(null);
+      setNoticeText(null);
+
+      if (activeSetupProvider === 'paypal') {
+        const email = paypalEmail.trim().toLowerCase();
+        if (!email) {
+          setErrorText('Enter a valid PayPal email.');
+          return;
+        }
+        await upsertPaypalPayoutAccount({ paypalEmail: email, currency: 'KES' });
+        setNoticeText('PayPal payout method saved. Verification is pending.');
+      } else if (activeSetupProvider === 'bank') {
+        const normalizedAccount = bankAccountNumber.replace(/\D/g, '');
+        const normalizedName = bankAccountName.trim();
+        const normalizedBankCode = bankCode.trim().toUpperCase();
+        if (!normalizedAccount || !normalizedName || !normalizedBankCode) {
+          setErrorText('Enter a valid account number, account name, and bank code.');
+          return;
+        }
+        await upsertBankPayoutAccount({
+          accountNumber: normalizedAccount,
+          accountName: normalizedName,
+          bankCode: normalizedBankCode,
+          bankName: bankName.trim(),
+          currency: 'KES',
+        });
+        setNoticeText('Bank payout method saved. Verification is pending.');
+      } else if (activeSetupProvider === 'mpesa') {
+        const normalizedAccount = mpesaNumber.replace(/\D/g, '');
+        const normalizedName = mpesaName.trim();
+        const normalizedBankCode = mpesaBankCode.trim().toUpperCase() || 'MPESA';
+        if (!normalizedAccount || !normalizedName) {
+          setErrorText('Enter a valid M-PESA number and account name.');
+          return;
+        }
+        await upsertMpesaPayoutAccount({
+          accountNumber: normalizedAccount,
+          accountName: normalizedName,
+          bankCode: normalizedBankCode,
+          currency: 'KES',
+        });
+        setNoticeText('M-PESA payout method saved. Verification is pending.');
+      } else {
+        const baseUrl = new URL(import.meta.env.BASE_URL ?? '/creator/', window.location.origin);
+        const returnUrl = new URL(
+          'my/payments?rail=card-bank&subrail=card&setup=1',
+          baseUrl,
+        ).toString();
+        setLinkingCard(true);
+        setNoticeText('Redirecting to Paystack for secure card setup...');
+        const setupResult = await startCreatorCardPayoutSetup({ returnUrl });
+        if (!setupResult.authorization_url) {
+          throw new Error('Could not start secure card setup.');
+        }
+        window.location.assign(setupResult.authorization_url);
+        return;
+      }
+
+      await loadPayments();
+    } catch (error) {
+      console.error(error);
+      setErrorText(error instanceof Error ? error.message : 'Could not save payout method.');
+    } finally {
+      setSavingMethod(false);
+      setLinkingCard(false);
+    }
+  };
+
+  const handleRequestPayout = async () => {
+    if (!summary || amountMinor === null || amountMinor <= 0) {
+      setErrorText('Enter a valid payout amount.');
+      return;
+    }
+    if (amountMinor > summary.available_amount_minor) {
+      setErrorText('Requested amount exceeds your available balance.');
+      return;
+    }
+    if (!payoutAccount) {
+      setErrorText('Save a payout method first.');
+      return;
+    }
+
+    try {
+      setRequestingPayout(true);
+      setErrorText(null);
+      setNoticeText(null);
+
+      if (payoutAccount.provider === 'paypal') {
+        await requestPaypalPayout({
+          amountMinor,
+          reason: 'Creator initiated payout',
+        });
+      } else {
+        await requestCreatorPayout({
+          amountMinor,
+          reason: 'Creator initiated payout',
+          provider: payoutAccount.provider,
+        });
+      }
+
+      setNoticeText('Payout request submitted. We will update the history as the provider responds.');
+      setAmountMajor('');
+      await loadPayments();
+    } catch (error) {
+      console.error(error);
+      setErrorText(
+        error instanceof Error
+          ? error.message
+          : 'Payout request failed. Confirm your balance and payout method first.',
+      );
+    } finally {
+      setRequestingPayout(false);
+    }
+  };
+
+  return (
+    <MyLayout
+      title="Payments"
+      subtitle="Use one clean workspace for setup, payouts, and history."
+      activeNav="payments"
+    >
+      <div className="wallet-page wallet-page--single payments-workspace">
+        {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
+        {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
+
+        <section className="wallet-panel wallet-panel--compact payments-summary-strip">
+          <div className="wallet-panel__title-row">
+            <div>
+              <h2 className="wallet-panel__title">Verification status</h2>
+              <p className="wallet-panel__subtitle">
+                Keep one verified payout method active for creator withdrawals.
+              </p>
+            </div>
+            {loading ? <span className="wallet-status">Loading...</span> : null}
+          </div>
+
+          <div className="wallet-balance-grid payments-summary-grid">
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Available balance</div>
+              <div className="wallet-balance-card__value">
+                {formatMinorCurrency(summary?.available_amount_minor, currency)}
+              </div>
+            </article>
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Pending balance</div>
+              <div className="wallet-balance-card__value">
+                {formatMinorCurrency(summary?.pending_amount_minor, currency)}
+              </div>
+            </article>
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Current method</div>
+              <div className="wallet-balance-card__value wallet-balance-card__value--small">
+                {getUnifiedPayoutDestinationLabel(payoutAccount)}
+              </div>
+              <div className="wallet-balance-card__meta">
+                {getUnifiedPayoutDestinationMeta(payoutAccount)}
+              </div>
+              <span className={`wallet-status wallet-status--${verificationState}`}>
+                {getPayoutVerificationLabel(verificationState)}
+              </span>
+            </article>
+          </div>
+        </section>
+
+        <section className="wallet-panel wallet-panel--compact payments-method-panel">
+          <div className="wallet-panel__title-row">
+            <div>
+              <h2 className="wallet-panel__title">Set up payout method</h2>
+              <p className="wallet-panel__subtitle">
+                Choose one rail. Saving a new method replaces the current payout destination.
+              </p>
+            </div>
+            {searchParams.get('setup') === '1' ? <span className="wallet-status">Setup mode</span> : null}
+          </div>
+
+          <div className="payments-rail-switch">
+            <button
+              className={`payments-rail-switch__button${selectedRail === 'paypal' ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => {
+                setSelectedRail('paypal');
+                syncPaymentsRoute('paypal');
+              }}
+            >
+              PayPal
+            </button>
+            <button
+              className={`payments-rail-switch__button${selectedRail === 'mpesa' ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => {
+                setSelectedRail('mpesa');
+                syncPaymentsRoute('mpesa');
+              }}
+            >
+              M-PESA
+            </button>
+            <button
+              className={`payments-rail-switch__button${selectedRail === 'card-bank' ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => {
+                setSelectedRail('card-bank');
+                syncPaymentsRoute('card-bank', selectedCardBankRail);
+              }}
+            >
+              Card + Bank
+            </button>
+          </div>
+
+          {selectedRail === 'card-bank' ? (
+            <div className="payments-subrail-switch">
+              <button
+                className={`payments-subrail-switch__button${selectedCardBankRail === 'card' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => {
+                  setSelectedCardBankRail('card');
+                  syncPaymentsRoute('card-bank', 'card');
+                }}
+              >
+                Card
+              </button>
+              <button
+                className={`payments-subrail-switch__button${selectedCardBankRail === 'bank' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => {
+                  setSelectedCardBankRail('bank');
+                  syncPaymentsRoute('card-bank', 'bank');
+                }}
+              >
+                Bank
+              </button>
+            </div>
+          ) : null}
+
+          <div className="payments-setup-grid">
+            <div className="payments-setup-form">
+              <p className="payments-method-note">{selectedRailDescription}</p>
+
+              {activeSetupProvider === 'paypal' ? (
+                <div className="payments-form-grid payments-form-grid--single">
+                  <label className="create-post__field">
+                    <span>PayPal email</span>
+                    <input
+                      className="my-input"
+                      type="email"
+                      autoComplete="email"
+                      value={paypalEmail}
+                      onChange={(event) => setPaypalEmail(event.target.value)}
+                      placeholder="you@example.com"
+                    />
+                  </label>
+                </div>
+              ) : activeSetupProvider === 'mpesa' ? (
+                <div className="payments-form-grid">
+                  <label className="create-post__field">
+                    <span>M-PESA number</span>
+                    <input
+                      className="my-input"
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                      value={mpesaNumber}
+                      onChange={(event) => setMpesaNumber(event.target.value)}
+                      placeholder="2547XXXXXXXX"
+                    />
+                  </label>
+                  <label className="create-post__field">
+                    <span>Account name</span>
+                    <input
+                      className="my-input"
+                      autoComplete="name"
+                      value={mpesaName}
+                      onChange={(event) => setMpesaName(event.target.value)}
+                      placeholder="Creator full name"
+                    />
+                  </label>
+                  <label className="create-post__field">
+                    <span>Bank code</span>
+                    <input
+                      className="my-input"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      value={mpesaBankCode}
+                      onChange={(event) => setMpesaBankCode(event.target.value.toUpperCase())}
+                      placeholder="MPESA"
+                    />
+                  </label>
+                </div>
+              ) : activeSetupProvider === 'bank' ? (
+                <div className="payments-form-grid">
+                  <label className="create-post__field">
+                    <span>Account number</span>
+                    <input
+                      className="my-input"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={bankAccountNumber}
+                      onChange={(event) => setBankAccountNumber(event.target.value)}
+                      placeholder="Account number"
+                    />
+                  </label>
+                  <label className="create-post__field">
+                    <span>Account name</span>
+                    <input
+                      className="my-input"
+                      autoComplete="name"
+                      value={bankAccountName}
+                      onChange={(event) => setBankAccountName(event.target.value)}
+                      placeholder="Account holder name"
+                    />
+                  </label>
+                  <label className="create-post__field">
+                    <span>Bank code</span>
+                    <input
+                      className="my-input"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      value={bankCode}
+                      onChange={(event) => setBankCode(event.target.value.toUpperCase())}
+                      placeholder="BANK CODE"
+                    />
+                  </label>
+                  <label className="create-post__field">
+                    <span>Bank name (optional)</span>
+                    <input
+                      className="my-input"
+                      autoComplete="organization"
+                      value={bankName}
+                      onChange={(event) => setBankName(event.target.value)}
+                      placeholder="e.g. Equity Bank"
+                    />
+                  </label>
+                </div>
+              ) : (
+                <div className="payments-card-callout">
+                  <strong>Secure card setup</strong>
+                  <p>
+                    Paystack handles the card on a secure hosted page, then returns only masked card
+                    details and payout references.
+                  </p>
+                  <p>No raw card number or CVV is stored in this app.</p>
+                </div>
+              )}
+
+              <div className="payments-action-row">
+                <button
+                  className="wallet-action-button"
+                  type="button"
+                  disabled={savingMethod || linkingCard}
+                  onClick={() => void handleSaveMethod()}
+                >
+                  {activeSetupProvider === 'card'
+                    ? linkingCard
+                      ? 'Opening Paystack...'
+                      : 'Continue with Paystack'
+                    : savingMethod
+                      ? 'Saving...'
+                      : 'Save payout method'}
+                </button>
+              </div>
+            </div>
+
+            <aside className="payments-method-card">
+              <div className="payments-method-card__eyebrow">
+                {currentMethodMatchesSelected ? 'Current saved method' : `${selectedRailLabel} setup`}
+              </div>
+              <h3 className="payments-method-card__title">
+                {currentMethodMatchesSelected
+                  ? getUnifiedPayoutDestinationLabel(payoutAccount)
+                  : `${selectedRailLabel} not saved yet`}
+              </h3>
+              <p className="payments-method-card__meta">
+                {currentMethodMatchesSelected
+                  ? getUnifiedPayoutDestinationMeta(payoutAccount)
+                  : 'Save this method to make it your active creator payout destination.'}
+              </p>
+              <div className="payments-method-card__status">
+                <span
+                  className={`wallet-status wallet-status--${
+                    currentMethodMatchesSelected ? verificationState : 'inactive'
+                  }`}
+                >
+                  {currentMethodMatchesSelected ? getPayoutVerificationLabel(verificationState) : 'Not saved yet'}
+                </span>
+                <span className="my-muted">
+                  {currentMethodMatchesSelected
+                    ? `Using ${getPayoutProviderLabel(payoutAccount?.provider)} for live payouts`
+                    : `Selected rail: ${selectedRailLabel}`}
+                </span>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section className="wallet-panel wallet-panel--compact payments-request-panel">
+          <div className="wallet-panel__title-row">
+            <div>
+              <h2 className="wallet-panel__title">Request payout</h2>
+              <p className="wallet-panel__subtitle">
+                Payouts always use your currently saved and verified payout method.
+              </p>
+            </div>
+          </div>
+
+          <div className="payments-request-grid">
+            <label className="wallet-money-field wallet-money-field--large">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={amountMajor}
+                onChange={(event) => setAmountMajor(event.target.value)}
+                placeholder="0"
+                aria-label="Payout amount"
+              />
+              <span>{currency === 'KES' ? 'KSh' : currency}</span>
+            </label>
+            <button
+              className="wallet-action-button"
+              type="button"
+              disabled={Boolean(requestDisabledText) || requestingPayout}
+              onClick={() => void handleRequestPayout()}
+            >
+              {requestingPayout ? 'Requesting...' : 'Request payout'}
+            </button>
+          </div>
+
+          <div className="payments-request-meta">
+            <div>
+              <strong>Using:</strong> {getUnifiedPayoutDestinationLabel(payoutAccount)}
+            </div>
+            <div>
+              <strong>Available:</strong> {formatMinorCurrency(summary?.available_amount_minor, currency)}
+            </div>
+          </div>
+
+          {requestDisabledText ? <div className="wallet-warning">{requestDisabledText}</div> : null}
+        </section>
+
+        <section className="wallet-panel wallet-panel--compact payments-history-panel">
+          <div className="payments-history-header">
+            <div>
+              <h2 className="wallet-panel__title">History</h2>
+              <p className="wallet-panel__subtitle">Recent payout activity and provider responses.</p>
+            </div>
+            <div className="my-tabs">
+              <button
+                className={`my-tab${filter === 'all' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setFilter('all')}
+              >
+                All
+              </button>
+              <button
+                className={`my-tab${filter === 'in_flight' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setFilter('in_flight')}
+              >
+                Active
+              </button>
+              <button
+                className={`my-tab${filter === 'completed' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setFilter('completed')}
+              >
+                Completed
+              </button>
+              <button
+                className={`my-tab${filter === 'failed' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setFilter('failed')}
+              >
+                Failed
+              </button>
+            </div>
+          </div>
+
+          {loading ? <div className="my-muted">Loading payment activity...</div> : null}
+
+          <div className="wallet-history-list">
+            {filteredTransfers.length ? (
+              filteredTransfers.map((transfer) => (
+                <div key={transfer.id} className="wallet-history-item">
+                  <div className="wallet-history-item__meta">
+                    <div className="wallet-history-item__title">Payout transfer #{transfer.id}</div>
+                    <div className="wallet-history-item__subtext">
+                      {formatPayoutTransferDate(transfer.created_at)}
+                    </div>
+                    {transfer.failure_reason ? (
+                      <div className="wallet-history-item__failure">{transfer.failure_reason}</div>
+                    ) : null}
+                  </div>
+                  <div className="wallet-history-item__right">
+                    <span className={`wallet-status wallet-status--${transfer.status}`}>
+                      {formatPayoutTransferStatus(transfer.status)}
+                    </span>
+                    <strong>{formatMinorCurrency(transfer.amount_minor, transfer.currency)}</strong>
+                  </div>
+                </div>
+              ))
+            ) : (
+              !loading && (
+                <div className="wallet-card-empty">
+                  Your payout history will appear here after your first transfer request.
+                </div>
+              )
+            )}
+          </div>
+        </section>
+      </div>
+    </MyLayout>
+  );
+}
+
+export function MyPaymentsAddCard() {
+  return <Navigate to="/my/payments?rail=card-bank&subrail=card&setup=1" replace />;
 }
 
 export function PostsCreate() {
@@ -3085,7 +3899,7 @@ export function PostsCreate() {
   );
 }
 
-export function MyBanking() {
+function LegacyMyBanking() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [savingAccount, setSavingAccount] = useState(false);
@@ -3104,7 +3918,9 @@ export function MyBanking() {
   const [paypalEmail, setPaypalEmail] = useState('');
 
   const hydrateForm = (account: PayoutAccount | null) => {
-    setPayoutMethod(account?.provider ?? 'mpesa');
+    setPayoutMethod(
+      account?.provider === 'bank' || account?.provider === 'paypal' ? account.provider : 'mpesa',
+    );
     setMpesaNumber(account?.provider === 'mpesa' ? account.msisdn_e164 ?? '' : '');
     setMpesaName(account?.provider === 'mpesa' ? account.account_name ?? '' : '');
     setMpesaBankCode(account?.provider === 'mpesa' ? account.bank_code ?? 'MPESA' : 'MPESA');
@@ -3472,6 +4288,14 @@ export function MyBanking() {
     </MyLayout>
   );
 }
+
+export function MyBanking() {
+  return <Navigate to="/my/payments?setup=1" replace />;
+}
+
+void LegacyMyPayments;
+void LegacyMyPaymentsAddCard;
+void LegacyMyBanking;
 
 export function MyTicketsCreate() {
   const [form, setForm] = useState({

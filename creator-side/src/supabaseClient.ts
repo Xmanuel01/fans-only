@@ -90,7 +90,7 @@ export type PayoutTransfer = {
 };
 
 export type PayoutAccount = {
-  provider: "mpesa" | "bank" | "paypal";
+  provider: "mpesa" | "bank" | "paypal" | "card";
   currency: string;
   account_name: string;
   account_number_last4: string | null;
@@ -104,6 +104,10 @@ export type PayoutAccount = {
   kyc_status?: 'pending' | 'verified' | 'rejected' | null;
   verified_at?: string | null;
   verification_source?: string | null;
+  card_brand?: string | null;
+  card_exp_month?: number | null;
+  card_exp_year?: number | null;
+  paystack_authorization_signature?: string | null;
 };
 
 async function requireUserId() {
@@ -144,7 +148,7 @@ export async function fetchPayoutAccount(): Promise<PayoutAccount | null> {
   const { data, error } = await supabase
     .from('creator_payout_accounts')
     .select(
-      'provider, currency, account_name, account_number_last4, bank_code, bank_name, recipient_code, paypal_email, recipient_type, msisdn_e164, recipient_active, kyc_status, verified_at, verification_source'
+      'provider, currency, account_name, account_number_last4, bank_code, bank_name, recipient_code, paypal_email, recipient_type, msisdn_e164, recipient_active, kyc_status, verified_at, verification_source, card_brand, card_exp_month, card_exp_year, paystack_authorization_signature'
     )
     .eq('creator_id', userId)
     .maybeSingle();
@@ -191,6 +195,46 @@ export async function upsertPaypalPayoutAccount(params: {
   });
   if (error) throw error;
   return data;
+}
+
+export async function startCreatorCardPayoutSetup(params: { returnUrl: string }) {
+  if (!supabase) throw new Error('Supabase not configured');
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+  if (userError || !user) {
+    throw new Error('Authentication required');
+  }
+  if (!user.email) {
+    throw new Error('Your account is missing an email required for secure card setup.');
+  }
+
+  const { data, error } = await supabase.functions.invoke('start-creator-card-payout-setup', {
+    body: {
+      email: user.email,
+      returnUrl: params.returnUrl,
+    },
+  });
+  if (error) throw error;
+  return data as {
+    authorization_url?: string;
+    reference?: string;
+    amount_major?: number;
+  };
+}
+
+export async function completeCreatorCardPayoutSetup(params: { reference: string }) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('complete-creator-card-payout-setup', {
+    body: params,
+  });
+  if (error) throw error;
+  return data as {
+    ok?: boolean;
+    payoutAccount?: PayoutAccount;
+  };
 }
 
 export async function fetchCreatorPricing(): Promise<{
@@ -856,7 +900,7 @@ export async function requestCreatorPayout(params: {
   amountMinor: number;
   currency?: string;
   reason?: string;
-  provider?: 'mpesa' | 'bank';
+  provider?: 'mpesa' | 'bank' | 'card';
 }) {
   if (!supabase) throw new Error('Supabase not configured');
   const idempotencyKey =

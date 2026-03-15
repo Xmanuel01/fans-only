@@ -1,4 +1,4 @@
-// Request payout from creator balance to M-PESA recipient via Paystack transfers.
+// Request payout from creator balance to a Paystack-backed recipient via Paystack transfers.
 // Env: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -13,7 +13,7 @@ type Body = {
   amountMinor: number;
   currency?: string;
   reason?: string;
-  provider?: "mpesa" | "bank";
+  provider?: "mpesa" | "bank" | "card";
 };
 
 serve(async (req) => {
@@ -34,7 +34,7 @@ serve(async (req) => {
     return jsonWithCors({ error: "Invalid JSON" }, 400);
   }
 
-  const requestedProvider = body.provider?.trim?.() as "mpesa" | "bank" | undefined;
+  const requestedProvider = body.provider?.trim?.() as "mpesa" | "bank" | "card" | undefined;
   let payoutQuery = supabase
     .from("creator_payout_accounts")
     .select("provider, recipient_code, currency, recipient_active, bank_code, account_number_last4, kyc_status")

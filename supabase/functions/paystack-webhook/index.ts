@@ -49,6 +49,11 @@ serve(async (req) => {
   if (eventType === "charge.success") {
     const reference: string | undefined = data.reference;
     if (!reference) return json({ error: "Missing reference" }, 400);
+    const metadata = data.metadata ?? {};
+
+    if (metadata.type === "creator_card_setup") {
+      return json({ ok: true, ignored: "creator_card_setup" });
+    }
 
     // Idempotency: bail if already succeeded
     const { data: paymentRow, error: fetchErr } = await supabase
@@ -65,7 +70,6 @@ serve(async (req) => {
 
     let resolvedPayment = paymentRow;
     if (!resolvedPayment) {
-      const metadata = data.metadata ?? {};
       const creatorId = metadata.creator_id?.toString?.() ?? null;
       const payerUserId = metadata.payer_user_id?.toString?.() ?? null;
       const rawType = metadata.type?.toString?.();
