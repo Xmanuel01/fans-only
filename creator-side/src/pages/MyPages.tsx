@@ -11,6 +11,8 @@ import {
   requestCreatorPayout,
   requestPaypalPayout,
   type CreatorContentItem,
+  type PayoutAccount,
+  type PayoutSummary,
   upsertBankPayoutAccount,
   upsertMpesaPayoutAccount,
   upsertPaypalPayoutAccount,
@@ -274,6 +276,179 @@ const clearCreatorDraft = () => {
   } catch (error) {
     console.warn('Could not clear creator draft', error);
   }
+};
+
+type WalletCardBrand = 'mastercard' | 'visa' | 'amex';
+
+type WalletCardItem = {
+  id: string;
+  brand: WalletCardBrand;
+  maskedNumber: string;
+  expiry: string;
+  holder: string;
+  isDefault: boolean;
+};
+
+type WalletCardDraft = {
+  id?: string;
+  brand: WalletCardBrand;
+  maskedNumber: string;
+  expiry: string;
+  holder: string;
+};
+
+type WalletPagePreferences = {
+  paymentAmount: string;
+  nextPaymentDate: string;
+  paymentMethod: string;
+  cards: WalletCardItem[];
+};
+
+const WALLET_PAGE_STORAGE_KEY = 'creator-wallet-preferences-v1';
+const WALLET_PAYMENT_METHODS = ['Credit Card', 'Debit Card', 'M-PESA', 'PayPal'] as const;
+
+const createWalletCardId = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `card-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+};
+
+const createWalletSeedCards = (): WalletCardItem[] =>
+  USE_SAMPLE_DATA
+    ? [
+        {
+          id: 'wallet-card-1',
+          brand: 'mastercard',
+          maskedNumber: '•••• •••• •••• 7654',
+          expiry: '06 / 25',
+          holder: 'Gorde Omkar',
+          isDefault: true,
+        },
+        {
+          id: 'wallet-card-2',
+          brand: 'visa',
+          maskedNumber: '•••• •••• •••• 7654',
+          expiry: '02 / 24',
+          holder: 'Gorde Omkar',
+          isDefault: false,
+        },
+      ]
+    : [];
+
+const normalizeWalletCards = (cards: WalletCardItem[]) => {
+  if (!cards.length) return [];
+  const hasDefault = cards.some((card) => card.isDefault);
+  return cards.map((card, index) => ({
+    ...card,
+    isDefault: hasDefault ? card.isDefault : index === 0,
+  }));
+};
+
+const buildDefaultWalletPaymentDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  return date.toISOString().slice(0, 10);
+};
+
+const formatWalletAmountInput = (amountMinor?: number | null) => {
+  const major = Math.max(0, amountMinor ?? 0) / 100;
+  return major.toLocaleString(undefined, {
+    minimumFractionDigits: major % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const deriveWalletPaymentMethod = (account: PayoutAccount | null) => {
+  if (!account) return 'Credit Card';
+  if (account.provider === 'mpesa') return 'M-PESA';
+  if (account.provider === 'paypal') return 'PayPal';
+  return 'Debit Card';
+};
+
+const readWalletPreferences = (): WalletPagePreferences | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(WALLET_PAGE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<WalletPagePreferences>;
+    const cards = Array.isArray(parsed.cards)
+      ? normalizeWalletCards(
+          parsed.cards.flatMap((card) => {
+            if (
+              !card ||
+              typeof card !== 'object' ||
+              typeof card.id !== 'string' ||
+              typeof (card as WalletCardItem).maskedNumber !== 'string' ||
+              typeof (card as WalletCardItem).expiry !== 'string' ||
+              typeof (card as WalletCardItem).holder !== 'string'
+            ) {
+              return [];
+            }
+
+            const brand = (card as WalletCardItem).brand;
+            return [
+              {
+                id: card.id,
+                brand:
+                  brand === 'mastercard' || brand === 'visa' || brand === 'amex'
+                    ? brand
+                    : 'visa',
+                maskedNumber: (card as WalletCardItem).maskedNumber,
+                expiry: (card as WalletCardItem).expiry,
+                holder: (card as WalletCardItem).holder,
+                isDefault: Boolean((card as WalletCardItem).isDefault),
+              },
+            ];
+          }),
+        )
+      : createWalletSeedCards();
+
+    return {
+      paymentAmount:
+        typeof parsed.paymentAmount === 'string' ? parsed.paymentAmount : formatWalletAmountInput(0),
+      nextPaymentDate:
+        typeof parsed.nextPaymentDate === 'string' && parsed.nextPaymentDate
+          ? parsed.nextPaymentDate
+          : buildDefaultWalletPaymentDate(),
+      paymentMethod:
+        typeof parsed.paymentMethod === 'string' && parsed.paymentMethod
+          ? parsed.paymentMethod
+          : 'Credit Card',
+      cards,
+    };
+  } catch (error) {
+    console.warn('Could not restore wallet preferences', error);
+    return null;
+  }
+};
+
+const writeWalletPreferences = (preferences: WalletPagePreferences) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(WALLET_PAGE_STORAGE_KEY, JSON.stringify(preferences));
+  } catch (error) {
+    console.warn('Could not save wallet preferences', error);
+  }
+};
+
+const formatWalletDateLabel = (value: string) => {
+  if (!value) return 'Not scheduled';
+  const timestamp = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(timestamp.getTime())) return 'Not scheduled';
+  return timestamp.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
+const getWalletCardBrandLabel = (brand: WalletCardBrand) => {
+  if (brand === 'mastercard') return 'Mastercard';
+  if (brand === 'amex') return 'Amex';
+  return 'Visa';
 };
 
 const NOTIFICATION_TABS: Array<{ key: NotificationTab; label: string }> = [
@@ -2267,265 +2442,514 @@ export function MyPayments() {
 }
 
 export function MyPaymentsAddCard() {
-  if (!USE_SAMPLE_DATA) {
-    return (
-      <MyLayout title="Add card" activeNav="add-card" header={null}>
-        <div className="my-card">
-          <div className="my-chat-name">Paystack setup required</div>
-          <p className="my-muted" style={{ margin: 0 }}>
-            Card payments are handled by Paystack. Configure the Paystack inline checkout flow
-            before enabling card collection in production.
-          </p>
-        </div>
-      </MyLayout>
-    );
-  }
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [summary, setSummary] = useState<PayoutSummary | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [nextPaymentDate, setNextPaymentDate] = useState(buildDefaultWalletPaymentDate);
+  const [paymentMethod, setPaymentMethod] = useState<string>('Credit Card');
+  const [cards, setCards] = useState<WalletCardItem[]>(createWalletSeedCards);
+  const [editor, setEditor] = useState<WalletCardDraft | null>(null);
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const [baseline, setBaseline] = useState<WalletPagePreferences | null>(null);
 
-  const [form, setForm] = useState({
-    country: 'Kenya',
-    state: 'Nairobi City',
-    address: '',
-    city: 'Nairobi',
-    email: '',
-    cardName: '',
-    cardNumber: '',
-    expiry: '',
-    cvc: '',
-    confirmAge: false,
-  });
-  const [walletPrimary, setWalletPrimary] = useState(false);
+  useEffect(() => {
+    let active = true;
 
-  const isComplete =
-    form.country.trim() &&
-    form.state.trim() &&
-    form.address.trim() &&
-    form.city.trim() &&
-    form.email.trim() &&
-    form.cardName.trim() &&
-    form.cardNumber.trim() &&
-    form.expiry.trim() &&
-    form.cvc.trim() &&
-    form.confirmAge;
+    const loadWalletPage = async () => {
+      try {
+        setLoading(true);
+        setLoadError(null);
 
-  const aside = (
-    <div className="add-card-aside">
-      <div className="add-card-card add-card-card--wallet">
-        <div className="add-card-wallet">
-          <div className="add-card-wallet__amount">$0</div>
-          <div className="add-card-wallet__label">Wallet credits</div>
-        </div>
-        <div className="add-card-wallet__divider" />
-        <div className="add-card-wallet__section">
-          <div className="add-card-section-title">Add funds to your wallet</div>
-          <button className="add-card-wallet-button" type="button">
-            Add a payment card
-          </button>
-          <div className="add-card-toggle">
-            <span>Make wallet primary method for rebills</span>
-            <button
-              className={`add-card-toggle__switch${walletPrimary ? ' is-on' : ''}`}
-              type="button"
-              aria-pressed={walletPrimary}
-              onClick={() => setWalletPrimary((prev) => !prev)}
-            />
-          </div>
-        </div>
-      </div>
+        const [nextSummary, payoutAccount] = await Promise.all([
+          fetchPayoutSummary().catch((error) => {
+            console.warn('Could not load payout summary', error);
+            return null;
+          }),
+          fetchPayoutAccount().catch((error) => {
+            console.warn('Could not load payout account', error);
+            return null;
+          }),
+        ]);
 
-      <div className="add-card-card">
-        <div className="add-card-section-title">Latest transactions</div>
-        <div className="add-card-empty">
-          <BagIcon />
-          <div>No Payments done yet.</div>
-        </div>
-      </div>
-    </div>
+        if (!active) return;
+
+        setSummary(nextSummary);
+        const stored = readWalletPreferences();
+        const fallback: WalletPagePreferences = {
+          paymentAmount: formatWalletAmountInput(nextSummary?.available_amount_minor),
+          nextPaymentDate: buildDefaultWalletPaymentDate(),
+          paymentMethod: deriveWalletPaymentMethod(payoutAccount),
+          cards: createWalletSeedCards(),
+        };
+        const initial = stored ?? fallback;
+        const normalizedCards = normalizeWalletCards(initial.cards);
+        const normalizedState = {
+          paymentAmount: initial.paymentAmount || fallback.paymentAmount,
+          nextPaymentDate: initial.nextPaymentDate || fallback.nextPaymentDate,
+          paymentMethod: initial.paymentMethod || fallback.paymentMethod,
+          cards: normalizedCards,
+        };
+
+        setPaymentAmount(normalizedState.paymentAmount);
+        setNextPaymentDate(normalizedState.nextPaymentDate);
+        setPaymentMethod(normalizedState.paymentMethod);
+        setCards(normalizedCards);
+        setBaseline(normalizedState);
+      } catch (error) {
+        console.error(error);
+        if (!active) return;
+
+        const fallback: WalletPagePreferences = {
+          paymentAmount: formatWalletAmountInput(0),
+          nextPaymentDate: buildDefaultWalletPaymentDate(),
+          paymentMethod: 'Credit Card',
+          cards: createWalletSeedCards(),
+        };
+        setLoadError('Could not load wallet data. You can still style and save local preferences.');
+        setPaymentAmount(fallback.paymentAmount);
+        setNextPaymentDate(fallback.nextPaymentDate);
+        setPaymentMethod(fallback.paymentMethod);
+        setCards(fallback.cards);
+        setBaseline(fallback);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadWalletPage();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const currentPreferences = useMemo<WalletPagePreferences>(
+    () => ({
+      paymentAmount,
+      nextPaymentDate,
+      paymentMethod,
+      cards: normalizeWalletCards(cards),
+    }),
+    [cards, nextPaymentDate, paymentAmount, paymentMethod],
   );
 
+  const isDirty =
+    baseline !== null && JSON.stringify(currentPreferences) !== JSON.stringify(baseline);
+
+  const defaultCard = currentPreferences.cards.find((card) => card.isDefault) ?? null;
+  const additionalCards = currentPreferences.cards.filter((card) => card.id !== defaultCard?.id);
+  const totalMinor =
+    (summary?.available_amount_minor ?? 0) + (summary?.pending_amount_minor ?? 0);
+  const breakdownRows = [
+    {
+      label: 'Available balance',
+      value: formatMinorCurrency(summary?.available_amount_minor, summary?.currency),
+    },
+    {
+      label: 'Pending transfers',
+      value: formatMinorCurrency(summary?.pending_amount_minor, summary?.currency),
+    },
+    {
+      label: 'Total on account',
+      value: formatMinorCurrency(totalMinor, summary?.currency),
+    },
+  ];
+
+  const resetToBaseline = () => {
+    if (!baseline) return;
+    setPaymentAmount(baseline.paymentAmount);
+    setNextPaymentDate(baseline.nextPaymentDate);
+    setPaymentMethod(baseline.paymentMethod);
+    setCards(baseline.cards);
+    setEditor(null);
+    setNotice(null);
+  };
+
+  const savePreferences = () => {
+    writeWalletPreferences(currentPreferences);
+    setBaseline(currentPreferences);
+    setNotice('Wallet preferences saved for this browser.');
+  };
+
+  const openAddCard = () => {
+    setEditor({
+      brand: 'mastercard',
+      maskedNumber: '•••• •••• •••• 0000',
+      expiry: '12 / 28',
+      holder: 'Creator Name',
+    });
+    setNotice(null);
+  };
+
+  const openEditCard = (card: WalletCardItem) => {
+    setEditor({
+      id: card.id,
+      brand: card.brand,
+      maskedNumber: card.maskedNumber,
+      expiry: card.expiry,
+      holder: card.holder,
+    });
+    setNotice(null);
+  };
+
+  const saveCardDraft = () => {
+    if (!editor) return;
+    if (!editor.maskedNumber.trim() || !editor.expiry.trim() || !editor.holder.trim()) {
+      setNotice('Complete the card details before saving.');
+      return;
+    }
+
+    setCards((previous) => {
+      const nextCards = editor.id
+        ? previous.map((card) =>
+            card.id === editor.id
+              ? {
+                  ...card,
+                  brand: editor.brand,
+                  maskedNumber: editor.maskedNumber.trim(),
+                  expiry: editor.expiry.trim(),
+                  holder: editor.holder.trim(),
+                }
+              : card,
+          )
+        : [
+            ...previous,
+            {
+              id: createWalletCardId(),
+              brand: editor.brand,
+              maskedNumber: editor.maskedNumber.trim(),
+              expiry: editor.expiry.trim(),
+              holder: editor.holder.trim(),
+              isDefault: previous.length === 0,
+            },
+          ];
+
+      return normalizeWalletCards(nextCards);
+    });
+    setEditor(null);
+    setNotice(editor.id ? 'Card updated. Save changes to keep it.' : 'Card added. Save changes to keep it.');
+  };
+
+  const removeCard = (cardId: string) => {
+    if (typeof window !== 'undefined' && !window.confirm('Remove this linked card?')) {
+      return;
+    }
+
+    setCards((previous) => normalizeWalletCards(previous.filter((card) => card.id !== cardId)));
+    setNotice('Card removed. Save changes to keep it.');
+    if (editor?.id === cardId) {
+      setEditor(null);
+    }
+  };
+
+  const setDefaultCard = (cardId: string) => {
+    setCards((previous) =>
+      previous.map((card) => ({
+        ...card,
+        isDefault: card.id === cardId,
+      })),
+    );
+    setNotice('Default card updated. Save changes to keep it.');
+  };
+
   return (
-    <MyLayout title="Add card" activeNav="add-card" header={null} aside={aside} contentClassName="add-card-content">
-      <div className="add-card-panel">
-        <div className="add-card-header">
-          <div className="add-card-header__left">
-            <button
-              className="add-card-icon-button"
-              type="button"
-              aria-label="Go back"
-              onClick={() => window.history.back()}
-            >
-              <ArrowLeftIcon />
-            </button>
-            <h2>Add card</h2>
+    <MyLayout
+      title="Wallet"
+      subtitle="Manage payment timing and linked cards in your creator workspace."
+      activeNav="add-card"
+    >
+      <div className="wallet-page">
+        {loadError ? <div className="wallet-notice wallet-notice--warning">{loadError}</div> : null}
+        {notice ? <div className="wallet-notice">{notice}</div> : null}
+
+        <section className="wallet-panel">
+          <div className="wallet-panel__title-row">
+            <div>
+              <h2 className="wallet-panel__title">Payment</h2>
+              <p className="wallet-panel__subtitle">
+                Keep your payout preferences and wallet funding options in one place.
+              </p>
+            </div>
+            {loading ? <span className="wallet-status">Syncing...</span> : null}
           </div>
-          <button className="add-card-verify" type="button">
-            Verify
+
+          <div className="wallet-config-row">
+            <div className="wallet-config-row__meta">
+              <div className="wallet-config-row__label">Total payable amount</div>
+              <p className="wallet-config-row__help">
+                The amount can reflect your available creator balance and any pending transfers.
+              </p>
+            </div>
+            <div className="wallet-config-row__control wallet-config-row__control--stack">
+              <label className="wallet-money-field">
+                <input
+                  type="text"
+                  value={paymentAmount}
+                  onChange={(event) => setPaymentAmount(event.target.value)}
+                  aria-label="Total payable amount"
+                />
+                <span>KSh</span>
+              </label>
+              <button
+                className="wallet-inline-button"
+                type="button"
+                onClick={() => setShowBreakdown((prev) => !prev)}
+              >
+                {showBreakdown ? 'Hide amount breakdown' : 'View amount breakdown'}
+              </button>
+            </div>
+          </div>
+
+          {showBreakdown ? (
+            <div className="wallet-breakdown">
+              {breakdownRows.map((row) => (
+                <div className="wallet-breakdown__row" key={row.label}>
+                  <span>{row.label}</span>
+                  <strong>{row.value}</strong>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="wallet-config-row">
+            <div className="wallet-config-row__meta">
+              <div className="wallet-config-row__label">Next payment date</div>
+            </div>
+            <div className="wallet-config-row__control">
+              <label className="wallet-input-shell">
+                <input
+                  type="date"
+                  value={nextPaymentDate}
+                  onChange={(event) => setNextPaymentDate(event.target.value)}
+                  aria-label="Next payment date"
+                />
+              </label>
+              <div className="wallet-input-caption">{formatWalletDateLabel(nextPaymentDate)}</div>
+            </div>
+          </div>
+
+          <div className="wallet-config-row">
+            <div className="wallet-config-row__meta">
+              <div className="wallet-config-row__label">Payment method</div>
+            </div>
+            <div className="wallet-config-row__control">
+              <label className="wallet-input-shell wallet-input-shell--select">
+                <select
+                  value={paymentMethod}
+                  onChange={(event) => setPaymentMethod(event.target.value)}
+                  aria-label="Payment method"
+                >
+                  {WALLET_PAYMENT_METHODS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDownIcon />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section className="wallet-panel">
+          <div className="wallet-panel__title-row">
+            <div>
+              <h2 className="wallet-panel__title">Linked cards</h2>
+              <p className="wallet-panel__subtitle">
+                Choose which card should be used first for wallet top-ups and future billing.
+              </p>
+            </div>
+          </div>
+
+          <div className="wallet-card-section">
+            <div className="wallet-card-section__meta">
+              <div className="wallet-card-section__label">Default card:</div>
+              <p className="wallet-card-section__help">
+                Scheduled payments will prefer this card first.
+              </p>
+            </div>
+            <div className="wallet-card-section__body">
+              {defaultCard ? (
+                <article className="wallet-linked-card wallet-linked-card--default">
+                  <div className="wallet-linked-card__top">
+                    <div
+                      className={`wallet-linked-card__brand wallet-linked-card__brand--${defaultCard.brand}`}
+                    >
+                      {defaultCard.brand === 'mastercard' ? (
+                        <>
+                          <span className="wallet-linked-card__circle wallet-linked-card__circle--left" />
+                          <span className="wallet-linked-card__circle wallet-linked-card__circle--right" />
+                        </>
+                      ) : (
+                        <span className="wallet-linked-card__brand-text">
+                          {getWalletCardBrandLabel(defaultCard.brand)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="wallet-linked-card__number">{defaultCard.maskedNumber}</div>
+                  </div>
+                  <div className="wallet-linked-card__details">
+                    <span>{defaultCard.expiry}</span>
+                    <span>{defaultCard.holder}</span>
+                  </div>
+                  <div className="wallet-linked-card__actions">
+                    <button className="wallet-chip wallet-chip--active" type="button">
+                      Default
+                    </button>
+                    <button type="button" onClick={() => openEditCard(defaultCard)}>
+                      Edit
+                    </button>
+                    <button type="button" onClick={() => removeCard(defaultCard.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ) : (
+                <div className="wallet-card-empty">No default card linked yet.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="wallet-card-section">
+            <div className="wallet-card-section__meta">
+              <div className="wallet-card-section__label">Additional cards:</div>
+            </div>
+            <div className="wallet-card-section__body">
+              {additionalCards.length ? (
+                <div className="wallet-linked-card-list">
+                  {additionalCards.map((card) => (
+                    <article className="wallet-linked-card" key={card.id}>
+                      <div className="wallet-linked-card__top">
+                        <div
+                          className={`wallet-linked-card__brand wallet-linked-card__brand--${card.brand}`}
+                        >
+                          {card.brand === 'mastercard' ? (
+                            <>
+                              <span className="wallet-linked-card__circle wallet-linked-card__circle--left" />
+                              <span className="wallet-linked-card__circle wallet-linked-card__circle--right" />
+                            </>
+                          ) : (
+                            <span className="wallet-linked-card__brand-text">
+                              {getWalletCardBrandLabel(card.brand)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="wallet-linked-card__number">{card.maskedNumber}</div>
+                      </div>
+                      <div className="wallet-linked-card__details">
+                        <span>{card.expiry}</span>
+                        <span>{card.holder}</span>
+                      </div>
+                      <div className="wallet-linked-card__actions">
+                        <button type="button" onClick={() => setDefaultCard(card.id)}>
+                          Set as default
+                        </button>
+                        <button type="button" onClick={() => openEditCard(card)}>
+                          Edit
+                        </button>
+                        <button type="button" onClick={() => removeCard(card.id)}>
+                          Delete
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="wallet-card-empty">No secondary cards linked yet.</div>
+              )}
+
+              <button className="wallet-inline-button wallet-inline-button--ghost" type="button" onClick={openAddCard}>
+                Add new card
+              </button>
+            </div>
+          </div>
+
+          {editor ? (
+            <div className="wallet-editor">
+              <div className="wallet-editor__header">
+                <strong>{editor.id ? 'Edit card' : 'Add new card'}</strong>
+                <button type="button" onClick={() => setEditor(null)}>
+                  Cancel
+                </button>
+              </div>
+              <div className="wallet-editor__grid">
+                <label className="wallet-editor__field">
+                  <span>Brand</span>
+                  <select
+                    value={editor.brand}
+                    onChange={(event) =>
+                      setEditor((prev) =>
+                        prev ? { ...prev, brand: event.target.value as WalletCardBrand } : prev,
+                      )
+                    }
+                  >
+                    <option value="mastercard">Mastercard</option>
+                    <option value="visa">Visa</option>
+                    <option value="amex">Amex</option>
+                  </select>
+                </label>
+                <label className="wallet-editor__field">
+                  <span>Card label / number</span>
+                  <input
+                    type="text"
+                    value={editor.maskedNumber}
+                    onChange={(event) =>
+                      setEditor((prev) =>
+                        prev ? { ...prev, maskedNumber: event.target.value } : prev,
+                      )
+                    }
+                  />
+                </label>
+                <label className="wallet-editor__field">
+                  <span>Expiry</span>
+                  <input
+                    type="text"
+                    value={editor.expiry}
+                    onChange={(event) =>
+                      setEditor((prev) => (prev ? { ...prev, expiry: event.target.value } : prev))
+                    }
+                  />
+                </label>
+                <label className="wallet-editor__field">
+                  <span>Cardholder</span>
+                  <input
+                    type="text"
+                    value={editor.holder}
+                    onChange={(event) =>
+                      setEditor((prev) => (prev ? { ...prev, holder: event.target.value } : prev))
+                    }
+                  />
+                </label>
+              </div>
+              <div className="wallet-editor__actions">
+                <button className="wallet-inline-button wallet-inline-button--ghost" type="button" onClick={() => setEditor(null)}>
+                  Cancel
+                </button>
+                <button className="wallet-inline-button" type="button" onClick={saveCardDraft}>
+                  Save card
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <div className="wallet-actions">
+          <button className="wallet-action-button wallet-action-button--ghost" type="button" onClick={resetToBaseline}>
+            Cancel
+          </button>
+          <button
+            className="wallet-action-button"
+            type="button"
+            onClick={savePreferences}
+            disabled={!isDirty}
+          >
+            Save changes
           </button>
         </div>
-
-        <form className="add-card-body" onSubmit={(event) => event.preventDefault()}>
-          <div className="add-card-section">
-            <div className="add-card-section-title">Billing details</div>
-            <p className="add-card-note">
-              Live card payments are processed via Paystack checkout.
-            </p>
-
-            <div className="add-card-grid">
-              <div className="add-card-field">
-                <fieldset className="add-card-fieldset add-card-fieldset--select">
-                  <legend>Country</legend>
-                  <div className="add-card-select">
-                    <span className="add-card-flag" aria-hidden="true" />
-                    <select
-                      value={form.country}
-                      onChange={(event) =>
-                        setForm((prev) => ({ ...prev, country: event.target.value }))
-                      }
-                    >
-                      <option>Kenya</option>
-                      <option>South Africa</option>
-                      <option>United States</option>
-                    </select>
-                    <ChevronDownIcon />
-                  </div>
-                </fieldset>
-              </div>
-              <div className="add-card-field">
-                <fieldset className="add-card-fieldset add-card-fieldset--select">
-                  <legend>State / Province</legend>
-                  <div className="add-card-select">
-                    <select
-                      value={form.state}
-                      onChange={(event) =>
-                        setForm((prev) => ({ ...prev, state: event.target.value }))
-                      }
-                    >
-                      <option>Nairobi City</option>
-                      <option>Mombasa</option>
-                      <option>Kisumu</option>
-                    </select>
-                    <ChevronDownIcon />
-                  </div>
-                </fieldset>
-              </div>
-            </div>
-
-            <fieldset className="add-card-fieldset">
-              <legend>Address</legend>
-              <input
-                type="text"
-                value={form.address}
-                onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))}
-              />
-            </fieldset>
-
-            <div className="add-card-grid add-card-grid--single">
-              <fieldset className="add-card-fieldset">
-                <legend>City</legend>
-                <input
-                  type="text"
-                  value={form.city}
-                  onChange={(event) => setForm((prev) => ({ ...prev, city: event.target.value }))}
-                />
-              </fieldset>
-            </div>
-          </div>
-
-          <div className="add-card-section">
-            <div className="add-card-section-title">Card details</div>
-            <div className="add-card-grid">
-              <fieldset className="add-card-fieldset">
-                <legend>E-mail</legend>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-                />
-              </fieldset>
-              <fieldset className="add-card-fieldset">
-                <legend>Name on the card</legend>
-                <input
-                  type="text"
-                  value={form.cardName}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, cardName: event.target.value }))
-                  }
-                />
-              </fieldset>
-            </div>
-
-            <fieldset className="add-card-fieldset add-card-fieldset--icon">
-              <legend>Card Number</legend>
-              <input
-                type="text"
-                value={form.cardNumber}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, cardNumber: event.target.value }))
-                }
-              />
-              <span className="add-card-fieldset__icon" aria-hidden="true">
-                <CameraMiniIcon />
-              </span>
-            </fieldset>
-            <a className="add-card-help" href="/my/payments/add_card">
-              My card number is longer
-            </a>
-
-            <div className="add-card-grid">
-              <fieldset className="add-card-fieldset">
-                <legend>Expiration</legend>
-                <input
-                  type="text"
-                  placeholder="MM / YY"
-                  value={form.expiry}
-                  onChange={(event) => setForm((prev) => ({ ...prev, expiry: event.target.value }))}
-                />
-              </fieldset>
-              <fieldset className="add-card-fieldset">
-                <legend>CVC</legend>
-                <input
-                  type="text"
-                  value={form.cvc}
-                  onChange={(event) => setForm((prev) => ({ ...prev, cvc: event.target.value }))}
-                />
-              </fieldset>
-            </div>
-          </div>
-
-          <label className="add-card-checkbox">
-            <input
-              type="checkbox"
-              checked={form.confirmAge}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, confirmAge: event.target.checked }))
-              }
-            />
-            <span>
-              Tick here to confirm that you are at least 18 years old and the age of
-              majority in your place of residence
-            </span>
-          </label>
-
-          <div className="add-card-submit-row">
-            <button className="add-card-submit" type="button" disabled={!isComplete}>
-              Submit
-            </button>
-          </div>
-
-          <div className="add-card-brands">
-            <span className="add-card-brand">Visa</span>
-            <span className="add-card-brand">Mastercard</span>
-            <span className="add-card-brand">Maestro</span>
-            <span className="add-card-brand">Diners Club</span>
-            <span className="add-card-brand">Discover</span>
-            <span className="add-card-brand">JCB</span>
-          </div>
-          <div className="add-card-footer">
-            Fenix International Limited, 9th Floor, 107 Cheapside, London, EC2V 6DN
-            <br />
-            Fenix Internet LLC, 1000 N.West Street, Suite 1200, Wilmington, Delaware,
-            19801 USA
-          </div>
-        </form>
       </div>
     </MyLayout>
   );
