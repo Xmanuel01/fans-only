@@ -686,9 +686,11 @@ button,
     z-index: 40;
     width: min(360px, calc(100vw - 32px));
     max-height: calc(100vh - 110px);
-    padding: 18px 14px 18px;
+    padding: 18px 16px 18px;
     border: 1px solid #1f2733;
     border-radius: 22px;
+    background: linear-gradient(180deg, rgba(18, 25, 37, 0.96), rgba(11, 16, 24, 0.98));
+    backdrop-filter: blur(18px);
     box-shadow: 0 24px 56px rgba(0, 0, 0, 0.42);
     overflow-y: auto;
     transform: translateY(-10px) scale(0.98);
@@ -729,7 +731,34 @@ button,
   }
 
   .my-nav__profile {
-    padding-right: 40px;
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px 52px 12px 12px;
+    margin-bottom: 8px;
+    border: 1px solid rgba(111, 141, 179, 0.14);
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  }
+
+  .my-nav__profile .my-nav__avatar {
+    width: 56px;
+    height: 56px;
+  }
+
+  .my-nav__identity .name {
+    font-size: 15px;
+    line-height: 1.15;
+  }
+
+  .my-nav__identity .handle {
+    margin-top: 4px;
+    font-size: 13px;
+  }
+
+  .my-nav__identity .meta {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #78879b;
   }
 
   .my-nav__close svg,
@@ -762,7 +791,7 @@ button,
     gap: 8px;
     border: 1px solid #1f2733;
     border-radius: 999px;
-    background: #12263a;
+    background: linear-gradient(180deg, #12263a, #0f1f31);
     color: #e8edf5;
     padding: 10px 16px;
     font-weight: 700;
@@ -778,6 +807,100 @@ button,
   .my-main__actions {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .my-nav__menu {
+    gap: 6px;
+  }
+
+  .my-nav__secondary {
+    margin-top: 12px;
+    gap: 6px;
+    padding-top: 12px;
+    border-top-color: rgba(111, 141, 179, 0.14);
+  }
+
+  .my-nav-item {
+    gap: 12px;
+    min-height: 52px;
+    padding: 8px 10px;
+    border-radius: 16px;
+    border: 1px solid transparent;
+    background: transparent;
+  }
+
+  .my-nav-item:hover {
+    background: rgba(18, 32, 49, 0.8);
+    border-color: rgba(72, 110, 156, 0.42);
+    box-shadow: none;
+  }
+
+  .my-nav-item.is-active {
+    background: linear-gradient(180deg, rgba(20, 47, 74, 0.95), rgba(17, 38, 60, 0.95));
+    border-color: rgba(72, 110, 156, 0.42);
+    box-shadow: inset 3px 0 0 #57a4ff;
+  }
+
+  .my-nav-item__icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    background: rgba(255, 255, 255, 0.03);
+    color: #dde7f4;
+  }
+
+  .my-nav-item.is-active .my-nav-item__icon {
+    background: rgba(100, 166, 255, 0.12);
+    color: #ffffff;
+  }
+
+  .my-nav-item__label {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+  }
+
+  .my-nav-item__badge {
+    margin-left: 8px;
+    padding: 4px 9px;
+    font-size: 11px;
+  }
+
+  .wallet-pill {
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #20293a;
+  }
+
+  .my-nav__cta {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 18px;
+    border-color: rgba(72, 110, 156, 0.38);
+    background: linear-gradient(180deg, rgba(18, 32, 49, 0.7), rgba(14, 24, 37, 0.9));
+    column-gap: 12px;
+    text-align: left;
+    justify-items: start;
+  }
+
+  .my-nav__cta:hover {
+    background: linear-gradient(180deg, rgba(24, 43, 67, 0.88), rgba(18, 33, 51, 0.95));
+    box-shadow: none;
+    border-color: rgba(96, 149, 215, 0.56);
+  }
+
+  .my-nav__cta > :not(.my-nav__cta-icon) {
+    transform: none;
+  }
+
+  .my-nav__cta-icon {
+    width: 38px;
+    height: 38px;
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .my-main__content {
@@ -818,6 +941,30 @@ button,
 
   .my-main__actions > * {
     max-width: 100%;
+  }
+
+  .my-nav__profile {
+    grid-template-columns: 50px minmax(0, 1fr);
+    padding: 11px 48px 11px 11px;
+  }
+
+  .my-nav__profile .my-nav__avatar {
+    width: 50px;
+    height: 50px;
+  }
+
+  .my-nav-item {
+    min-height: 48px;
+    padding: 8px 9px;
+  }
+
+  .my-nav-item__icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .my-nav-item__label {
+    font-size: 14px;
   }
 }
 
