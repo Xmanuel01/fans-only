@@ -63,6 +63,7 @@ export default function SettingsShell({
   userHandle = USE_SAMPLE_DATA ? NAV_PROFILE.handle : '',
 }: SettingsShellProps) {
   const [navProfile, setNavProfile] = useState(NAV_PROFILE);
+  const [isNavPanelOpen, setIsNavPanelOpen] = useState(false);
 
   useEffect(() => {
     document.body.classList.add('react-page');
@@ -122,10 +123,28 @@ export default function SettingsShell({
 
   const navInitial = navProfile.name.trim().charAt(0).toUpperCase() || 'C';
   const effectiveHandle = userHandle || navProfile.handle;
+  const closeNavPanel = () => setIsNavPanelOpen(false);
 
   return (
     <div className="settings-shell">
-      <aside className="my-nav my-nav--dark">
+      {isNavPanelOpen ? (
+        <button
+          className="my-nav-backdrop"
+          type="button"
+          aria-label="Close creator menu"
+          onClick={closeNavPanel}
+        />
+      ) : null}
+
+      <aside className={`my-nav my-nav--dark${isNavPanelOpen ? ' is-open' : ''}`}>
+        <button
+          className="my-nav__close"
+          type="button"
+          aria-label="Close creator menu"
+          onClick={closeNavPanel}
+        >
+          <CloseIcon />
+        </button>
         <div className="my-nav__profile">
           {navProfile.avatar ? (
             <img className="my-nav__avatar" src={navProfile.avatar} alt="Profile avatar" />
@@ -146,29 +165,37 @@ export default function SettingsShell({
         </div>
 
         <nav className="my-nav__menu">
-          <NavItem href="/" label="Home" icon={<HomeIcon />} />
+          <NavItem href="/" label="Home" icon={<HomeIcon />} onClick={closeNavPanel} />
           <NavItem
             href="/my/notifications"
             label="Notifications"
             icon={<BellIcon />}
             badge="4"
+            onClick={closeNavPanel}
           />
-          <NavItem href="/my/chats" label="Chats" icon={<ChatIcon />} />
-          <NavItem href="/my/collections" label="Collections" icon={<GearIcon />} />
+          <NavItem href="/my/chats" label="Chats" icon={<ChatIcon />} onClick={closeNavPanel} />
+          <NavItem
+            href="/my/collections"
+            label="Collections"
+            icon={<GearIcon />}
+            onClick={closeNavPanel}
+          />
           <NavItem
             href="/my/collections/user-lists/subscriptions/active"
             label="Subscriptions"
             icon={<BagIcon />}
+            onClick={closeNavPanel}
           />
           <NavItem
             href="/my/payments/add_card"
             label="Wallet"
             icon={<CardIcon />}
             trailing={<span className="wallet-pill">0.00</span>}
+            onClick={closeNavPanel}
           />
         </nav>
 
-        <a className="my-nav__cta" href="/posts/create">
+        <a className="my-nav__cta" href="/posts/create" onClick={closeNavPanel}>
           <span className="my-nav__cta-icon">
             <PlusIcon />
           </span>
@@ -176,11 +203,11 @@ export default function SettingsShell({
         </a>
 
         <div className="my-nav__secondary">
-          <NavItem href="/my/settings" label="Settings" icon={<GearIcon />} isActive />
+          <NavItem href="/my/settings" label="Settings" icon={<GearIcon />} isActive onClick={closeNavPanel} />
           {USE_SAMPLE_DATA ? (
             <>
-              <NavItem href="/news" label="What's new" icon={<StarIcon />} badge="1" />
-              <NavItem href="/logout" label="Log out" icon={<LogOutIcon />} />
+              <NavItem href="/news" label="What's new" icon={<StarIcon />} badge="1" onClick={closeNavPanel} />
+              <NavItem href="/logout" label="Log out" icon={<LogOutIcon />} onClick={closeNavPanel} />
             </>
           ) : null}
         </div>
@@ -226,7 +253,21 @@ export default function SettingsShell({
         </div>
       </section>
 
-      <main className="settings-content">{children}</main>
+      <main className="settings-content">
+        <div className="settings-mobile-toolbar">
+          <button
+            className="my-nav-toggle"
+            type="button"
+            aria-label={isNavPanelOpen ? 'Hide creator menu' : 'Show creator menu'}
+            aria-expanded={isNavPanelOpen}
+            onClick={() => setIsNavPanelOpen((prev) => !prev)}
+          >
+            <MenuIcon />
+            <span>Menu</span>
+          </button>
+        </div>
+        {children}
+      </main>
     </div>
   );
 }
@@ -238,6 +279,7 @@ function NavItem({
   isActive,
   badge,
   trailing,
+  onClick,
 }: {
   href: string;
   label: string;
@@ -245,9 +287,10 @@ function NavItem({
   isActive?: boolean;
   badge?: string;
   trailing?: ReactNode;
+  onClick?: () => void;
 }) {
   return (
-    <a className={`my-nav-item${isActive ? ' is-active' : ''}`} href={href} title={label}>
+    <a className={`my-nav-item${isActive ? ' is-active' : ''}`} href={href} title={label} onClick={onClick}>
       <span className="my-nav-item__icon">{icon}</span>
       <span className="my-nav-item__label">{label}</span>
       {badge ? <span className="my-nav-item__badge">{badge}</span> : null}
@@ -298,6 +341,25 @@ function PlusIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h16" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 6l12 12" />
+      <path d="M18 6l-12 12" />
     </svg>
   );
 }

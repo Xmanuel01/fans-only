@@ -3476,6 +3476,7 @@ function MyLayout({
   children,
 }: MyLayoutProps) {
   const [navProfile, setNavProfile] = useState(NAV_PROFILE);
+  const [isNavPanelOpen, setIsNavPanelOpen] = useState(false);
 
   useEffect(() => {
     document.body.classList.add('react-page');
@@ -3528,10 +3529,28 @@ function MyLayout({
   }, []);
 
   const navInitial = navProfile.name.trim().charAt(0).toUpperCase() || 'C';
+  const closeNavPanel = () => setIsNavPanelOpen(false);
 
   return (
     <div className="my-shell">
-      <aside className="my-nav my-nav--dark">
+      {isNavPanelOpen ? (
+        <button
+          className="my-nav-backdrop"
+          type="button"
+          aria-label="Close creator menu"
+          onClick={closeNavPanel}
+        />
+      ) : null}
+
+      <aside className={`my-nav my-nav--dark${isNavPanelOpen ? ' is-open' : ''}`}>
+        <button
+          className="my-nav__close"
+          type="button"
+          aria-label="Close creator menu"
+          onClick={closeNavPanel}
+        >
+          <CloseIcon />
+        </button>
         <div className="my-nav__profile">
           {navProfile.avatar ? (
             <img className="my-nav__avatar" src={navProfile.avatar} alt="Profile avatar" />
@@ -3554,21 +3573,41 @@ function MyLayout({
         </div>
 
         <nav className="my-nav__menu">
-          <NavItem href="/" label="Home" icon={<HomeIcon />} isActive={activeNav === 'home'} />
+          <NavItem
+            href="/"
+            label="Home"
+            icon={<HomeIcon />}
+            isActive={activeNav === 'home'}
+            onClick={closeNavPanel}
+          />
           <NavItem
             href="/my/notifications"
             label="Notifications"
             icon={<BellIcon />}
             badge="4"
             isActive={activeNav === 'notifications'}
+            onClick={closeNavPanel}
           />
-          <NavItem href="/my/chats" label="Chats" icon={<ChatIcon />} isActive={activeNav === 'messages'} />
-          <NavItem href="/my/collections" label="Collections" icon={<GearIcon />} isActive={activeNav === 'collections'} />
+          <NavItem
+            href="/my/chats"
+            label="Chats"
+            icon={<ChatIcon />}
+            isActive={activeNav === 'messages'}
+            onClick={closeNavPanel}
+          />
+          <NavItem
+            href="/my/collections"
+            label="Collections"
+            icon={<GearIcon />}
+            isActive={activeNav === 'collections'}
+            onClick={closeNavPanel}
+          />
           <NavItem
             href="/my/collections/user-lists/subscriptions/active"
             label="Subscriptions"
             icon={<BagIcon />}
             isActive={activeNav === 'subscriptions'}
+            onClick={closeNavPanel}
           />
           <NavItem
             href="/my/payments/add_card"
@@ -3576,10 +3615,11 @@ function MyLayout({
             icon={<CardIcon />}
             trailing={<span className="wallet-pill">0.00</span>}
             isActive={activeNav === 'add-card'}
+            onClick={closeNavPanel}
           />
         </nav>
 
-        <a className="my-nav__cta" href="/posts/create">
+        <a className="my-nav__cta" href="/posts/create" onClick={closeNavPanel}>
           <span className="my-nav__cta-icon">
             <PlusIcon />
           </span>
@@ -3587,17 +3627,48 @@ function MyLayout({
         </a>
 
         <div className="my-nav__secondary">
-          <NavItem href="/my/settings" label="Settings" icon={<GearIcon />} isActive={activeNav === 'more'} />
+          <NavItem
+            href="/my/settings"
+            label="Settings"
+            icon={<GearIcon />}
+            isActive={activeNav === 'more'}
+            onClick={closeNavPanel}
+          />
           {USE_SAMPLE_DATA ? (
             <>
-              <NavItem href="/news" label="What's new" icon={<StarIcon />} badge="1" isActive={false} />
-              <NavItem href="/logout" label="Log out" icon={<LogOutIcon />} isActive={false} />
+              <NavItem
+                href="/news"
+                label="What's new"
+                icon={<StarIcon />}
+                badge="1"
+                isActive={false}
+                onClick={closeNavPanel}
+              />
+              <NavItem
+                href="/logout"
+                label="Log out"
+                icon={<LogOutIcon />}
+                isActive={false}
+                onClick={closeNavPanel}
+              />
             </>
           ) : null}
         </div>
       </aside>
 
       <main className="my-main">
+        <div className="my-main__toolbar">
+          <button
+            className="my-nav-toggle"
+            type="button"
+            aria-label={isNavPanelOpen ? 'Hide creator menu' : 'Show creator menu'}
+            aria-expanded={isNavPanelOpen}
+            onClick={() => setIsNavPanelOpen((prev) => !prev)}
+          >
+            <MenuIcon />
+            <span>Menu</span>
+          </button>
+        </div>
         {header === undefined ? (
           <header className="my-main__header">
             <div>
@@ -3640,6 +3711,7 @@ function NavItem({
   isActive,
   badge,
   trailing,
+  onClick,
 }: {
   href: string;
   label: string;
@@ -3647,9 +3719,10 @@ function NavItem({
   isActive?: boolean;
   badge?: string;
   trailing?: ReactNode;
+  onClick?: () => void;
 }) {
   return (
-    <a className={`my-nav-item${isActive ? ' is-active' : ''}`} href={href}>
+    <a className={`my-nav-item${isActive ? ' is-active' : ''}`} href={href} onClick={onClick}>
       <span className="my-nav-item__icon">{icon}</span>
       <span className="my-nav-item__label">{label}</span>
       {badge ? <span className="my-nav-item__badge">{badge}</span> : null}
@@ -3700,6 +3773,16 @@ function PlusIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h16" />
     </svg>
   );
 }

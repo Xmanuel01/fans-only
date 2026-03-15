@@ -269,6 +269,10 @@ body.of-settings-body a {
   padding: 0 0 32px;
 }
 
+.settings-mobile-toolbar {
+  display: none;
+}
+
 .settings-content__header {
   display: flex;
   align-items: center;
@@ -553,11 +557,16 @@ body.of-settings-body a {
 
 @media (max-width: 1180px) {
   .settings-shell {
-    grid-template-columns: 92px minmax(0, 1fr);
+    grid-template-columns: 1fr;
   }
 
   .settings-menu {
     display: none;
+  }
+
+  .settings-mobile-toolbar {
+    display: flex;
+    padding: 14px 18px 0;
   }
 
   .settings-content__header {
@@ -593,59 +602,6 @@ body.of-settings-body a {
 }
 
 @media (max-width: 900px) {
-  .settings-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-nav {
-    flex-direction: row;
-    align-items: center;
-    gap: 16px;
-    border-right: none;
-    border-bottom: 1px solid #1f2733;
-    padding: 16px;
-  }
-
-  .settings-nav__profile {
-    grid-template-columns: 40px 1fr;
-    align-items: center;
-  }
-
-  .settings-nav__avatar {
-    width: 40px;
-    height: 40px;
-  }
-
-  .settings-nav__identity .name {
-    font-size: 16px;
-  }
-
-  .settings-nav__identity .handle {
-    font-size: 13px;
-  }
-
-  .settings-nav__identity .meta {
-    font-size: 12px;
-  }
-
-  .settings-nav__menu {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-
-  .settings-nav__secondary {
-    border-top: 0;
-    padding-top: 0;
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-
-  .settings-nav__cta {
-    margin-top: 0;
-    margin-left: auto;
-  }
-
   .settings-content__header {
     gap: 12px;
   }
