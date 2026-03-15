@@ -247,7 +247,7 @@ function NavItem({
   trailing?: ReactNode;
 }) {
   return (
-    <a className={`my-nav-item${isActive ? ' is-active' : ''}`} href={href}>
+    <a className={`my-nav-item${isActive ? ' is-active' : ''}`} href={href} title={label}>
       <span className="my-nav-item__icon">{icon}</span>
       <span className="my-nav-item__label">{label}</span>
       {badge ? <span className="my-nav-item__badge">{badge}</span> : null}

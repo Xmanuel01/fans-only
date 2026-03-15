@@ -25,6 +25,7 @@ body.of-my-body a {
 }
 
 .my-nav {
+  min-width: 0;
   background: #0d1117;
   padding: 16px 14px 16px;
   border-right: 1px solid #161b22;
@@ -53,6 +54,7 @@ body.of-my-body a {
   grid-template-columns: 54px 1fr;
   gap: 10px;
   align-items: center;
+  min-width: 0;
 }
 
 .my-nav__profile .my-nav__avatar {
@@ -71,11 +73,13 @@ body.of-my-body a {
 
 .my-nav__identity .name {
   font-weight: 800;
+  overflow-wrap: anywhere;
 }
 
 .my-nav__identity .handle {
   color: #9fb0c7;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .my-nav__identity .meta {
@@ -246,6 +250,7 @@ button,
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .my-main__header {
@@ -656,6 +661,67 @@ button,
   }
 }
 
+@media (max-width: 1080px) {
+  .my-shell {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .my-nav {
+    padding: 18px 10px 16px;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .my-nav__profile {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    justify-items: center;
+  }
+
+  .my-nav__identity {
+    display: none;
+  }
+
+  .my-nav__menu,
+  .my-nav__secondary {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .my-nav-item {
+    justify-content: center;
+    padding: 10px 8px;
+  }
+
+  .my-nav-item__label,
+  .my-nav-item__badge,
+  .my-nav-item__trailing {
+    display: none;
+  }
+
+  .my-nav__cta {
+    width: 100%;
+    grid-template-columns: 1fr;
+    padding: 10px 8px;
+  }
+
+  .my-nav__cta > :not(.my-nav__cta-icon) {
+    display: none;
+  }
+
+  .my-nav__cta-icon {
+    justify-self: center;
+  }
+
+  .my-main {
+    padding: 18px;
+  }
+
+  .my-main__header {
+    align-items: flex-start;
+  }
+}
+
 @media (max-width: 900px) {
   body.of-my-body {
     overflow: auto;
@@ -673,17 +739,48 @@ button,
     border-right: none;
     border-bottom: 1px solid #1f2733;
     padding: 16px;
+    overflow-x: auto;
+  }
+
+  .my-nav__profile {
+    grid-template-columns: 40px 1fr;
+    gap: 10px;
+    justify-items: start;
+    flex: 0 0 auto;
+  }
+
+  .my-nav__identity {
+    display: block;
   }
 
   .my-nav__menu {
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 12px;
+    flex: 1 0 auto;
   }
 
   .my-nav__cta {
     margin-top: 0;
-    margin-left: auto;
+    margin-left: 0;
+    width: auto;
+    grid-template-columns: 32px minmax(0, 1fr);
+    flex: 0 0 auto;
+  }
+
+  .my-nav__cta > :not(.my-nav__cta-icon) {
+    display: block;
+  }
+
+  .my-nav-item {
+    justify-content: flex-start;
+    padding: 9px 10px;
+  }
+
+  .my-nav-item__label,
+  .my-nav-item__badge,
+  .my-nav-item__trailing {
+    display: inline-flex;
   }
 
   .my-main {
