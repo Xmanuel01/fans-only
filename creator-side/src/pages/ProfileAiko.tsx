@@ -163,7 +163,7 @@ export default function ProfileAiko() {
             label="Subscriptions"
             icon={<HeartIcon />}
           />
-          <NavItem href="/my/payments/add_card" label="Add card" icon={<CardIcon />} />
+      <NavItem href="/my/payments" label="Payments" icon={<CardIcon />} />
           <NavItem
             href="/aiko_mitsuri"
             label="My profile"
@@ -696,4 +696,3 @@ function CloseIcon() {
     </svg>
   );
 }
-

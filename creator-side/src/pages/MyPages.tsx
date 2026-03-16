@@ -2,16 +2,32 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode 
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
   completeCreatorCardPayoutSetup,
+  fetchNotifications,
+  fetchChatableMembers,
+  fetchChatMessages,
+  fetchChatThreads,
   fetchCurrentCreatorProfile,
   fetchCreatorFeedPosts,
   fetchPayoutAccount,
   fetchPayoutSummary,
   fetchPayoutTransfers,
+  fetchUnreadNotificationCount,
   fetchCreatorStories,
   publishCreatorPost,
+  markChatThreadRead,
+  markAllNotificationsRead,
+  markNotificationRead,
   requestCreatorPayout,
   requestPaypalPayout,
+  sendChatMessage,
   startCreatorCardPayoutSetup,
+  subscribeToChatMessages,
+  subscribeToCreatorChatThreads,
+  subscribeToNotifications,
+  type AppNotification,
+  type ChatableMember,
+  type ChatMessage,
+  type ChatThreadSummary,
   type CreatorContentItem,
   type PayoutAccount,
   type PayoutSummary,
@@ -46,19 +62,12 @@ type MyLayoutProps = {
 
 type NotificationTab =
   | 'all'
-  | 'tags'
-  | 'comments'
-  | 'mentions'
+  | 'unread'
+  | 'messages'
+  | 'earnings'
   | 'subscriptions'
-  | 'promotions';
-
-type NotificationItem = {
-  id: string;
-  title: string;
-  detail: string;
-  time: string;
-  category: Exclude<NotificationTab, 'all'>;
-};
+  | 'payouts'
+  | 'content';
 
 type SuggestionCard = {
   id: string;
@@ -169,6 +178,7 @@ const parseMajorAmountToMinor = (value: string) => {
 
 type PaymentsRail = 'paypal' | 'mpesa' | 'card-bank';
 type CardBankRail = 'card' | 'bank';
+type PaymentsPanel = 'method' | 'request' | 'history';
 
 const normalizePaymentsRail = (value: string | null): PaymentsRail | null => {
   if (value === 'paypal' || value === 'mpesa' || value === 'card-bank') {
@@ -179,6 +189,13 @@ const normalizePaymentsRail = (value: string | null): PaymentsRail | null => {
 
 const normalizeCardBankRail = (value: string | null): CardBankRail | null => {
   if (value === 'card' || value === 'bank') {
+    return value;
+  }
+  return null;
+};
+
+const normalizePaymentsPanel = (value: string | null): PaymentsPanel | null => {
+  if (value === 'method' || value === 'request' || value === 'history') {
     return value;
   }
   return null;
@@ -440,16 +457,125 @@ const clearCreatorDraft = () => {
   }
 };
 
+const formatNotificationDate = (value: string) => {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return 'Just now';
+
+  const diffMs = Date.now() - timestamp;
+  const diffMinutes = Math.max(1, Math.round(diffMs / (1000 * 60)));
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return new Date(value).toLocaleDateString();
+};
+
+const getNotificationTabForType = (
+  type: string,
+): Exclude<NotificationTab, 'all' | 'unread'> => {
+  if (type === 'chat_message') return 'messages';
+  if (
+    [
+      'new_tip',
+      'tip_sent',
+      'ppv_purchase',
+      'ppv_unlocked',
+    ].includes(type)
+  ) {
+    return 'earnings';
+  }
+  if (['new_subscription', 'subscription_active', 'subscription_renewed'].includes(type)) {
+    return 'subscriptions';
+  }
+  if (
+    ['payout_requested', 'payout_submitted', 'payout_success', 'payout_failed', 'payout_reversed'].includes(
+      type,
+    )
+  ) {
+    return 'payouts';
+  }
+  return 'content';
+};
+
+const getCreatorNotificationTitle = (item: AppNotification) => {
+  const payload = item.payload ?? {};
+
+  if (item.type === 'chat_message') return `New message from ${payload.from_name ?? 'a fan'}`;
+  if (item.type === 'new_tip') return `New tip from ${payload.from_name ?? 'a fan'}`;
+  if (item.type === 'ppv_purchase') {
+    return `${payload.buyer_name ?? 'A fan'} unlocked ${payload.post_title ?? 'a post'}`;
+  }
+  if (item.type === 'new_subscription') {
+    return `${payload.subscriber_name ?? 'A fan'} subscribed`;
+  }
+  if (item.type === 'subscription_renewed') {
+    return `${payload.subscriber_name ?? 'A fan'} renewed`;
+  }
+  if (item.type === 'payout_requested') return 'Payout request queued';
+  if (item.type === 'payout_submitted') return 'Payout submitted';
+  if (item.type === 'payout_success') return 'Payout completed';
+  if (item.type === 'payout_failed') return 'Payout failed';
+  if (item.type === 'payout_reversed') return 'Payout reversed';
+  return 'New activity';
+};
+
+const getCreatorNotificationDetail = (item: AppNotification) => {
+  const payload = item.payload ?? {};
+
+  if (item.type === 'chat_message') {
+    return payload.preview ?? 'Open chats to read the latest message.';
+  }
+  if (item.type === 'new_tip' || item.type === 'ppv_purchase') {
+    return `Amount: ${formatMinorCurrency(payload.amount_cents ?? 0, payload.currency ?? 'KES')}`;
+  }
+  if (item.type === 'new_subscription' || item.type === 'subscription_renewed') {
+    return payload.current_period_end
+      ? `Access runs until ${new Date(payload.current_period_end).toLocaleDateString()}.`
+      : 'Subscription access is active.';
+  }
+  if (item.type === 'payout_requested') {
+    return `Amount: ${formatMinorCurrency(payload.amount_minor ?? 0, payload.currency ?? 'KES')}`;
+  }
+  if (item.type === 'payout_submitted') {
+    return 'Your payout is on the way to the saved destination.';
+  }
+  if (item.type === 'payout_success') {
+    return `Transferred ${formatMinorCurrency(payload.amount_minor ?? 0, payload.currency ?? 'KES')}.`;
+  }
+  if (item.type === 'payout_failed' || item.type === 'payout_reversed') {
+    return payload.failure_reason ?? 'The amount was returned to your available balance.';
+  }
+  return 'Open the app to review the latest activity.';
+};
+
+const getCreatorNotificationTarget = (item: AppNotification) => {
+  if (item.type === 'chat_message') return '/my/chats';
+  if (
+    ['payout_requested', 'payout_submitted', 'payout_success', 'payout_failed', 'payout_reversed'].includes(
+      item.type,
+    )
+  ) {
+    return '/my/payments';
+  }
+  if (['new_subscription', 'subscription_renewed'].includes(item.type)) {
+    return '/my/collections/user-lists/subscriptions/active';
+  }
+  return '/';
+};
+
 const NOTIFICATION_TABS: Array<{ key: NotificationTab; label: string }> = [
   { key: 'all', label: 'All' },
-  { key: 'tags', label: 'Tags' },
-  { key: 'comments', label: 'Comments' },
-  { key: 'mentions', label: 'Mentions' },
+  { key: 'unread', label: 'Unread' },
+  { key: 'messages', label: 'Messages' },
+  { key: 'earnings', label: 'Earnings' },
   { key: 'subscriptions', label: 'Subscriptions' },
-  { key: 'promotions', label: 'Promotions' },
+  { key: 'payouts', label: 'Payouts' },
+  { key: 'content', label: 'Content' },
 ];
-
-const NOTIFICATION_ITEMS: NotificationItem[] = [];
 
 const SUGGESTIONS: SuggestionCard[] = USE_SAMPLE_DATA
   ? [
@@ -1176,82 +1302,45 @@ export function MyHome() {
   );
 }
 
-type ChatItem = {
-  id: string;
-  name: string;
-  handle: string;
-  preview: string;
-  time: string;
-  avatar: string;
-  stats: {
-    totalSpent: string;
-    lastSpend: string;
-    ppv: string;
-    tip: string;
-    fanType: string;
-    cost?: string;
-    duration?: string;
-    autoRenew?: string;
-    nickname?: string;
-    notes: Array<{ id: string; text: string; date: string }>;
-  };
+const formatMessageClock = (value: string | null) => {
+  if (!value) return 'now';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'now';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-const CHAT_LIST: ChatItem[] = USE_SAMPLE_DATA ? [
-  {
-    id: 'chat-1',
-    name: 'Technological Cow',
-    handle: '@technological-cow-21',
-    preview: 'hello my sweet filip, so nice to see u here again',
-    time: 'now',
-    avatar: 'https://dummyimage.com/64x64/0f172a/fff&text=TC',
-    stats: {
-      totalSpent: '$0.00',
-      lastSpend: 'N/A',
-      ppv: '$0.00',
-      tip: '$0.00',
-      fanType: 'Expired',
-      autoRenew: '-',
-      nickname: '',
-      notes: [
-        { id: 'n1', text: 'User is often alone at home', date: 'Jan 07' },
-        { id: 'n2', text: 'User watches anime like Gate and Berserk', date: 'Jan 07' },
-        { id: 'n3', text: 'User practices handicrafts with wood and metal', date: 'Jan 07' },
-      ],
-    },
-  },
-  {
-    id: 'chat-2',
-    name: 'Raven',
-    handle: '@raven',
-    preview: 'You came back, my heart is warm',
-    time: '13:13',
-    avatar: 'https://dummyimage.com/64x64/111/fff&text=R',
-    stats: {
-      totalSpent: '$24.00',
-      lastSpend: 'Jan 12',
-      ppv: '$12.00',
-      tip: '$12.00',
-      fanType: 'Active',
-      cost: '$12/mo',
-      duration: '3 months',
-      autoRenew: 'On',
-      nickname: 'Raven',
-      notes: [
-        { id: 'n4', text: 'Enjoys cosplay streams', date: 'Jan 03' },
-        { id: 'n5', text: 'Likes weekend drops', date: 'Jan 10' },
-      ],
-    },
-  },
-] : [];
+function ChatAvatar({
+  src,
+  name,
+  className,
+}: {
+  src: string | null;
+  name: string;
+  className: string;
+}) {
+  if (src) {
+    return <img className={className} src={src} alt={name} />;
+  }
+  return <div className={`${className} ${className}--fallback`}>{name.slice(0, 1).toUpperCase()}</div>;
+}
 
 export function MyChats() {
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
-  const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
+  const [threads, setThreads] = useState<ChatThreadSummary[]>([]);
+  const [chatableMembers, setChatableMembers] = useState<ChatableMember[]>([]);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (isSearchOpen) {
@@ -1259,16 +1348,187 @@ export function MyChats() {
     }
   }, [isSearchOpen]);
 
-  const filteredChats = useMemo(() => {
+  const loadThreads = async (preserveSelection = true) => {
+    try {
+      const [nextThreads, nextMembers] = await Promise.all([
+        fetchChatThreads(),
+        fetchChatableMembers(),
+      ]);
+      setThreads(nextThreads);
+      setChatableMembers(nextMembers);
+      setSelectedThreadId((current) => {
+        if (!preserveSelection) {
+          return nextThreads[0]?.thread_id ?? null;
+        }
+        if (selectedMemberId) {
+          const matchingThread = nextThreads.find(
+            (thread) => thread.member_id === selectedMemberId
+          );
+          return matchingThread?.thread_id ?? null;
+        }
+        if (current && nextThreads.some((thread) => thread.thread_id === current)) {
+          return current;
+        }
+        return nextThreads[0]?.thread_id ?? null;
+      });
+    } catch (error) {
+      console.error(error);
+      setErrorText(error instanceof Error ? error.message : 'Could not load messages.');
+    }
+  };
+
+  const loadMessages = async (threadId: string) => {
+    setMessagesLoading(true);
+    try {
+      const nextMessages = await fetchChatMessages(threadId);
+      setMessages(nextMessages);
+      await markChatThreadRead(threadId);
+    } catch (error) {
+      console.error(error);
+      setErrorText(error instanceof Error ? error.message : 'Could not load this conversation.');
+    } finally {
+      setMessagesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const [nextThreads, nextMembers] = await Promise.all([
+          fetchChatThreads(),
+          fetchChatableMembers(),
+        ]);
+        if (!mounted) return;
+        setThreads(nextThreads);
+        setChatableMembers(nextMembers);
+        setSelectedThreadId(nextThreads[0]?.thread_id ?? null);
+      } catch (error) {
+        if (!mounted) return;
+        console.error(error);
+        setErrorText(error instanceof Error ? error.message : 'Could not load messages.');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedThreadId) {
+      setMessages([]);
+      return;
+    }
+    loadMessages(selectedThreadId);
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages]);
+
+  useEffect(() => {
+    let unsubscribe = () => {};
+    (async () => {
+      unsubscribe = await subscribeToCreatorChatThreads(() => {
+        loadThreads();
+      });
+    })();
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    return subscribeToChatMessages(selectedThreadId, () => {
+      loadMessages(selectedThreadId);
+      loadThreads();
+    });
+  }, [selectedThreadId]);
+
+  const sortedThreads = [...threads].sort((left, right) => {
+    const leftTime = new Date(left.last_message_at ?? left.created_at).getTime();
+    const rightTime = new Date(right.last_message_at ?? right.created_at).getTime();
+    return sortOrder === 'newest' ? rightTime - leftTime : leftTime - rightTime;
+  });
+
+  const filteredChats = sortedThreads.filter((thread) => {
     const term = searchTerm.trim().toLowerCase();
-    if (!term) return CHAT_LIST;
-    return CHAT_LIST.filter(
-      (c) =>
-        c.name.toLowerCase().includes(term) ||
-        c.handle.toLowerCase().includes(term) ||
-        c.preview.toLowerCase().includes(term)
-    );
-  }, [searchTerm]);
+    if (!term) return true;
+    return [
+      thread.peer_name,
+      thread.peer_handle,
+      thread.last_message_preview ?? '',
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(term);
+  });
+
+  const starterMembers = chatableMembers.filter((member) => {
+    const hasExistingThread = threads.some((thread) => thread.member_id === member.member_id);
+    if (hasExistingThread) return false;
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return true;
+    return [member.display_name ?? '', member.username ?? '']
+      .join(' ')
+      .toLowerCase()
+      .includes(term);
+  });
+
+  const selectedThread =
+    threads.find((thread) => thread.thread_id === selectedThreadId) ?? null;
+  const selectedMember =
+    chatableMembers.find((member) => member.member_id === selectedMemberId) ?? null;
+
+  const handleSelectThread = (thread: ChatThreadSummary) => {
+    setSelectedThreadId(thread.thread_id);
+    setSelectedMemberId(null);
+    setComposerOpen(false);
+    setErrorText(null);
+  };
+
+  const handleSelectMember = (member: ChatableMember) => {
+    const existingThread = threads.find((thread) => thread.member_id === member.member_id);
+    if (existingThread) {
+      handleSelectThread(existingThread);
+      return;
+    }
+    setSelectedMemberId(member.member_id);
+    setSelectedThreadId(null);
+    setMessages([]);
+    setDraft('');
+    setComposerOpen(false);
+    setErrorText(null);
+  };
+
+  const handleSend = async () => {
+    if (!draft.trim() || sending) return;
+    setSending(true);
+    setErrorText(null);
+    try {
+      const result = await sendChatMessage({
+        body: draft,
+        threadId: selectedThreadId,
+        memberId: selectedMemberId,
+      });
+      setDraft('');
+      await loadThreads(false);
+      if (result?.thread_id) {
+        setSelectedMemberId(null);
+        setSelectedThreadId(result.thread_id);
+        await loadMessages(result.thread_id);
+      }
+    } catch (error) {
+      console.error(error);
+      setErrorText(error instanceof Error ? error.message : 'Could not send your message.');
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <MyLayout title="Messages" activeNav="messages" header={null} contentClassName="msg-content">
@@ -1334,65 +1594,190 @@ export function MyChats() {
             </button>
           </div>
 
+          <div className="msg-panel__hint">
+            Direct messages are available with fans who currently have an active subscription.
+          </div>
+
+          {composerOpen ? (
+            <div className="msg-starter-list">
+              {starterMembers.length ? (
+                starterMembers.map((member) => (
+                  <button
+                    key={member.member_id}
+                    className="msg-list__item"
+                    type="button"
+                    onClick={() => handleSelectMember(member)}
+                  >
+                    <ChatAvatar
+                      className="msg-list__avatar"
+                      src={member.avatar_url}
+                      name={member.display_name ?? member.username ?? 'Fan'}
+                    />
+                    <div className="msg-list__meta">
+                      <div className="msg-list__name">
+                        {member.display_name ?? member.username ?? 'Fan'}
+                      </div>
+                      <div className="msg-list__handle">
+                        {member.username ? ensureHandle(member.username) : 'Active subscriber'}
+                      </div>
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="msg-empty">No additional active subscribers are ready for a new chat.</div>
+              )}
+            </div>
+          ) : null}
+
           <div className="msg-list">
-            {filteredChats.map((chat) => (
-              <button
-                key={chat.id}
-                className={`msg-list__item${selectedChat?.id === chat.id ? ' is-active' : ''}`}
-                onClick={() => setSelectedChat(chat)}
-              >
-                <img className="msg-list__avatar" src={chat.avatar} alt={chat.name} />
-                <div className="msg-list__meta">
-                  <div className="msg-list__top">
-                    <span className="msg-list__name">{chat.name}</span>
-                    <span className="msg-list__time">{chat.time}</span>
+            {loading ? (
+              <div className="msg-empty">Loading conversations...</div>
+            ) : filteredChats.length ? (
+              filteredChats.map((thread) => (
+                <button
+                  key={thread.thread_id}
+                  className={`msg-list__item${selectedThread?.thread_id === thread.thread_id ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => handleSelectThread(thread)}
+                >
+                  <ChatAvatar
+                    className="msg-list__avatar"
+                    src={thread.peer_avatar_url}
+                    name={thread.peer_name}
+                  />
+                  <div className="msg-list__meta">
+                    <div className="msg-list__top">
+                      <span className="msg-list__name">{thread.peer_name}</span>
+                      <span className="msg-list__time">
+                        {formatRelativeTime(thread.last_message_at ?? thread.created_at)}
+                      </span>
+                    </div>
+                    <div className="msg-list__handle">
+                      {thread.peer_handle ? ensureHandle(thread.peer_handle) : 'Subscriber'}
+                    </div>
+                    <div className="msg-list__preview">
+                      {thread.last_message_preview ?? 'Start the conversation'}
+                    </div>
                   </div>
-                  <div className="msg-list__handle">{chat.handle}</div>
-                  <div className="msg-list__preview">{chat.preview}</div>
-                </div>
-              </button>
-            ))}
+                  {thread.unread_count > 0 ? (
+                    <span className="msg-list__badge">{thread.unread_count}</span>
+                  ) : null}
+                </button>
+              ))
+            ) : (
+              <div className="msg-empty">No conversations yet.</div>
+            )}
           </div>
         </section>
 
         <section className="msg-detail dark">
-          {selectedChat ? (
+          {selectedThread || selectedMember ? (
             <div className="msg-thread">
               <div className="msg-thread__header">
                 <div className="msg-thread__user">
-                  <img src={selectedChat.avatar} alt={selectedChat.name} />
+                  <ChatAvatar
+                    className="msg-thread__avatar"
+                    src={selectedThread?.peer_avatar_url ?? selectedMember?.avatar_url ?? null}
+                    name={selectedThread?.peer_name ?? selectedMember?.display_name ?? selectedMember?.username ?? 'Fan'}
+                  />
                   <div>
-                    <div className="name">{selectedChat.name}</div>
-                    <div className="handle">{selectedChat.handle}</div>
+                    <div className="name">
+                      {selectedThread?.peer_name ?? selectedMember?.display_name ?? selectedMember?.username}
+                    </div>
+                    <div className="handle">
+                      {selectedThread?.peer_handle
+                        ? ensureHandle(selectedThread.peer_handle)
+                        : selectedMember?.username
+                          ? ensureHandle(selectedMember.username)
+                          : 'Active subscriber'}
+                    </div>
                   </div>
                 </div>
-                <div className="msg-thread__tabs">
-                  <button className="is-active">Messages</button>
-                  <button>Media</button>
+                <div className="msg-thread__status">
+                  {selectedThread ? 'Live conversation' : 'New conversation'}
                 </div>
               </div>
               <div className="msg-thread__body">
-                <div className="msg-bubble other">Hello sweet Mitsuri, how was your weekend?</div>
-                <div className="msg-bubble me">
-                  weekend was calm, yoga, coffee, cuddles with mochi and some reading... how was
-                  yours, mon cher?
-                </div>
+                {messagesLoading ? (
+                  <div className="msg-detail__text">Loading messages...</div>
+                ) : messages.length ? (
+                  messages.map((message) => (
+                    <div
+                      key={message.message_id}
+                      className={`msg-bubble ${message.sender_role === 'creator' ? 'me' : 'other'}`}
+                    >
+                      <div>{message.body}</div>
+                      <div className="my-message-time">{formatMessageClock(message.created_at)}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="msg-detail__text">
+                    Send the first message to start this conversation.
+                  </div>
+                )}
+                <div ref={threadEndRef} />
               </div>
               <div className="msg-thread__composer">
-                <button className="pill ghost">Generate message with AI</button>
-                <input placeholder="Type a message..." />
+                <input
+                  placeholder="Type a message..."
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                />
+                <button
+                  className="pill primary"
+                  type="button"
+                  onClick={handleSend}
+                  disabled={sending || !draft.trim()}
+                >
+                  {sending ? 'Sending...' : 'Send'}
+                </button>
               </div>
             </div>
           ) : (
-            <div className="msg-detail__text">Select a contact from the list to start chatting.</div>
+            <div className="msg-detail__text">Select a fan from the list to start chatting.</div>
           )}
+          {errorText ? <div className="msg-thread__notice">{errorText}</div> : null}
         </section>
 
         <section className="msg-insights">
-          {selectedChat ? (
-            <ChatInsights chat={selectedChat} />
+          {selectedThread || selectedMember ? (
+            <div className="insights-stack">
+              <div className="insight-card">
+                <div className="card-title">Conversation summary</div>
+                <div className="sub-row">
+                  <span>Status</span>
+                  <span className="pill tiny muted">Active subscriber</span>
+                </div>
+                <div className="sub-row">
+                  <span>Unread messages</span>
+                  <span>{selectedThread?.unread_count ?? 0}</span>
+                </div>
+                <div className="sub-row">
+                  <span>Last activity</span>
+                  <span>
+                    {selectedThread
+                      ? formatRelativeTime(selectedThread.last_message_at ?? selectedThread.created_at)
+                      : 'Waiting for first message'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="insight-card">
+                <div className="card-title">Reply tips</div>
+                <div className="msg-insights__copy">
+                  Keep replies concise, respectful, and consistent. Fans can only start chats while
+                  their subscription is active, which keeps the inbox focused on live supporters.
+                </div>
+              </div>
+            </div>
           ) : (
-            <div className="msg-insights__empty">Select a chat to view fan insights.</div>
+            <div className="msg-insights__empty">Select a chat to view conversation details.</div>
           )}
         </section>
       </div>
@@ -1400,383 +1785,180 @@ export function MyChats() {
   );
 }
 
-function ChatInsights({ chat }: { chat: ChatItem }) {
-  return (
-    <div className="insights-stack">
-      <div className="insight-card">
-        <div className="card-title">Spending behavior</div>
-        <div className="spend-grid">
-          <div className="spend-box">
-            <div className="muted small">Total spent</div>
-            <div className="spend-amount">{chat.stats.totalSpent}</div>
-            <div className="muted tiny">Since Jan 2026</div>
-          </div>
-          <div className="spend-box">
-            <div className="muted small">Last spend</div>
-            <div className="spend-amount">{chat.stats.lastSpend}</div>
-            <div className="muted tiny">Total PPV</div>
-          </div>
-        </div>
-        <div className="spend-row">
-          <span>Total PPV</span>
-          <span>{chat.stats.ppv}</span>
-        </div>
-        <div className="spend-row">
-          <span>Total Tip</span>
-          <span>{chat.stats.tip}</span>
-        </div>
-      </div>
-
-      <div className="insight-card">
-        <div className="card-title">Subscription</div>
-        <div className="sub-row">
-          <span>Fan type</span>
-          <span className="pill tiny muted">{chat.stats.fanType}</span>
-        </div>
-        <div className="sub-row">
-          <span>Cost</span>
-          <span>{chat.stats.cost ?? '-'}</span>
-        </div>
-        <div className="sub-row">
-          <span>Duration</span>
-          <span>{chat.stats.duration ?? '-'}</span>
-        </div>
-        <div className="sub-row">
-          <span>Auto-renewal</span>
-          <span>{chat.stats.autoRenew ?? '-'}</span>
-        </div>
-      </div>
-
-      <div className="insight-card">
-        <div className="card-title">Nickname</div>
-        <div className="nick-box">{chat.stats.nickname ?? '--'}</div>
-      </div>
-
-      <div className="insight-card">
-        <div className="card-title">Notes</div>
-        <div className="note-chips">
-          <button className="chip tiny is-active">All</button>
-          <button className="chip tiny">Must know</button>
-          <button className="chip tiny">Top facts</button>
-        </div>
-        <div className="note-list">
-          {chat.stats.notes.map((note) => (
-            <div key={note.id} className="note-card">
-              <div className="muted tiny">{note.date}</div>
-              <div className="note-text">{note.text}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function MyNotifications() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<NotificationTab>('all');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [suggestionIndex, setSuggestionIndex] = useState(3);
-  const [suggestions, setSuggestions] = useState(SUGGESTIONS);
-  const [followedIds, setFollowedIds] = useState<string[]>([]);
-  const [isEditing, setIsEditing] = useState(false);
-  const [searchPulse, setSearchPulse] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const pulseTimer = useRef<number | null>(null);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    return () => {
-      if (pulseTimer.current) {
-        window.clearTimeout(pulseTimer.current);
+    let isMounted = true;
+    let unsubscribe = () => {};
+
+    const loadNotifications = async () => {
+      try {
+        if (isMounted) {
+          setLoading(true);
+          setError(null);
+        }
+        const items = await fetchNotifications();
+        if (isMounted) {
+          setNotifications(items);
+        }
+      } catch (loadError) {
+        console.error(loadError);
+        if (isMounted) {
+          setError('Could not load notifications right now.');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
+    };
+
+    void loadNotifications();
+    void (async () => {
+      unsubscribe = await subscribeToNotifications(() => {
+        void loadNotifications();
+      });
+    })();
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
     };
   }, []);
 
+  const unreadCount = notifications.filter((item) => !item.read_at).length;
+
   const filteredNotifications = useMemo(() => {
     if (activeTab === 'all') {
-      return NOTIFICATION_ITEMS;
+      return notifications;
+    }
+    if (activeTab === 'unread') {
+      return notifications.filter((item) => !item.read_at);
     }
 
-    return NOTIFICATION_ITEMS.filter((item) => item.category === activeTab);
-  }, [activeTab]);
+    return notifications.filter((item) => getNotificationTabForType(item.type) === activeTab);
+  }, [activeTab, notifications]);
 
-  const filteredSuggestions = useMemo(() => {
-    const trimmed = searchTerm.trim().toLowerCase();
-    const source = suggestions;
-
-    if (!trimmed) {
-      return source;
+  const handleOpenNotification = async (item: AppNotification) => {
+    try {
+      if (!item.read_at) {
+        await markNotificationRead(item.id);
+        setNotifications((prev) =>
+          prev.map((entry) =>
+            entry.id === item.id
+              ? { ...entry, read_at: new Date().toISOString() }
+              : entry,
+          ),
+        );
+      }
+    } catch (markError) {
+      console.error(markError);
     }
 
-    return source.filter((item) => {
-      return (
-        item.name.toLowerCase().includes(trimmed) ||
-        item.handle.toLowerCase().includes(trimmed)
+    navigate(getCreatorNotificationTarget(item));
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      setBusy(true);
+      await markAllNotificationsRead();
+      setNotifications((prev) =>
+        prev.map((entry) => ({
+          ...entry,
+          read_at: entry.read_at ?? new Date().toISOString(),
+        })),
       );
-    });
-  }, [searchTerm, suggestions]);
-
-  const dotCount = 12;
-
-  const shuffleSuggestions = () => {
-    setSuggestions((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i > 0; i -= 1) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [next[i], next[j]] = [next[j], next[i]];
-      }
-      return next;
-    });
-    setSuggestionIndex(0);
-  };
-
-  const resetSuggestions = () => {
-    setSearchTerm('');
-    setSuggestions(SUGGESTIONS);
-    setSuggestionIndex(0);
-  };
-
-  const rotateSuggestions = (direction: 'next' | 'prev') => {
-    setSuggestions((prev) => {
-      if (!prev.length) {
-        return prev;
-      }
-      const next = [...prev];
-      if (direction === 'next') {
-        const first = next.shift();
-        if (first) {
-          next.push(first);
-        }
-      } else {
-        const last = next.pop();
-        if (last) {
-          next.unshift(last);
-        }
-      }
-      return next;
-    });
-  };
-
-  const cycleDots = (direction: 'next' | 'prev') => {
-    setSuggestionIndex((prev) => {
-      if (direction === 'next') {
-        return (prev + 1) % dotCount;
-      }
-      return (prev - 1 + dotCount) % dotCount;
-    });
-    rotateSuggestions(direction);
-  };
-
-  const handleSearchIcon = () => {
-    searchInputRef.current?.focus();
-    if (pulseTimer.current) {
-      window.clearTimeout(pulseTimer.current);
+    } catch (markError) {
+      console.error(markError);
+      setError('Could not mark notifications as read.');
+    } finally {
+      setBusy(false);
     }
-    setSearchPulse(true);
-    pulseTimer.current = window.setTimeout(() => setSearchPulse(false), 450);
   };
-
-  const toggleFollow = (id: string) => {
-    setFollowedIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
-
-  const aside = (
-    <div className="notif-sidebar">
-      <div className="notif-search-card">
-        <div className={`notif-search${searchPulse ? ' is-pulse' : ''}`}>
-          <input
-            ref={searchInputRef}
-            className="notif-search-input"
-            type="search"
-            placeholder="Search posts"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            onFocus={() => setSearchPulse(false)}
-          />
-          <span className="notif-search-icon">
-            <SearchIcon />
-          </span>
-        </div>
-      </div>
-
-      <div className="notif-suggestions">
-        <div className="notif-suggestions__header">
-          <span>Suggestions</span>
-          <div className="notif-suggestions__actions">
-            <button
-              className="notif-icon-button small"
-              type="button"
-              aria-label="Shuffle suggestions"
-              onClick={shuffleSuggestions}
-            >
-              <ShuffleIcon />
-            </button>
-            <button
-              className="notif-icon-button small"
-              type="button"
-              aria-label="Refresh suggestions"
-              onClick={resetSuggestions}
-            >
-              <RefreshIcon />
-            </button>
-            <button
-              className="notif-icon-button small"
-              type="button"
-              aria-label="Previous suggestions"
-              onClick={() => cycleDots('prev')}
-            >
-              <ChevronLeftIcon />
-            </button>
-            <button
-              className="notif-icon-button small"
-              type="button"
-              aria-label="Next suggestions"
-              onClick={() => cycleDots('next')}
-            >
-              <ChevronRightIcon />
-            </button>
-          </div>
-        </div>
-        <div className="notif-suggestions__list">
-          {filteredSuggestions.map((item) => {
-            const isFollowing = followedIds.includes(item.id);
-            return (
-              <button
-                key={item.id}
-                className={`suggestion-card${isFollowing ? ' is-following' : ''}`}
-                type="button"
-                style={{ backgroundImage: item.gradient }}
-                onClick={() => toggleFollow(item.id)}
-              >
-                {item.badge ? (
-                  <span className="suggestion-card__badge">{item.badge}</span>
-                ) : null}
-                <span className="suggestion-card__menu">
-                  <MoreVerticalIcon />
-                </span>
-                {isFollowing ? (
-                  <span className="suggestion-card__follow">Following</span>
-                ) : null}
-                <div className="suggestion-card__avatar" aria-hidden="true" />
-                <div className="suggestion-card__meta">
-                  <div className="suggestion-card__name">
-                    {item.name}
-                    <VerifiedIcon />
-                  </div>
-                  <div className="suggestion-card__handle">{item.handle}</div>
-                </div>
-              </button>
-            );
-          })}
-          {!filteredSuggestions.length ? (
-            <div className="notif-empty">No suggestions match your search.</div>
-          ) : null}
-        </div>
-        <div className="suggestion-dots" aria-hidden="true">
-          {Array.from({ length: dotCount }).map((_, index) => (
-            <span
-              key={`dot-${index}`}
-              className={`suggestion-dot${index === suggestionIndex ? ' is-active' : ''}`}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="notif-footer">
-        <a href="/privacy">Privacy</a>
-        <span>|</span>
-        <a href="/cookies">Cookie Notice</a>
-        <span>|</span>
-        <a href="/terms">Terms of Service</a>
-      </div>
-    </div>
-  );
 
   return (
     <MyLayout
       title="Notifications"
+      subtitle="Review live chats, earnings, subscriptions, and payout updates."
       activeNav="notifications"
-      header={null}
-      contentClassName="notif-content"
-      aside={aside}
+      headerActions={
+        <button
+          className="wallet-action-button wallet-action-button--ghost"
+          type="button"
+          disabled={!unreadCount || busy}
+          onClick={() => void handleMarkAllRead()}
+        >
+          {busy ? 'Updating...' : 'Mark all read'}
+        </button>
+      }
+      contentClassName="creator-notifications"
     >
-      <div className="notif-panel">
-        <div className="notif-header">
-          <div className="notif-header__left">
-            <button
-              className="notif-icon-button"
-              type="button"
-              aria-label="Go back"
-              onClick={() => window.history.back()}
-            >
-              <ArrowLeftIcon />
-            </button>
-            <h2 className="notif-header__title">Notifications</h2>
-          </div>
-          <div className="notif-header__actions">
-            <button
-              className="notif-icon-button"
-              type="button"
-              aria-label="Search"
-              onClick={handleSearchIcon}
-            >
-              <SearchIcon />
-            </button>
-            <button
-              className="notif-icon-button"
-              type="button"
-              aria-label="Settings"
-              onClick={() => navigate('/my/settings/notifications')}
-            >
-              <GearIcon />
-            </button>
-          </div>
-        </div>
-
-        <div className={`notif-tabs${isEditing ? ' is-editing' : ''}`}>
-          <div className="notif-tabs__list">
-            {NOTIFICATION_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                className={`notif-tab${activeTab === tab.key ? ' is-active' : ''}`}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+      <div className="creator-notifications__tabs">
+        {NOTIFICATION_TABS.map((tab) => (
           <button
-            className="notif-icon-button small"
+            key={tab.key}
             type="button"
-            aria-label="Edit filters"
-            aria-pressed={isEditing}
-            onClick={() => setIsEditing((prev) => !prev)}
+            className={`creator-notifications__tab${activeTab === tab.key ? ' is-active' : ''}`}
+            onClick={() => setActiveTab(tab.key)}
           >
-            <PencilIcon />
+            {tab.label}
+            {tab.key === 'unread' && unreadCount ? (
+              <span className="creator-notifications__tab-badge">{unreadCount}</span>
+            ) : null}
           </button>
-        </div>
-
-        <div className={`notif-body${filteredNotifications.length ? ' has-items' : ''}`}>
-          {filteredNotifications.length ? (
-            <div className="my-list">
-              {filteredNotifications.map((item) => (
-                <div key={item.id} className="my-list-item">
-                  <div>
-                    <div className="my-chat-name">{item.title}</div>
-                    <div className="my-muted">{item.detail}</div>
-                  </div>
-                  <div className="my-chat-time">{item.time}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="notif-empty">No notifications currently!</div>
-          )}
-        </div>
+        ))}
       </div>
+
+      {error ? <div className="creator-notifications__error">{error}</div> : null}
+
+      {loading ? (
+        <div className="creator-notifications__loading">Loading notifications...</div>
+      ) : filteredNotifications.length ? (
+        <div className="creator-notifications__list">
+          {filteredNotifications.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`creator-notification-card${item.read_at ? '' : ' is-unread'}`}
+              onClick={() => void handleOpenNotification(item)}
+            >
+              <div className="creator-notification-card__icon">
+                <BellIcon />
+              </div>
+              <div className="creator-notification-card__body">
+                <div className="creator-notification-card__top">
+                  <span className="creator-notification-card__title">
+                    {getCreatorNotificationTitle(item)}
+                  </span>
+                  <span className="creator-notification-card__time">
+                    {formatNotificationDate(item.created_at)}
+                  </span>
+                </div>
+                <div className="creator-notification-card__detail">
+                  {getCreatorNotificationDetail(item)}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="creator-notifications__empty">
+          <div className="creator-notifications__empty-icon">
+            <BellIcon />
+          </div>
+          <strong>No notifications yet</strong>
+          <p>
+            New chats, tips, subscription activity, payouts, and post activity will show up
+            here.
+          </p>
+        </div>
+      )}
     </MyLayout>
   );
 }
@@ -2331,10 +2513,10 @@ function LegacyMyPayments() {
       activeNav="payments"
       headerActions={
         <div className="wallet-actions wallet-actions--header">
-          <a className="wallet-action-button wallet-action-button--ghost" href="/my/banking">
+              <a className="wallet-action-button wallet-action-button--ghost" href="/my/payments">
             Banking
           </a>
-          <a className="my-button" href="/my/payments/add_card">
+              <a className="my-button" href="/my/payments">
             Add card
           </a>
         </div>
@@ -2391,10 +2573,10 @@ function LegacyMyPayments() {
                 ) : null}
               </div>
               <div className="wallet-payout-card__actions">
-                <a className="wallet-inline-button wallet-inline-button--ghost" href="/my/banking">
+              <a className="wallet-inline-button wallet-inline-button--ghost" href="/my/payments">
                   Update destination
                 </a>
-                <a className="wallet-inline-button" href="/my/payments/add_card">
+              <a className="wallet-inline-button" href="/my/payments">
                   Card payouts
                 </a>
               </div>
@@ -2614,7 +2796,7 @@ function LegacyMyPaymentsAddCard() {
           <button
             className="wallet-action-button wallet-action-button--ghost"
             type="button"
-            onClick={() => navigate('/my/banking')}
+            onClick={() => navigate('/my/payments')}
           >
             Open banking
           </button>
@@ -2708,6 +2890,7 @@ export function MyPayments() {
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const requestedRail = normalizePaymentsRail(searchParams.get('rail'));
   const requestedSubrail = normalizeCardBankRail(searchParams.get('subrail'));
+  const requestedPanel = normalizePaymentsPanel(searchParams.get('panel'));
   const cardSetupReference = searchParams.get('reference') ?? searchParams.get('trxref');
   const hasCardSetupCallback =
     searchParams.get('paystack_card_setup') === '1' && Boolean(cardSetupReference);
@@ -2724,6 +2907,7 @@ export function MyPayments() {
   const [amountMajor, setAmountMajor] = useState('');
   const [selectedRail, setSelectedRail] = useState<PaymentsRail>('mpesa');
   const [selectedCardBankRail, setSelectedCardBankRail] = useState<CardBankRail>('card');
+  const [activePanel, setActivePanel] = useState<PaymentsPanel>('method');
   const [mpesaNumber, setMpesaNumber] = useState('');
   const [mpesaName, setMpesaName] = useState('');
   const [mpesaBankCode, setMpesaBankCode] = useState('MPESA');
@@ -2737,6 +2921,7 @@ export function MyPayments() {
     nextRail: PaymentsRail,
     nextSubrail?: CardBankRail,
     setup = true,
+    panel: PaymentsPanel = 'method',
   ) => {
     const nextParams = new URLSearchParams(location.search);
     nextParams.delete('reference');
@@ -2753,6 +2938,17 @@ export function MyPayments() {
     } else {
       nextParams.delete('setup');
     }
+    nextParams.set('panel', panel);
+    const nextSearch = nextParams.toString();
+    navigate(`/my/payments${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
+  };
+
+  const syncPaymentsPanel = (panel: PaymentsPanel) => {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.delete('reference');
+    nextParams.delete('trxref');
+    nextParams.delete('paystack_card_setup');
+    nextParams.set('panel', panel);
     const nextSearch = nextParams.toString();
     navigate(`/my/payments${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
   };
@@ -2808,6 +3004,22 @@ export function MyPayments() {
     }
     setSelectedCardBankRail(getCardBankRailFromAccount(payoutAccount));
   }, [requestedSubrail, payoutAccount]);
+
+  useEffect(() => {
+    if (requestedPanel) {
+      setActivePanel(requestedPanel);
+      return;
+    }
+    if (searchParams.get('setup') === '1' || !payoutAccount) {
+      setActivePanel('method');
+      return;
+    }
+    if (getPayoutVerificationState(payoutAccount) === 'verified') {
+      setActivePanel('request');
+      return;
+    }
+    setActivePanel('method');
+  }, [requestedPanel, payoutAccount, searchParams]);
 
   useEffect(() => {
     if (!hasCardSetupCallback || !cardSetupReference) {
@@ -3016,6 +3228,8 @@ export function MyPayments() {
       setNoticeText('Payout request submitted. We will update the history as the provider responds.');
       setAmountMajor('');
       await loadPayments();
+      setActivePanel('history');
+      syncPaymentsPanel('history');
     } catch (error) {
       console.error(error);
       setErrorText(
@@ -3041,12 +3255,46 @@ export function MyPayments() {
         <section className="wallet-panel wallet-panel--compact payments-summary-strip">
           <div className="wallet-panel__title-row">
             <div>
-              <h2 className="wallet-panel__title">Verification status</h2>
+              <h2 className="wallet-panel__title">Payments overview</h2>
               <p className="wallet-panel__subtitle">
-                Keep one verified payout method active for creator withdrawals.
+                Keep setup, withdrawals, and history in one simple creator workspace.
               </p>
             </div>
-            {loading ? <span className="wallet-status">Loading...</span> : null}
+            <div className="payments-summary-strip__actions">
+              {loading ? <span className="wallet-status">Loading...</span> : null}
+              <div className="payments-feature-switch__buttons">
+                <button
+                  className={`payments-feature-switch__button${activePanel === 'method' ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => {
+                    setActivePanel('method');
+                    syncPaymentsPanel('method');
+                  }}
+                >
+                  Method
+                </button>
+                <button
+                  className={`payments-feature-switch__button${activePanel === 'request' ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => {
+                    setActivePanel('request');
+                    syncPaymentsPanel('request');
+                  }}
+                >
+                  Request
+                </button>
+                <button
+                  className={`payments-feature-switch__button${activePanel === 'history' ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => {
+                    setActivePanel('history');
+                    syncPaymentsPanel('history');
+                  }}
+                >
+                  History
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="wallet-balance-grid payments-summary-grid">
@@ -3077,6 +3325,7 @@ export function MyPayments() {
           </div>
         </section>
 
+        {activePanel === 'method' ? (
         <section className="wallet-panel wallet-panel--compact payments-method-panel">
           <div className="wallet-panel__title-row">
             <div>
@@ -3307,6 +3556,9 @@ export function MyPayments() {
           </div>
         </section>
 
+        ) : null}
+
+        {activePanel === 'request' ? (
         <section className="wallet-panel wallet-panel--compact payments-request-panel">
           <div className="wallet-panel__title-row">
             <div>
@@ -3351,6 +3603,9 @@ export function MyPayments() {
           {requestDisabledText ? <div className="wallet-warning">{requestDisabledText}</div> : null}
         </section>
 
+        ) : null}
+
+        {activePanel === 'history' ? (
         <section className="wallet-panel wallet-panel--compact payments-history-panel">
           <div className="payments-history-header">
             <div>
@@ -3421,13 +3676,14 @@ export function MyPayments() {
             )}
           </div>
         </section>
+        ) : null}
       </div>
     </MyLayout>
   );
 }
 
 export function MyPaymentsAddCard() {
-  return <Navigate to="/my/payments?rail=card-bank&subrail=card&setup=1" replace />;
+  return <Navigate to="/my/payments?rail=card-bank&subrail=card&setup=1&panel=method" replace />;
 }
 
 export function PostsCreate() {
@@ -4041,7 +4297,7 @@ function LegacyMyBanking() {
           <button
             className="wallet-action-button wallet-action-button--ghost"
             type="button"
-            onClick={() => navigate('/my/payments/add_card')}
+                  onClick={() => navigate('/my/payments')}
           >
             Card payouts
           </button>
@@ -4247,7 +4503,7 @@ function LegacyMyBanking() {
               <button
                 className="wallet-action-button wallet-action-button--ghost"
                 type="button"
-                onClick={() => navigate('/my/payments/add_card')}
+                  onClick={() => navigate('/my/payments')}
               >
                 Card payouts coming soon
               </button>
@@ -4290,7 +4546,7 @@ function LegacyMyBanking() {
 }
 
 export function MyBanking() {
-  return <Navigate to="/my/payments?setup=1" replace />;
+  return <Navigate to="/my/payments?setup=1&panel=method" replace />;
 }
 
 void LegacyMyPayments;
@@ -4473,6 +4729,7 @@ function MyLayout({
 }: MyLayoutProps) {
   const [navProfile, setNavProfile] = useState(NAV_PROFILE);
   const [isNavPanelOpen, setIsNavPanelOpen] = useState(false);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
 
   useEffect(() => {
     document.body.classList.add('react-page');
@@ -4521,6 +4778,39 @@ function MyLayout({
     return () => {
       cancelled = true;
       window.removeEventListener('creator-profile-updated', handleProfileUpdated);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (USE_SAMPLE_DATA) {
+      setNotificationUnreadCount(4);
+      return;
+    }
+
+    let isMounted = true;
+    let unsubscribe = () => {};
+
+    const loadUnreadCount = async () => {
+      try {
+        const count = await fetchUnreadNotificationCount();
+        if (isMounted) {
+          setNotificationUnreadCount(count);
+        }
+      } catch (error) {
+        console.error('Could not load notification unread count', error);
+      }
+    };
+
+    void loadUnreadCount();
+    void (async () => {
+      unsubscribe = await subscribeToNotifications(() => {
+        void loadUnreadCount();
+      });
+    })();
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
     };
   }, []);
 
@@ -4580,7 +4870,7 @@ function MyLayout({
             href="/my/notifications"
             label="Notifications"
             icon={<BellIcon />}
-            badge="4"
+            badge={notificationUnreadCount > 0 ? String(Math.min(notificationUnreadCount, 99)) : undefined}
             isActive={activeNav === 'notifications'}
             onClick={closeNavPanel}
           />
@@ -4832,15 +5122,6 @@ function GearIcon() {
       <path d="M19 12h3" />
       <path d="M4.9 19.1l2.2-2.2" />
       <path d="M16.9 7.1l2.2-2.2" />
-    </svg>
-  );
-}
-
-function PencilIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 16l8-8 4 4-8 8H4z" />
-      <path d="M14 4l4 4" />
     </svg>
   );
 }

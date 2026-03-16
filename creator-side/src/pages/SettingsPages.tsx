@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchCreatorPricing, updateCreatorPricing } from '../supabaseClient';
+import {
+  fetchCreatorPricing,
+  fetchNotificationPreferences,
+  updateCreatorPricing,
+  updateNotificationPreferences,
+  type NotificationPreferences,
+} from '../supabaseClient';
 import SettingsShell from './SettingsShell';
 import './SettingsPages.css';
 
@@ -171,21 +177,68 @@ export function SettingsAccount() {
 }
 
 export function SettingsNotifications() {
-  const [form, setForm] = useState({
-    email: true,
+  const [form, setForm] = useState<NotificationPreferences>({
     push: true,
+    email: true,
     sms: false,
-    tips: true,
-    mentions: true,
+    messages: true,
+    payments: true,
     subscriptions: true,
+    content: true,
   });
-  const [saved, setSaved] = useState(form);
+  const [saved, setSaved] = useState<NotificationPreferences>(form);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPreferences = async () => {
+      try {
+        const prefs = await fetchNotificationPreferences();
+        if (!isMounted) return;
+        setForm(prefs);
+        setSaved(prefs);
+      } catch (err) {
+        console.error(err);
+        if (isMounted) {
+          setError('Could not load notification preferences right now.');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadPreferences();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const hasChanges = useMemo(() => {
     return Object.keys(form).some(
       (key) => form[key as keyof typeof form] !== saved[key as keyof typeof saved]
     );
   }, [form, saved]);
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      setError(null);
+      const next = await updateNotificationPreferences(form);
+      setForm(next);
+      setSaved(next);
+    } catch (err) {
+      console.error(err);
+      setError('Could not save notification preferences right now.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <SettingsShell activeItem="notifications" userHandle={USER_HANDLE}>
@@ -194,24 +247,25 @@ export function SettingsNotifications() {
         <button
           className="save-button"
           type="button"
-          disabled={!hasChanges}
-          onClick={() => setSaved(form)}
+          disabled={!hasChanges || saving || loading}
+          onClick={() => void handleSave()}
         >
-          Save
+          {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
       <div className="settings-panels">
         <div className="settings-panel">
           <div className="settings-panel__title">Delivery</div>
+          {error ? <div className="settings-banner">{error}</div> : null}
           <ToggleRow
             label="Email alerts"
-            description="Weekly highlights and payouts"
+            description="Save email delivery preferences for account updates"
             value={form.email}
             onToggle={() => setForm((prev) => ({ ...prev, email: !prev.email }))}
           />
           <ToggleRow
             label="Push alerts"
-            description="In-app notifications"
+            description="Show notifications inside your creator workspace"
             value={form.push}
             onToggle={() => setForm((prev) => ({ ...prev, push: !prev.push }))}
           />
@@ -226,18 +280,16 @@ export function SettingsNotifications() {
         <div className="settings-panel">
           <div className="settings-panel__title">Activity alerts</div>
           <ToggleRow
-            label="New tips"
-            description="When a fan tips you"
-            value={form.tips}
-            onToggle={() => setForm((prev) => ({ ...prev, tips: !prev.tips }))}
+            label="Messages"
+            description="When a fan sends a new direct message"
+            value={form.messages}
+            onToggle={() => setForm((prev) => ({ ...prev, messages: !prev.messages }))}
           />
           <ToggleRow
-            label="Mentions"
-            description="Tags in posts and comments"
-            value={form.mentions}
-            onToggle={() =>
-              setForm((prev) => ({ ...prev, mentions: !prev.mentions }))
-            }
+            label="Payments"
+            description="Tips, PPV unlocks, and payout updates"
+            value={form.payments}
+            onToggle={() => setForm((prev) => ({ ...prev, payments: !prev.payments }))}
           />
           <ToggleRow
             label="Subscriptions"
@@ -246,6 +298,12 @@ export function SettingsNotifications() {
             onToggle={() =>
               setForm((prev) => ({ ...prev, subscriptions: !prev.subscriptions }))
             }
+          />
+          <ToggleRow
+            label="Content delivery"
+            description="Notifications when your posts or stories go live to fans"
+            value={form.content}
+            onToggle={() => setForm((prev) => ({ ...prev, content: !prev.content }))}
           />
         </div>
       </div>
@@ -391,7 +449,7 @@ export function SettingsSubscription() {
           <div className="subscription-hint">Minimum KSh 500 or free</div>
           <div className="subscription-hint">
             You must{' '}
-            <a href="/my/banking" className="subscription-link">
+            <a href="/my/payments" className="subscription-link">
               Add a Bank Account or Payment Information
             </a>{' '}
             before you can set your price or accept tips.
@@ -808,8 +866,6 @@ function FreeTrialEmptyIcon() {
     </svg>
   );
 }
-
-
 
 
 

@@ -138,6 +138,18 @@ serve(async (req) => {
         p_metadata: { source: "paystack.wallet_topup", reference },
       });
       if (walletErr) return json({ error: "Wallet credit failed" }, 500);
+
+      await supabase.rpc("create_notification_if_enabled", {
+        p_user_id: resolvedPayment.user_id,
+        p_type: "wallet_topup_succeeded",
+        p_payload: {
+          amount_cents: amount,
+          currency,
+          provider: "paystack",
+          reference,
+        },
+        p_pref_key: "payments",
+      });
       return json({ ok: true });
     }
 

@@ -110,11 +110,143 @@ export type PayoutAccount = {
   paystack_authorization_signature?: string | null;
 };
 
+export type ChatThreadSummary = {
+  thread_id: string;
+  creator_id: string;
+  member_id: string;
+  peer_id: string;
+  peer_role: 'creator' | 'member';
+  peer_name: string;
+  peer_handle: string;
+  peer_avatar_url: string | null;
+  last_message_preview: string | null;
+  last_message_at: string | null;
+  last_message_sender_id: string | null;
+  unread_count: number;
+  created_at: string;
+};
+
+export type ChatMessage = {
+  message_id: number;
+  thread_id: string;
+  sender_id: string;
+  sender_role: 'creator' | 'member';
+  sender_name: string;
+  sender_handle: string;
+  sender_avatar_url: string | null;
+  body: string;
+  created_at: string;
+};
+
+export type ChatableMember = {
+  member_id: string;
+  display_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+};
+
+export type AppNotification = {
+  id: number;
+  type: string;
+  payload: Record<string, any>;
+  read_at: string | null;
+  created_at: string;
+};
+
+export type NotificationPreferences = {
+  push: boolean;
+  email: boolean;
+  sms: boolean;
+  messages: boolean;
+  payments: boolean;
+  subscriptions: boolean;
+  content: boolean;
+};
+
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  push: true,
+  email: true,
+  sms: false,
+  messages: true,
+  payments: true,
+  subscriptions: true,
+  content: true,
+};
+
+function normalizeNotificationPreferences(value: unknown): NotificationPreferences {
+  const parsed =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+
+  return {
+    push:
+      typeof parsed.push === 'boolean'
+        ? parsed.push
+        : DEFAULT_NOTIFICATION_PREFERENCES.push,
+    email:
+      typeof parsed.email === 'boolean'
+        ? parsed.email
+        : DEFAULT_NOTIFICATION_PREFERENCES.email,
+    sms:
+      typeof parsed.sms === 'boolean' ? parsed.sms : DEFAULT_NOTIFICATION_PREFERENCES.sms,
+    messages:
+      typeof parsed.messages === 'boolean'
+        ? parsed.messages
+        : DEFAULT_NOTIFICATION_PREFERENCES.messages,
+    payments:
+      typeof parsed.payments === 'boolean'
+        ? parsed.payments
+        : DEFAULT_NOTIFICATION_PREFERENCES.payments,
+    subscriptions:
+      typeof parsed.subscriptions === 'boolean'
+        ? parsed.subscriptions
+        : DEFAULT_NOTIFICATION_PREFERENCES.subscriptions,
+    content:
+      typeof parsed.content === 'boolean'
+        ? parsed.content
+        : DEFAULT_NOTIFICATION_PREFERENCES.content,
+  };
+}
+
 async function requireUserId() {
   if (!supabase) throw new Error('Supabase not configured');
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user?.id) throw new Error('Authentication required');
   return data.user.id;
+}
+
+export async function fetchNotificationPreferences(): Promise<NotificationPreferences> {
+  if (!supabase) return DEFAULT_NOTIFICATION_PREFERENCES;
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('notification_preferences')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return normalizeNotificationPreferences(data?.notification_preferences);
+}
+
+export async function updateNotificationPreferences(
+  next: Partial<NotificationPreferences>,
+): Promise<NotificationPreferences> {
+  if (!supabase) throw new Error('Supabase not configured');
+  const userId = await requireUserId();
+  const current = await fetchNotificationPreferences();
+  const merged = normalizeNotificationPreferences({ ...current, ...next });
+
+  const { error } = await supabase
+    .from('profiles')
+    .upsert(
+      {
+        id: userId,
+        notification_preferences: merged,
+      },
+      { onConflict: 'id' },
+    );
+  if (error) throw error;
+  return merged;
 }
 
 export async function fetchPayoutSummary(): Promise<PayoutSummary | null> {
@@ -234,6 +366,181 @@ export async function completeCreatorCardPayoutSetup(params: { reference: string
   return data as {
     ok?: boolean;
     payoutAccount?: PayoutAccount;
+  };
+}
+
+export async function fetchChatThreads(): Promise<ChatThreadSummary[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('get_chat_threads');
+  if (error) throw error;
+  return (data ?? []) as ChatThreadSummary[];
+}
+
+export async function fetchChatMessages(
+  threadId: string,
+  limit = 100
+): Promise<ChatMessage[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('get_chat_messages', {
+    p_thread_id: threadId,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as ChatMessage[];
+}
+
+export async function fetchChatableMembers(): Promise<ChatableMember[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('get_chatable_members');
+  if (error) throw error;
+  return (data ?? []) as ChatableMember[];
+}
+
+export async function markChatThreadRead(threadId: string) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc('mark_chat_thread_read', {
+    p_thread_id: threadId,
+  });
+  if (error) throw error;
+  return data ?? null;
+}
+
+export async function sendChatMessage(params: {
+  body: string;
+  threadId?: string | null;
+  memberId?: string | null;
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.rpc('send_chat_message', {
+    p_body: params.body,
+    p_thread_id: params.threadId ?? null,
+    p_creator_id: null,
+    p_member_id: params.memberId ?? null,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row as { thread_id: string; message_id: number; created_at: string } | null;
+}
+
+export async function subscribeToCreatorChatThreads(
+  onChange: () => void
+): Promise<() => void> {
+  if (!supabase) return () => {};
+  const userId = await requireUserId();
+  const channel = supabase
+    .channel(`creator-chat-threads:${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'chat_threads',
+        filter: `creator_id=eq.${userId}`,
+      },
+      () => onChange()
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+export function subscribeToChatMessages(
+  threadId: string,
+  onChange: () => void
+): () => void {
+  if (!supabase) return () => {};
+  const channel = supabase
+    .channel(`chat-messages:${threadId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_messages',
+        filter: `thread_id=eq.${threadId}`,
+      },
+      () => onChange()
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+export async function fetchNotifications(limit = 50): Promise<AppNotification[]> {
+  if (!supabase) return [];
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id, type, payload, read_at, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return ((data ?? []) as AppNotification[]).map((item) => ({
+    ...item,
+    payload:
+      item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)
+        ? item.payload
+        : {},
+  }));
+}
+
+export async function fetchUnreadNotificationCount(): Promise<number> {
+  if (!supabase) return 0;
+  const userId = await requireUserId();
+  const { count, error } = await supabase
+    .from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .is('read_at', null);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function markNotificationRead(notificationId: number) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('id', notificationId)
+    .is('read_at', null);
+  if (error) throw error;
+}
+
+export async function markAllNotificationsRead() {
+  if (!supabase) throw new Error('Supabase not configured');
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .is('read_at', null);
+  if (error) throw error;
+}
+
+export async function subscribeToNotifications(onChange: () => void): Promise<() => void> {
+  if (!supabase) return () => {};
+  const userId = await requireUserId();
+  const channel = supabase
+    .channel(`creator-notifications:${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${userId}`,
+      },
+      () => onChange(),
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
   };
 }
 

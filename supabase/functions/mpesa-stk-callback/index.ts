@@ -94,6 +94,31 @@ serve(async (req) => {
       p_metadata: { source: "mpesa.stk.callback", receipt: receiptNumber },
     });
     if (creditErr) return json({ error: "Wallet credit failed" }, 500);
+
+    await supabase.rpc("create_notification_if_enabled", {
+      p_user_id: payment.user_id,
+      p_type: "wallet_topup_succeeded",
+      p_payload: {
+        amount_cents: creditAmount,
+        currency: payment.currency ?? "KES",
+        provider: "mpesa",
+        receipt_number: receiptNumber,
+      },
+      p_pref_key: "payments",
+    });
+  } else {
+    await supabase.rpc("create_notification_if_enabled", {
+      p_user_id: payment.user_id,
+      p_type: "wallet_topup_failed",
+      p_payload: {
+        amount_cents: amountMinor > 0 ? amountMinor : payment.amount_cents,
+        currency: payment.currency ?? "KES",
+        provider: "mpesa",
+        result_code: resultCode,
+        result_desc: resultDesc,
+      },
+      p_pref_key: "payments",
+    });
   }
 
   return json({ ok: true });

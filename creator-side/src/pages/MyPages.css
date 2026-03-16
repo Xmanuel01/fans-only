@@ -609,6 +609,187 @@ button,
   font-weight: 600;
 }
 
+.creator-notifications {
+  display: grid;
+  gap: 16px;
+}
+
+.creator-notifications__tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.creator-notifications__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(96, 119, 152, 0.28);
+  border-radius: 999px;
+  background: rgba(10, 14, 20, 0.78);
+  color: #d6e1f3;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.creator-notifications__tab.is-active {
+  background: linear-gradient(135deg, #25457f, #3e63ff);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.creator-notifications__tab-badge {
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.18);
+  color: inherit;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.creator-notifications__loading,
+.creator-notifications__empty,
+.creator-notifications__error {
+  border: 1px solid rgba(96, 119, 152, 0.18);
+  border-radius: 20px;
+  background: rgba(9, 14, 22, 0.82);
+}
+
+.creator-notifications__loading {
+  padding: 20px 22px;
+  color: #b7c6db;
+  font-size: 14px;
+}
+
+.creator-notifications__error {
+  padding: 14px 16px;
+  border-color: rgba(228, 116, 116, 0.24);
+  background: rgba(112, 24, 24, 0.18);
+  color: #ffd4d4;
+  font-size: 13px;
+}
+
+.creator-notifications__empty {
+  padding: 28px 24px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  color: #bfd0e5;
+}
+
+.creator-notifications__empty strong {
+  font-size: 18px;
+  color: #f4f7fb;
+}
+
+.creator-notifications__empty p {
+  margin: 0;
+  max-width: 520px;
+  line-height: 1.55;
+}
+
+.creator-notifications__empty-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(19, 29, 44, 0.88);
+  border: 1px solid rgba(96, 119, 152, 0.28);
+  color: #d9e5f7;
+}
+
+.creator-notifications__empty-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.creator-notifications__list {
+  display: grid;
+  gap: 12px;
+}
+
+.creator-notification-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 14px;
+  border: 1px solid rgba(96, 119, 152, 0.18);
+  border-radius: 18px;
+  background: rgba(9, 14, 22, 0.82);
+  color: #f4f7fb;
+  padding: 16px 18px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease;
+}
+
+.creator-notification-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(108, 139, 222, 0.3);
+  background: rgba(13, 19, 30, 0.94);
+}
+
+.creator-notification-card.is-unread {
+  border-color: rgba(85, 134, 229, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(85, 134, 229, 0.08);
+}
+
+.creator-notification-card__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(28, 42, 64, 0.88);
+  color: #d8e5f7;
+}
+
+.creator-notification-card__icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.creator-notification-card__body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.creator-notification-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.creator-notification-card__title {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.creator-notification-card__time {
+  flex-shrink: 0;
+  color: #8fa1b8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.creator-notification-card__detail {
+  color: #a9bad1;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
 .my-collection-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1545,12 +1726,13 @@ button,
 .msg-list__item {
   width: 100%;
   display: grid;
-  grid-template-columns: 48px 1fr;
+  grid-template-columns: 48px 1fr auto;
   gap: 10px;
   padding: 10px 12px;
   border-radius: 12px;
   background: #0f1219;
   border: 1px solid #1d2230;
+  border-width: 1px;
   color: #e9edf4;
   text-align: left;
   cursor: pointer;
@@ -1566,6 +1748,16 @@ button,
   height: 48px;
   border-radius: 50%;
   object-fit: cover;
+}
+
+.msg-list__avatar--fallback,
+.msg-thread__avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #21304f, #35589a);
+  color: #ffffff;
+  font-weight: 800;
 }
 
 .msg-list__meta {
@@ -1594,6 +1786,47 @@ button,
   font-size: 13px;
 }
 
+.msg-list__badge {
+  align-self: center;
+  justify-self: end;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #2bd46c;
+  color: #08110d;
+  font-size: 12px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.msg-panel__hint {
+  margin: 0 8px 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #1d2230;
+  background: #10151f;
+  color: #9ea8bb;
+  line-height: 1.45;
+}
+
+.msg-starter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 8px 12px;
+}
+
+.msg-empty {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px dashed #1d2230;
+  color: #8b94a7;
+  text-align: center;
+}
+
 .msg-thread {
   display: flex;
   flex-direction: column;
@@ -1616,10 +1849,12 @@ button,
   align-items: center;
 }
 
-.msg-thread__user img {
+.msg-thread__user img,
+.msg-thread__avatar {
   width: 42px;
   height: 42px;
   border-radius: 50%;
+  object-fit: cover;
 }
 
 .msg-thread__user .name {
@@ -1629,6 +1864,16 @@ button,
 .msg-thread__user .handle {
   color: #8b94a7;
   font-size: 13px;
+}
+
+.msg-thread__status {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid #1d2230;
+  background: #10151f;
+  color: #dfe7f6;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .msg-thread__tabs {
@@ -1688,6 +1933,15 @@ button,
   color: #e9edf4;
 }
 
+.msg-thread__notice {
+  margin: 12px 16px 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(242, 96, 96, 0.25);
+  background: rgba(126, 24, 24, 0.22);
+  color: #ffc4c4;
+}
+
 .msg-insights {
   background: #0f1219;
   color: #e9edf4;
@@ -1702,6 +1956,11 @@ button,
   color: #8b94a7;
   font-weight: 600;
   margin-top: 20px;
+}
+
+.msg-insights__copy {
+  color: #a9b2c4;
+  line-height: 1.55;
 }
 
 .insights-stack {
@@ -3836,10 +4095,59 @@ button,
 
 .payments-workspace {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
-.payments-summary-strip,
+.payments-summary-strip {
+  gap: 12px;
+}
+
+.payments-summary-strip .wallet-panel__title-row {
+  align-items: center;
+}
+
+.payments-summary-strip__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.payments-feature-switch__buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.payments-feature-switch__button {
+  min-width: 92px;
+  border: 1px solid rgba(110, 134, 168, 0.26);
+  background: rgba(13, 20, 32, 0.82);
+  color: #d7e2f2;
+  border-radius: 999px;
+  padding: 9px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.payments-feature-switch__button:hover {
+  border-color: rgba(110, 134, 168, 0.42);
+  transform: translateY(-1px);
+}
+
+.payments-feature-switch__button.is-active {
+  background: linear-gradient(135deg, #234d96, #3b6ee2);
+  border-color: rgba(78, 132, 239, 0.52);
+  color: #ffffff;
+}
+
 .payments-method-panel,
 .payments-request-panel,
 .payments-history-panel {
@@ -3848,6 +4156,20 @@ button,
 
 .payments-summary-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.payments-summary-strip .wallet-balance-card {
+  gap: 6px;
+  padding: 14px 16px;
+}
+
+.payments-summary-strip .wallet-balance-card__value {
+  font-size: 20px;
+}
+
+.payments-summary-strip .wallet-balance-card__value--small {
+  font-size: 16px;
 }
 
 .payments-rail-switch,
@@ -4009,6 +4331,21 @@ button,
 }
 
 @media (max-width: 780px) {
+  .payments-summary-strip .wallet-panel__title-row {
+    align-items: flex-start;
+  }
+
+  .payments-summary-strip__actions,
+  .payments-feature-switch__buttons {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .payments-feature-switch__button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
   .payments-form-grid,
   .payments-request-grid {
     grid-template-columns: minmax(0, 1fr);

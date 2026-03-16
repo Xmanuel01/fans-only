@@ -2,16 +2,16 @@
 import {
   FiBell,
   FiCompass,
-  FiFilter,
+  FiCreditCard,
   FiGift,
-  FiHeart,
   FiHome,
   FiLock,
   FiMessageCircle,
   FiMoreHorizontal,
+  FiPlus,
   FiSearch,
+  FiSend,
   FiSettings,
-  FiShare,
   FiChevronRight,
   FiChevronLeft,
   FiChevronDown,
@@ -28,24 +28,48 @@ import {
   submitFeatureRequest,
   initiatePaystackPayment,
   initiateMpesaStkPush,
+  fetchChatMessages,
+  fetchChatThreads,
+  fetchChatableCreators,
+  fetchNotifications,
+  fetchNotificationPreferences,
+  fetchUnreadNotificationCount,
   fetchRecommendedCreators,
   ensureProfile,
   fetchFeedPosts,
   fetchStories,
   fetchActiveSubscriptions,
+  fetchSubscriptionHistory,
   fetchWalletBalance,
+  fetchWalletHistory,
   fetchPpvPurchases,
+  markChatThreadRead,
+  markAllNotificationsRead,
+  markNotificationRead,
   purchasePpv,
+  sendChatMessage,
+  subscribeToChatMessages,
+  subscribeToMemberChatThreads,
+  subscribeToNotifications,
+  updateNotificationPreferences,
   fetchCreatorProfile,
   createCreatorProfile,
   signInWithPassword,
   signUpWithPassword,
+  type AppNotification,
+  type ChatMessage,
+  type ChatThreadSummary,
+  type ChatableCreator,
   type CreatorProfile,
   type CreatorCard,
+  type SubscriptionHistoryItem,
+  type NotificationPreferences,
   type UserProfile,
   type FeedPost,
   type WalletBalance,
+  type WalletHistoryItem,
 } from './supabaseClient'
+import { useMemo } from 'react'
 import { env, envStatus, isSupabaseConfigured } from './env'
 
 const CREATOR_APP_URL = env.creatorAppUrl
@@ -53,7 +77,6 @@ const isExternalUrl = (value: string | null) => Boolean(value && /^https?:\/\//i
 const CREATOR_APP_EXTERNAL = isExternalUrl(CREATOR_APP_URL)
 const HELP_CENTER_URL = env.helpCenterUrl
 const RELEASE_NOTES_URL = env.releaseNotesUrl
-const APP_DOWNLOAD_URL = env.appDownloadUrl
 const SUPPORT_EMAIL = env.supportEmail
 const EXIT_URL = env.exitUrl ?? 'about:blank'
 const FEATURED_CREATOR_ID = env.giftCreatorId ?? ''
@@ -72,6 +95,70 @@ const formatKsh = (amountCents?: number | null) => {
   const value = Math.round(amountCents) / 100
   return `KSh ${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
+
+const formatSubscriptionAmount = (amountCents?: number | null, currency?: string | null) => {
+  if (!amountCents || amountCents <= 0) return 'Free'
+  const normalizedCurrency = (currency ?? 'KES').toUpperCase()
+  if (normalizedCurrency === 'KES') {
+    return formatKsh(amountCents)
+  }
+  const value = Math.round(amountCents) / 100
+  return `${normalizedCurrency} ${value.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+const formatMembershipDate = (value?: string | null) => {
+  if (!value) return 'Not available'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Not available'
+  return date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+const getMembershipStatusLabel = (status: SubscriptionHistoryItem['status']) => {
+  switch (status) {
+    case 'active':
+      return 'Active'
+    case 'canceled':
+      return 'Canceled'
+    default:
+      return 'Expired'
+  }
+}
+
+const formatWalletDate = (value: string) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Just now'
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+const getWalletEntryLabel = (entry: WalletHistoryItem) => {
+  switch (entry.entry_type) {
+    case 'credit_topup':
+      return 'Top up received'
+    case 'debit_ppv':
+      return entry.post_title ? `Unlocked ${entry.post_title}` : 'PPV unlock'
+    case 'debit_tip':
+      return entry.creator ? `Tip sent to ${entry.creator.display_name}` : 'Tip sent'
+    default:
+      return 'Wallet refund'
+  }
+}
+
+const getWalletEntryTone = (entryType: WalletHistoryItem['entry_type']) =>
+  entryType === 'credit_topup' || entryType === 'refund' ? 'credit' : 'debit'
+
 function AuthPrompt({
   onAuthSuccess,
   onDemo,
@@ -289,6 +376,7 @@ const sidebarNav = [
   { icon: FiCompass, label: 'Explore', key: 'explore' },
   { icon: FiMessageCircle, label: 'Chats', key: 'chats' },
   { icon: FiBell, label: 'Notifications', key: 'notifications' },
+  { icon: FiCreditCard, label: 'Wallet', key: 'wallet' },
   { icon: FiSettings, label: 'Settings', key: 'settings' },
   { icon: FiGift, label: 'Membership', key: 'membership' },
 ]
@@ -303,14 +391,6 @@ const visited = USE_SAMPLE_DATA
       { name: 'Aranaktu', avatar: 'https://i.pravatar.cc/64?img=36' },
     ]
   : []
-
-const sampleProfile = USE_SAMPLE_DATA
-  ? {
-      name: 'J Koina',
-      role: 'Member',
-      avatar: 'https://i.pravatar.cc/64?img=21',
-    }
-  : null
 
 const filters = [
   'All',
@@ -554,7 +634,7 @@ function ExploreSection({ title, children }: { title: string; children: React.Re
   )
 }
 
-function TopicsGrid() {
+function TopicsGrid({ onOpenTopic }: { onOpenTopic: (value: string) => void }) {
   return (
     <section className="topics">
       <div className="section-heading">
@@ -562,14 +642,16 @@ function TopicsGrid() {
       </div>
       <div className="topics-grid">
         {topics.map((t) => (
-          <div
+          <button
             key={t.label}
             className="topic-tile"
             style={{ background: `linear-gradient(135deg, ${t.color[0]}, ${t.color[1]})` }}
+            onClick={() => onOpenTopic(t.label)}
+            type="button"
           >
             <span>{t.label}</span>
             <div className="topic-icon">{t.icon}</div>
-          </div>
+          </button>
         ))}
       </div>
     </section>
@@ -579,11 +661,13 @@ function TopicsGrid() {
 function ExplorePage({
   filter,
   onSelectFilter,
+  onOpenTopic,
   activeSubscriptions,
   onSubscribe,
 }: {
   filter: string
   onSelectFilter: (value: string) => void
+  onOpenTopic: (value: string) => void
   activeSubscriptions: string[]
   onSubscribe: (creator: CreatorCard) => void
 }) {
@@ -651,7 +735,12 @@ function ExplorePage({
               <SquareCard
                 key={c.id}
                 name={c.display_name}
-                tag={c.category ?? c.handle}
+                tag={
+                  filter !== 'All' &&
+                  (c.category === filter || c.categories?.includes(filter))
+                    ? filter
+                    : c.category ?? c.handle
+                }
                 img={c.avatar_url ?? assetUrl('logo.png')}
                 priceLabel={formatKsh(c.subscription_price_cents ?? 0)}
                 subscribed={subscriptionSet.has(c.id)}
@@ -661,7 +750,7 @@ function ExplorePage({
         </div>
       </ExploreSection>
 
-      <TopicsGrid />
+      <TopicsGrid onOpenTopic={onOpenTopic} />
 
       {newOnChic.length ? (
         <ExploreSection title="New on SpicyX">
@@ -686,129 +775,668 @@ function ExplorePage({
   )
 }
 
-const chatRooms = USE_SAMPLE_DATA
-  ? [
-      {
-        name: 'Chat Room for Free Members',
-        subtitle: 'Agree to guidelines to join',
-        avatar: 'https://i.pravatar.cc/80?img=18',
-        unread: true,
-      },
-      {
-        name: 'Brandulate Lab',
-        subtitle: 'New drops today',
-        avatar: 'https://i.pravatar.cc/80?img=14',
-        unread: false,
-      },
-    ]
-  : []
+const formatChatTimestamp = (value: string | null) => {
+  if (!value) return 'Just now'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Just now'
+  const diffMs = Date.now() - date.getTime()
+  const diffMinutes = Math.round(diffMs / (1000 * 60))
+  if (diffMinutes < 1) return 'now'
+  if (diffMinutes < 60) return `${diffMinutes}m`
+  const diffHours = Math.round(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours}h`
+  const diffDays = Math.round(diffHours / 24)
+  if (diffDays < 7) return `${diffDays}d`
+  return date.toLocaleDateString()
+}
 
 function ChatsPage() {
-  const [tab, onTabChange] = useState<'direct' | 'group'>('group')
+  const [threads, setThreads] = useState<ChatThreadSummary[]>([])
+  const [chatableCreators, setChatableCreators] = useState<ChatableCreator[]>([])
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
+  const [selectedCreatorId, setSelectedCreatorId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [draft, setDraft] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [showComposer, setShowComposer] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const threadEndRef = useRef<HTMLDivElement | null>(null)
+
+  const loadThreads = async (preserveSelection = true) => {
+    try {
+      const [nextThreads, nextCreators] = await Promise.all([
+        fetchChatThreads(),
+        fetchChatableCreators(),
+      ])
+      setThreads(nextThreads)
+      setChatableCreators(nextCreators)
+
+      if (!preserveSelection) {
+        setSelectedThreadId(nextThreads[0]?.thread_id ?? null)
+        return
+      }
+
+      setSelectedThreadId((current) => {
+        if (selectedCreatorId) {
+          const matchingThread = nextThreads.find(
+            (thread) => thread.creator_id === selectedCreatorId
+          )
+          return matchingThread?.thread_id ?? null
+        }
+        if (current && nextThreads.some((thread) => thread.thread_id === current)) {
+          return current
+        }
+        return nextThreads[0]?.thread_id ?? null
+      })
+    } catch (nextError: any) {
+      console.error(nextError)
+      setError(nextError?.message ?? 'Could not load your chats.')
+    }
+  }
+
+  const loadMessages = async (threadId: string) => {
+    setMessagesLoading(true)
+    try {
+      const nextMessages = await fetchChatMessages(threadId)
+      setMessages(nextMessages)
+      await markChatThreadRead(threadId)
+    } catch (nextError: any) {
+      console.error(nextError)
+      setError(nextError?.message ?? 'Could not load this conversation.')
+    } finally {
+      setMessagesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      setLoading(true)
+      try {
+        const [nextThreads, nextCreators] = await Promise.all([
+          fetchChatThreads(),
+          fetchChatableCreators(),
+        ])
+        if (!mounted) return
+        setThreads(nextThreads)
+        setChatableCreators(nextCreators)
+        setSelectedThreadId(nextThreads[0]?.thread_id ?? null)
+      } catch (nextError: any) {
+        if (!mounted) return
+        console.error(nextError)
+        setError(nextError?.message ?? 'Could not load chats.')
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedThreadId) {
+      setMessages([])
+      return
+    }
+    loadMessages(selectedThreadId)
+  }, [selectedThreadId])
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [messages])
+
+  useEffect(() => {
+    let unsubscribe = () => {}
+    ;(async () => {
+      unsubscribe = await subscribeToMemberChatThreads(() => {
+        loadThreads()
+      })
+    })()
+    return () => {
+      unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedThreadId) return
+    return subscribeToChatMessages(selectedThreadId, () => {
+      loadMessages(selectedThreadId)
+      loadThreads()
+    })
+  }, [selectedThreadId])
+
+  const selectedThread =
+    threads.find((thread) => thread.thread_id === selectedThreadId) ?? null
+  const selectedStarter =
+    chatableCreators.find((creator) => creator.creator_id === selectedCreatorId) ?? null
+
+  const filteredThreads = threads.filter((thread) => {
+    const haystack = [
+      thread.peer_name,
+      thread.peer_handle,
+      thread.last_message_preview ?? '',
+    ]
+      .join(' ')
+      .toLowerCase()
+    return haystack.includes(searchTerm.trim().toLowerCase())
+  })
+
+  const starterCreators = chatableCreators.filter((creator) => {
+    if (!searchTerm.trim()) return !threads.some((thread) => thread.creator_id === creator.creator_id)
+    const haystack = [creator.display_name, creator.handle].join(' ').toLowerCase()
+    return (
+      !threads.some((thread) => thread.creator_id === creator.creator_id) &&
+      haystack.includes(searchTerm.trim().toLowerCase())
+    )
+  })
+
+  const handleSelectThread = (thread: ChatThreadSummary) => {
+    setSelectedCreatorId(null)
+    setSelectedThreadId(thread.thread_id)
+    setShowComposer(false)
+    setError(null)
+  }
+
+  const handleSelectCreator = (creator: ChatableCreator) => {
+    const existingThread = threads.find((thread) => thread.creator_id === creator.creator_id)
+    if (existingThread) {
+      handleSelectThread(existingThread)
+      return
+    }
+
+    setSelectedThreadId(null)
+    setSelectedCreatorId(creator.creator_id)
+    setMessages([])
+    setDraft('')
+    setShowComposer(false)
+    setError(null)
+  }
+
+  const handleSend = async () => {
+    if (!draft.trim() || sending) return
+    setSending(true)
+    setError(null)
+    try {
+      const result = await sendChatMessage({
+        body: draft,
+        threadId: selectedThreadId,
+        creatorId: selectedThread?.creator_id ?? selectedCreatorId,
+      })
+      setDraft('')
+      await loadThreads(false)
+      if (result?.thread_id) {
+        setSelectedCreatorId(null)
+        setSelectedThreadId(result.thread_id)
+        await loadMessages(result.thread_id)
+      }
+    } catch (nextError: any) {
+      console.error(nextError)
+      setError(nextError?.message ?? 'Could not send your message.')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <div className="chats-page">
       <aside className="chat-list">
         <div className="chat-header">
           <h2>Chats</h2>
           <div className="chat-actions">
-            <FiFilter />
-            <FiMoreHorizontal />
+            <button
+              className="chat-action-btn"
+              type="button"
+              onClick={() => setShowComposer((prev) => !prev)}
+              aria-label="Start a new chat"
+            >
+              <FiPlus />
+            </button>
           </div>
         </div>
 
-        <div className="chat-tabs">
-          <button
-            className={`chat-tab ${tab === 'direct' ? 'active' : ''}`}
-            onClick={() => onTabChange('direct')}
-          >
-            Direct messages
-          </button>
-          <button
-            className={`chat-tab ${tab === 'group' ? 'active' : ''}`}
-            onClick={() => onTabChange('group')}
-          >
-            Group chats
-          </button>
+        <div className="chat-search">
+          <FiSearch size={16} />
+          <input
+            type="search"
+            placeholder="Search chats"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+          />
         </div>
 
-        <div className="chat-cards">
-          {chatRooms.length ? (
-            chatRooms.map((room) => (
-              <div key={room.name} className="chat-card">
-                <img src={room.avatar} alt={room.name} />
-                <div className="chat-meta">
-                  <div className="chat-name">{room.name}</div>
-                  <div className="chat-sub">{room.subtitle}</div>
-                </div>
-                {room.unread && <span className="chat-dot" />}
+        <div className="chat-intro">
+          Direct messages are available with creators you actively support.
+        </div>
+
+        {showComposer ? (
+          <div className="chat-starters">
+            <div className="chat-starters-title">Start a new chat</div>
+            {starterCreators.length ? (
+              starterCreators.map((creator) => (
+                <button
+                  key={creator.creator_id}
+                  className="chat-card starter"
+                  type="button"
+                  onClick={() => handleSelectCreator(creator)}
+                >
+                  <img
+                    src={creator.avatar_url ?? assetUrl('logo.png')}
+                    alt={creator.display_name}
+                  />
+                  <div className="chat-meta">
+                    <div className="chat-name">{creator.display_name}</div>
+                    <div className="chat-sub">@{creator.handle}</div>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="muted">
+                Subscribe to a creator first, or start from an existing conversation.
               </div>
+            )}
+          </div>
+        ) : null}
+
+        <div className="chat-cards">
+          {loading ? (
+            <div className="muted">Loading chats...</div>
+          ) : filteredThreads.length ? (
+            filteredThreads.map((thread) => (
+              <button
+                key={thread.thread_id}
+                className={`chat-card ${selectedThreadId === thread.thread_id ? 'active' : ''}`}
+                type="button"
+                onClick={() => handleSelectThread(thread)}
+              >
+                <img
+                  src={thread.peer_avatar_url ?? assetUrl('logo.png')}
+                  alt={thread.peer_name}
+                />
+                <div className="chat-meta">
+                  <div className="chat-card-top">
+                    <div className="chat-name">{thread.peer_name}</div>
+                    <div className="chat-time">{formatChatTimestamp(thread.last_message_at)}</div>
+                  </div>
+                  <div className="chat-sub">
+                    {thread.peer_handle ? `@${thread.peer_handle}` : 'Creator'}
+                  </div>
+                  <div className="chat-preview">
+                    {thread.last_message_preview ?? 'Start the conversation'}
+                  </div>
+                </div>
+                {thread.unread_count > 0 ? <span className="chat-dot" /> : null}
+              </button>
             ))
           ) : (
-            <div className="muted">No chats yet.</div>
+            <div className="muted">No direct messages yet.</div>
           )}
         </div>
       </aside>
 
       <main className="chat-main">
-        {chatRooms.length ? (
+        {selectedThread || selectedStarter ? (
           <>
             <div className="chat-topbar">
-              <div className="chat-breadcrumb">
-                <span className="muted">{chatRooms[0]?.name}</span>
-                <span className="muted">-</span>
-                <span className="muted">View Chat Details</span>
+              <div className="chat-peer">
+                <img
+                  src={
+                    selectedThread?.peer_avatar_url ??
+                    selectedStarter?.avatar_url ??
+                    assetUrl('logo.png')
+                  }
+                  alt={selectedThread?.peer_name ?? selectedStarter?.display_name ?? 'Chat'}
+                />
+                <div>
+                  <div className="chat-peer-name">
+                    {selectedThread?.peer_name ?? selectedStarter?.display_name}
+                  </div>
+                  <div className="chat-peer-handle">
+                    {selectedThread?.peer_handle
+                      ? `@${selectedThread.peer_handle}`
+                      : selectedStarter?.handle
+                        ? `@${selectedStarter.handle}`
+                        : 'Subscribed creator'}
+                  </div>
+                </div>
               </div>
-              <div className="chat-avatars">
-                {chatRooms.slice(0, 2).map((room) => (
-                  <img key={room.name} src={room.avatar} alt={room.name} />
-                ))}
+              <div className="chat-topbar-badge">
+                {selectedThread ? 'Live conversation' : 'New conversation'}
               </div>
             </div>
 
-            <div className="chat-guidelines">
-              <h3>Chat guidelines</h3>
-              <p>
-                Welcome to community chats, a place where creators and members can chat and
-                connect. Anyone who joins a chat can see the full history and whenever you join any
-                chat, others with access will be able to see that you've joined.
-              </p>
-              <p>
-                SpicyX's <span className="link-like">Community Guidelines</span> apply to all
-                community spaces. To keep chats safe and friendly, please:
-              </p>
-              <ul>
-                <li>Be kind and welcoming</li>
-                <li>Always be respectful</li>
-                <li>Don't spam</li>
-                <li>Don't share private or personal info</li>
-              </ul>
-              <button className="agree-btn">I agree</button>
+            <div className="chat-thread-body">
+              {messagesLoading ? (
+                <div className="chat-empty-state">Loading messages...</div>
+              ) : messages.length ? (
+                messages.map((message) => (
+                  <div
+                    key={message.message_id}
+                    className={`chat-bubble ${message.sender_role === 'member' ? 'me' : 'other'}`}
+                  >
+                    <div className="chat-bubble-text">{message.body}</div>
+                    <div className="chat-bubble-time">
+                      {formatChatTimestamp(message.created_at)}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="chat-empty-state">
+                  Send the first message to start this conversation.
+                </div>
+              )}
+              <div ref={threadEndRef} />
+            </div>
+
+            <div className="chat-composer">
+              <textarea
+                placeholder="Type a message..."
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                rows={2}
+              />
+              <button
+                className="send-btn"
+                type="button"
+                onClick={handleSend}
+                disabled={sending || !draft.trim()}
+              >
+                <FiSend size={16} />
+                <span>{sending ? 'Sending...' : 'Send'}</span>
+              </button>
             </div>
           </>
         ) : (
           <div className="chat-guidelines">
-            <h3>No chats yet</h3>
-            <p>When you join a creator chat or start a conversation, it will show up here.</p>
+            <h3>No chat selected</h3>
+            <p>
+              Choose an existing conversation or start a new direct message with a creator you are
+              actively subscribed to.
+            </p>
           </div>
         )}
+        {error ? <div className="chat-error">{error}</div> : null}
       </main>
     </div>
   )
 }
 
-function NotificationsPage() {
+type NotificationFilter = 'all' | 'unread' | 'messages' | 'payments' | 'subscriptions' | 'content'
+
+function formatNotificationTime(value: string) {
+  const timestamp = new Date(value).getTime()
+  if (!Number.isFinite(timestamp)) return 'Just now'
+
+  const diffMs = Date.now() - timestamp
+  const diffMinutes = Math.max(1, Math.round(diffMs / (1000 * 60)))
+  if (diffMinutes < 60) return `${diffMinutes}m ago`
+
+  const diffHours = Math.round(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+
+  const diffDays = Math.round(diffHours / 24)
+  if (diffDays < 7) return `${diffDays}d ago`
+
+  return new Date(value).toLocaleDateString()
+}
+
+function getNotificationFilter(type: string): Exclude<NotificationFilter, 'all' | 'unread'> {
+  if (type === 'chat_message') return 'messages'
+  if (
+    [
+      'wallet_topup_succeeded',
+      'wallet_topup_failed',
+      'tip_sent',
+      'ppv_unlocked',
+      'payout_requested',
+      'payout_submitted',
+      'payout_success',
+      'payout_failed',
+      'payout_reversed',
+    ].includes(type)
+  ) {
+    return 'payments'
+  }
+  if (['subscription_active', 'subscription_renewed', 'new_subscription'].includes(type)) {
+    return 'subscriptions'
+  }
+  return 'content'
+}
+
+function getNotificationTitle(item: AppNotification) {
+  const payload = item.payload ?? {}
+  if (item.type === 'chat_message') return `New message from ${payload.from_name ?? 'someone'}`
+  if (item.type === 'creator_post_published') return `${payload.creator_name ?? 'A creator'} posted new content`
+  if (item.type === 'wallet_topup_succeeded') return 'Wallet top-up successful'
+  if (item.type === 'wallet_topup_failed') return 'Wallet top-up failed'
+  if (item.type === 'subscription_active') return `Subscribed to ${payload.creator_name ?? 'a creator'}`
+  if (item.type === 'subscription_renewed') return 'Subscription renewed'
+  if (item.type === 'tip_sent') return `Tip sent to ${payload.creator_name ?? 'a creator'}`
+  if (item.type === 'ppv_unlocked') return `Unlocked ${payload.post_title ?? 'a post'}`
+  return 'New activity'
+}
+
+function getNotificationDetail(item: AppNotification) {
+  const payload = item.payload ?? {}
+  if (item.type === 'chat_message') return payload.preview ?? 'Open chats to read the latest message.'
+  if (item.type === 'creator_post_published') {
+    return payload.post_title
+      ? `${payload.post_title} is now available in your feed.`
+      : 'Open Home to view the latest creator content.'
+  }
+  if (item.type === 'wallet_topup_succeeded') {
+    return `Your wallet was credited with ${formatKsh(payload.amount_cents ?? 0)}.`
+  }
+  if (item.type === 'wallet_topup_failed') {
+    return payload.result_desc ?? 'Your top-up could not be completed. Try again.'
+  }
+  if (item.type === 'subscription_active' || item.type === 'subscription_renewed') {
+    return payload.current_period_end
+      ? `Access is active until ${new Date(payload.current_period_end).toLocaleDateString()}.`
+      : 'Your membership access is active.'
+  }
+  if (item.type === 'tip_sent') {
+    return `Amount: ${formatKsh(payload.amount_cents ?? 0)}.`
+  }
+  if (item.type === 'ppv_unlocked') {
+    return `Amount: ${formatKsh(payload.amount_cents ?? 0)}.`
+  }
+  return 'Open the app to see the latest activity.'
+}
+
+function getNotificationTargetPage(
+  item: AppNotification
+):
+  | 'home'
+  | 'explore'
+  | 'chats'
+  | 'notifications'
+  | 'wallet'
+  | 'settings'
+  | 'membership'
+  | 'news'
+  | 'help'
+  | 'features' {
+  if (item.type === 'chat_message') return 'chats'
+  if (['wallet_topup_succeeded', 'wallet_topup_failed', 'tip_sent', 'ppv_unlocked'].includes(item.type)) {
+    return 'wallet'
+  }
+  if (['subscription_active', 'subscription_renewed'].includes(item.type)) {
+    return 'membership'
+  }
+  return 'home'
+}
+
+function NotificationsPage({
+  onNavigate,
+}: {
+  onNavigate: (
+    page:
+      | 'home'
+      | 'explore'
+      | 'chats'
+      | 'notifications'
+      | 'wallet'
+      | 'settings'
+      | 'membership'
+      | 'news'
+      | 'help'
+      | 'features'
+  ) => void
+}) {
+  const [notifications, setNotifications] = useState<AppNotification[]>([])
+  const [filter, setFilter] = useState<NotificationFilter>('all')
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    let unsubscribe = () => {}
+
+    const loadNotifications = async () => {
+      try {
+        if (isMounted) {
+          setLoading(true)
+          setError(null)
+        }
+        const items = await fetchNotifications()
+        if (isMounted) setNotifications(items)
+      } catch (err) {
+        console.error(err)
+        if (isMounted) setError('Could not load notifications right now.')
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    void loadNotifications()
+    void (async () => {
+      unsubscribe = await subscribeToNotifications(() => {
+        void loadNotifications()
+      })
+    })()
+
+    return () => {
+      isMounted = false
+      unsubscribe()
+    }
+  }, [])
+
+  const filteredNotifications = useMemo(() => {
+    if (filter === 'all') return notifications
+    if (filter === 'unread') return notifications.filter((item) => !item.read_at)
+    return notifications.filter((item) => getNotificationFilter(item.type) === filter)
+  }, [filter, notifications])
+
+  const unreadCount = notifications.filter((item) => !item.read_at).length
+
+  const openNotification = async (item: AppNotification) => {
+    try {
+      if (!item.read_at) {
+        await markNotificationRead(item.id)
+        setNotifications((prev) =>
+          prev.map((entry) =>
+            entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry
+          )
+        )
+      }
+    } catch (err) {
+      console.error(err)
+    }
+    onNavigate(getNotificationTargetPage(item))
+  }
+
+  const handleMarkAllRead = async () => {
+    try {
+      setBusy(true)
+      await markAllNotificationsRead()
+      setNotifications((prev) =>
+        prev.map((entry) => ({ ...entry, read_at: entry.read_at ?? new Date().toISOString() }))
+      )
+    } catch (err) {
+      console.error(err)
+      setError('Could not mark notifications as read.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="notifications-page">
-      <h2>Notifications</h2>
-      <div className="notifications-empty">
-        <div className="notif-icon">
-          <FiBell size={24} />
+      <div className="notifications-header">
+        <div>
+          <h2>Notifications</h2>
+          <p className="notif-subtitle">Stay on top of chats, payments, subscriptions, and new creator content.</p>
         </div>
-        <div className="notif-title">No notifications yet</div>
-        <div className="notif-sub">
-          You'll get updates when people join your community, interact with your posts, and more.
-        </div>
+        <button
+          className="pill ghost"
+          onClick={handleMarkAllRead}
+          disabled={!unreadCount || busy}
+        >
+          {busy ? 'Updating...' : 'Mark all read'}
+        </button>
       </div>
+
+      <div className="notif-filters">
+        {[
+          ['all', 'All'],
+          ['unread', 'Unread'],
+          ['messages', 'Messages'],
+          ['payments', 'Payments'],
+          ['subscriptions', 'Subscriptions'],
+          ['content', 'Content'],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            className={`notif-filter-pill ${filter === key ? 'active' : ''}`}
+            onClick={() => setFilter(key as NotificationFilter)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {error ? <div className="chat-error notifications-error">{error}</div> : null}
+
+      {loading ? (
+        <div className="notifications-loading">Loading notifications...</div>
+      ) : filteredNotifications.length ? (
+        <div className="notifications-list">
+          {filteredNotifications.map((item: AppNotification) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`notification-card ${item.read_at ? '' : 'is-unread'}`}
+              onClick={() => void openNotification(item)}
+            >
+              <div className="notification-card__icon">
+                <FiBell size={18} />
+              </div>
+              <div className="notification-card__body">
+                <div className="notification-card__top">
+                  <span className="notification-card__title">{getNotificationTitle(item)}</span>
+                  <span className="notification-card__time">{formatNotificationTime(item.created_at)}</span>
+                </div>
+                <div className="notification-card__detail">{getNotificationDetail(item)}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="notifications-empty">
+          <div className="notif-icon">
+            <FiBell size={24} />
+          </div>
+          <div className="notif-title">No notifications yet</div>
+          <div className="notif-sub">
+            You'll see chats, creator updates, wallet top-ups, and membership activity here.
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -851,10 +1479,11 @@ function BasicsCard({ session, userProfile }: { session: any; userProfile: UserP
   }
 
   const displayName =
+    userProfile?.display_name ??
     session.user.user_metadata?.full_name ??
     session.user.user_metadata?.name ??
     session.user.email?.split('@')[0] ??
-    ''
+    'Fan'
   const email = session.user.email ?? ''
   const avatar = session.user.user_metadata?.avatar_url ?? assetUrl('logo.png')
 
@@ -1036,65 +1665,143 @@ function AccountCard({ session }: { session: any }) {
 }
 
 function EmailNotificationsCard() {
-  const toggles = [
-    'Comment replies and reactions',
-    'Posts and Quips from creators you may like',
-    'Product updates and community announcements',
-    'Member newsletter',
-    'Special offers and promotions',
-    'General creator updates',
-  ]
-  const primaryMembership = memberships[0]
+  const [form, setForm] = useState<NotificationPreferences>({
+    push: true,
+    email: true,
+    sms: false,
+    messages: true,
+    payments: true,
+    subscriptions: true,
+    content: true,
+  })
+  const [saved, setSaved] = useState<NotificationPreferences>(form)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadPreferences = async () => {
+      try {
+        const prefs = await fetchNotificationPreferences()
+        if (!isMounted) return
+        setForm(prefs)
+        setSaved(prefs)
+      } catch (err) {
+        console.error(err)
+        if (isMounted) setError('Could not load notification preferences right now.')
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    void loadPreferences()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const hasChanges = useMemo(() => {
+    return Object.keys(form).some(
+      (key) => form[key as keyof NotificationPreferences] !== saved[key as keyof NotificationPreferences]
+    )
+  }, [form, saved])
+
+  const updateToggle = (key: keyof NotificationPreferences) => {
+    setForm((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const handleSave = async () => {
+    try {
+      setSaving(true)
+      setError(null)
+      const next = await updateNotificationPreferences(form)
+      setForm(next)
+      setSaved(next)
+    } catch (err) {
+      console.error(err)
+      setError('Could not save notification preferences right now.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="settings-stack">
       <div className="settings-card">
-        <div className="card-title">General</div>
+        <div className="card-title">Notification preferences</div>
+        <div className="muted small">Control which in-app alerts appear in your notifications feed.</div>
+        {error ? <div className="alert-error">{error}</div> : null}
         <div className="toggle-group">
-          {toggles.map((t) => (
-            <div key={t} className="toggle-row">
-              <span>{t}</span>
-              <label className="switch checked">
-                <input type="checkbox" defaultChecked />
+          {[
+            ['push', 'In-app notifications', 'Show notifications inside the app'],
+            ['email', 'Email alerts', 'Save email preferences for account updates'],
+            ['sms', 'SMS alerts', 'Save SMS preferences for urgent notices'],
+            ['messages', 'Messages', 'Notify me about new chat messages'],
+            ['payments', 'Payments', 'Notify me about wallet, tips, and purchases'],
+            ['subscriptions', 'Subscriptions', 'Notify me when memberships start or renew'],
+            ['content', 'Creator content', 'Notify me when creators publish new posts or stories'],
+          ].map(([key, label, description]) => (
+            <div key={key} className="toggle-row">
+              <div>
+                <div className="name">{label}</div>
+                <div className="muted small">{description}</div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={form[key as keyof NotificationPreferences]}
+                  onChange={() => updateToggle(key as keyof NotificationPreferences)}
+                  disabled={loading || saving}
+                />
                 <span className="slider" />
               </label>
             </div>
           ))}
         </div>
-      </div>
-
-      <div className="settings-card horizontal">
-        {primaryMembership ? (
-          <>
-            <div className="brand-block">
-              <img src={primaryMembership.avatar} alt={primaryMembership.name} />
-              <div>
-                <div className="name">{primaryMembership.name}</div>
-                <div className="muted">Membership</div>
-              </div>
-            </div>
-            <FiChevronRight />
-          </>
-        ) : (
-          <div className="muted">No memberships yet.</div>
-        )}
+        <div className="button-right">
+          <button className="pill light" onClick={() => void handleSave()} disabled={loading || saving || !hasChanges}>
+            {saving ? 'Saving...' : 'Save preferences'}
+          </button>
+        </div>
       </div>
     </div>
   )
 }
 
-function MembershipsCard() {
-  const primaryMembership = memberships[0]
+function MembershipsCard({
+  history,
+  onOpenCreator,
+}: {
+  history: SubscriptionHistoryItem[]
+  onOpenCreator: (creator: CreatorCard) => void
+}) {
+  const primaryMembership = history[0]
   return (
     <div className="settings-card horizontal">
       {primaryMembership ? (
         <>
-          <div className="brand-block">
-            <img src={primaryMembership.avatar} alt={primaryMembership.name} />
+          <button
+            className="brand-block brand-block--button"
+            type="button"
+            onClick={() => onOpenCreator(primaryMembership.creator)}
+          >
+            <img
+              src={primaryMembership.creator.avatar_url ?? assetUrl('logo.png')}
+              alt={primaryMembership.creator.display_name}
+            />
             <div>
-              <div className="name">{primaryMembership.name}</div>
-              <div className="muted">Membership</div>
+              <div className="name">{primaryMembership.creator.display_name}</div>
+              <div className="muted">
+                {formatSubscriptionAmount(
+                  primaryMembership.amount_cents,
+                  primaryMembership.currency
+                )}
+              </div>
             </div>
-          </div>
+          </button>
           <FiMoreHorizontal />
         </>
       ) : (
@@ -1180,6 +1887,8 @@ function SettingsPage({
   onTopupAmountChange,
   onTopupPhoneChange,
   onTopup,
+  subscriptionHistory,
+  onOpenCreator,
 }: {
   tab: string
   onTabChange: (t: string) => void
@@ -1195,6 +1904,8 @@ function SettingsPage({
   onTopupAmountChange: (value: string) => void
   onTopupPhoneChange: (value: string) => void
   onTopup: () => void
+  subscriptionHistory: SubscriptionHistoryItem[]
+  onOpenCreator: (creator: CreatorCard) => void
 }) {
   const [localTab, setLocalTab] = useState(tab)
 
@@ -1211,7 +1922,9 @@ function SettingsPage({
       {localTab === 'Basics' && <BasicsCard session={session} userProfile={userProfile} />}
       {localTab === 'Account' && <AccountCard session={session} />}
       {localTab === 'Email notifications' && <EmailNotificationsCard />}
-      {localTab === 'Memberships' && <MembershipsCard />}
+      {localTab === 'Memberships' && (
+        <MembershipsCard history={subscriptionHistory} onOpenCreator={onOpenCreator} />
+      )}
       {localTab === 'Billing history' && (
         <BillingHistoryCard
           walletBalance={walletBalance}
@@ -1267,319 +1980,678 @@ function SettingsPage({
   )
 }
 
-const coverImages = USE_SAMPLE_DATA
-  ? [
-      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=1200&q=80',
-      'https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1200&q=80',
-    ]
-  : []
-
-const membershipProfile = USE_SAMPLE_DATA
-  ? {
-      name: 'Brandulate AI',
-      tagline: 'AI-Powered Artistry',
-      avatar: 'https://i.pravatar.cc/200?img=14',
-    }
-  : null
-
-const membershipPost = USE_SAMPLE_DATA
-  ? {
-      title: '2601_ZIT_BSY_Q4 + Q5 (C60)',
-      date: 'January 14',
-      likes: 0,
-      comments: 0,
-      image:
-        'https://images.unsplash.com/photo-1601758124206-0c3c5eff8cd5?auto=format&fit=crop&w=1400&q=80',
-    }
-  : null
-
-const membershipCardImg = USE_SAMPLE_DATA
-  ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=600&q=80'
-  : ''
-
-const tiers = USE_SAMPLE_DATA
-  ? [
-      {
-        name: 'Creative Access',
-        price: 'KSh 500 / month',
-        perks: [
-          'Thriving community of AI artists',
-          'Premium resources: LoRAs, workflows, tutorials',
-          'Exclusive tips & tricks for AI automation',
-          'Early previews of upcoming models',
-        ],
-      },
-      {
-        name: 'Checkpoint Access',
-        price: 'KSh 800 / month',
-        recommended: true,
-        perks: [
-          'Instant access to premium AI checkpoints',
-          'Full Discord access to discuss and collaborate',
-          'Exclusive tips & automation techniques',
-          'Behind-the-scenes updates & early previews',
-        ],
-      },
-    ]
-  : []
-
 function MembershipPage({
   tab,
   onTabChange,
-  upgradeRef,
-  tiersRef,
   giftRef,
-  onUpgrade,
-  onGift,
   onGoPayment,
+  history,
+  onOpenCreator,
 }: {
   tab: 'Membership' | 'Gift Creator'
   onTabChange: (t: 'Membership' | 'Gift Creator') => void
-  upgradeRef: React.RefObject<HTMLDivElement | null>
-  tiersRef: React.RefObject<HTMLDivElement | null>
   giftRef: React.RefObject<HTMLDivElement | null>
-  onUpgrade: () => void
-  onGift: () => void
   onGoPayment: () => void
+  history: SubscriptionHistoryItem[]
+  onOpenCreator: (creator: CreatorCard) => void
 }) {
-  if (!membershipProfile || !membershipPost) {
-    return (
-      <div className="membership-page">
-        <div className="card">
-          <h3>Memberships coming soon</h3>
-          <p className="muted">Set up creators and tiers to enable memberships.</p>
-        </div>
-      </div>
-    )
-  }
-  const primaryTier = tiers.find((tier) => tier.recommended) ?? tiers[0] ?? null
-
   return (
     <div className="membership-page">
-      {coverImages.length ? (
-        <div className="cover-grid">
-          {coverImages.map((src, i) => (
-            <img key={i} src={src} alt="" />
-          ))}
+      <div className="membership-header">
+        <div>
+          <h2>Memberships</h2>
+          <p className="muted">Track all creator subscriptions, amounts paid, and expiry dates in one place.</p>
         </div>
-      ) : null}
-
-      <div className="profile-bar">
-        <img
-          className="profile-avatar-lg"
-          src={membershipProfile.avatar}
-          alt={membershipProfile.name}
-        />
-        <div className="profile-text">
-          <div className="profile-name-lg">{membershipProfile.name}</div>
-          <div className="muted">{membershipProfile.tagline}</div>
-        </div>
-        <div className="profile-actions">
-          <button className="pill light">Upgrade</button>
-          <button className="pill ghost">
-            <FiShare />
+        <div className="membership-tab-row">
+          <button
+            className={`chip ${tab === 'Membership' ? 'active' : ''}`}
+            type="button"
+            onClick={() => onTabChange('Membership')}
+          >
+            Subscription history
+          </button>
+          <button
+            className={`chip ${tab === 'Gift Creator' ? 'active' : ''}`}
+            type="button"
+            onClick={() => onTabChange('Gift Creator')}
+          >
+            Gift creator
           </button>
         </div>
       </div>
 
-      <div className="profile-tabs">
-        {['Home', 'Posts', 'Collections', 'Chats', 'Gift Creator', 'Membership', 'About'].map(
-          (t) => (
-            <button
-              key={t}
-              className={`profile-tab ${
-                (tab === 'Membership' && t === 'Membership') ||
-                (tab === 'Gift Creator' && t === 'Gift Creator')
-                  ? 'active'
-                  : ''
-              }`}
-              onClick={() => onTabChange(t === 'Gift Creator' ? 'Gift Creator' : 'Membership')}
-            >
-              {t}
-            </button>
-          )
-        )}
-      </div>
-
-      {tab === 'Membership' && (
-        <>
-          <div className="upgrade-card" ref={upgradeRef}>
-            <div className="offer-pill">Offer ends Jan 27</div>
-            <div className="upgrade-body">
-              <div>
-                <div className="upgrade-title">
-                  Upgrade your membership with 50% off your first month
-                </div>
-                <div className="muted small">Memberships start at KSh 500/month. Terms apply.</div>
-              </div>
-              <button className="pill light" onClick={onUpgrade}>
-                Upgrade
-              </button>
+      {tab === 'Membership' ? (
+        <section className="membership-history-card">
+          <div className="membership-history-card__head">
+            <div>
+              <h3>All subscriptions</h3>
+              <p className="muted">
+                Tap any creator name to open their page and review their public content.
+              </p>
+            </div>
+            <div className="membership-history-count">
+              {history.length} {history.length === 1 ? 'subscription' : 'subscriptions'}
             </div>
           </div>
-
-          <div className="latest-post">
-            <div className="section-heading">
-              <h3>Latest post</h3>
-            </div>
-            <div className="latest-card">
-              <img src={membershipPost.image} alt={membershipPost.title} />
-              <div className="latest-info">
-                <div className="name">{membershipPost.title}</div>
-                <div className="muted">{membershipPost.date}</div>
-                <div className="inline-actions">
-                  <FiHeart /> <span>{membershipPost.likes}</span>
-                  <FiMessageCircle /> <span>{membershipPost.comments}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="your-membership">
-            <h3>Your membership</h3>
-            <div className="membership-card">
-              <div>
-                <div className="name">Free</div>
-                <div className="muted">Get updates on new public and free exclusive posts.</div>
-              </div>
-              {membershipCardImg ? <img src={membershipCardImg} alt="Membership card" /> : null}
-              <div className="membership-actions">
-                <div className="muted small">
-                  Upgrade your membership to get access to your membership card.
-                </div>
-                <button className="pill light">Upgrade</button>
-              </div>
-            </div>
-          </div>
-
-          <div className="gift-section">
-            <div className="section-heading">
-              <h3>Gift membership</h3>
-            </div>
-            <div className="gift-card">
-              <div>
-                <div className="name">Share the gift of membership</div>
-                <div className="muted">Give friends & family access to exclusive work.</div>
-              </div>
-              <img src={membershipPost.image} alt="Gift" />
-              <button className="pill light" onClick={onGift}>
-                Gift
-              </button>
-            </div>
-          </div>
-
-          <div className="upgrade-membership">
-            <div className="section-heading">
-              <h3>Upgrade your membership</h3>
-            </div>
-            <div className="tiers-grid" ref={tiersRef}>
-              {tiers.length ? (
-                tiers.map((tier) => (
-                  <div key={tier.name} className="tier-card">
-                    {tier.recommended && <div className="badge">Recommended by creator</div>}
-                    <div className="name">{tier.name}</div>
-                    <div className="price">{tier.price}</div>
-                    <button className="pill light full" onClick={onUpgrade}>
-                      Upgrade
-                    </button>
-                    <ul>
-                      {tier.perks.map((p) => (
-                        <li key={p}>{p}</li>
-                      ))}
-                    </ul>
+          {history.length ? (
+            <div className="membership-history-list">
+              {history.map((item) => (
+                <article key={item.payment_id} className="membership-history-item">
+                  <div className="membership-history-item__creator">
+                    <img
+                      src={item.creator.avatar_url ?? assetUrl('logo.png')}
+                      alt={item.creator.display_name}
+                    />
+                    <div>
+                      <button
+                        className="membership-history-item__name"
+                        type="button"
+                        onClick={() => onOpenCreator(item.creator)}
+                      >
+                        {item.creator.display_name}
+                      </button>
+                      <div className="muted">@{item.creator.handle}</div>
+                    </div>
                   </div>
-                ))
-              ) : (
-                <div className="muted">No tiers available yet.</div>
-              )}
+                  <div className="membership-history-item__meta">
+                    <span className="muted small">Amount</span>
+                    <strong>{formatSubscriptionAmount(item.amount_cents, item.currency)}</strong>
+                  </div>
+                  <div className="membership-history-item__meta">
+                    <span className="muted small">Started</span>
+                    <strong>{formatMembershipDate(item.subscribed_at)}</strong>
+                  </div>
+                  <div className="membership-history-item__meta">
+                    <span className="muted small">Expires</span>
+                    <strong>{formatMembershipDate(item.expires_at)}</strong>
+                  </div>
+                  <div className="membership-history-item__status">
+                    <span className={`status-pill ${item.status}`}>
+                      {getMembershipStatusLabel(item.status)}
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="membership-history-empty">
+              <h3>No subscriptions yet</h3>
+              <p className="muted">
+                Once you subscribe to a creator, the payment amount and expiry date will appear here.
+              </p>
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="membership-history-card" ref={giftRef}>
+          <div className="membership-history-card__head">
+            <div>
+              <h3>Gift creator</h3>
+              <p className="muted">Support a featured creator through secure checkout.</p>
             </div>
           </div>
-        </>
-      )}
-
-      {tab === 'Gift Creator' && (
-        <div className="gift-creator" ref={giftRef}>
-          <div className="gift-left">
-            <img src={membershipPost.image} alt="Gift preview" />
-            <button className="link" type="button">
-              Add custom message (optional)
-            </button>
-          </div>
-          <div className="gift-right">
-            <div className="gift-title">
-              <FiGift />
-              <div>
-                <div className="name">Create a gift</div>
-                <div className="muted">
-                  Give anyone access to {membershipProfile.name}&apos;s exclusive work and community
-                  by gifting them a membership.
-                </div>
-              </div>
+          <div className="gift-creator gift-creator--simple">
+            <div>
+              <div className="name">Send a creator gift</div>
+              <p className="muted">
+                We’ll take you to payment and create a secure gift checkout for the featured creator.
+              </p>
             </div>
-
-            <div className="gift-section-box">
-              <div className="muted small">Tier selection</div>
-              <div className="select-input">
-                <span>
-                  {primaryTier
-                    ? `${primaryTier.name} (${primaryTier.price})`
-                    : 'No tiers available'}
-                </span>
-                <FiChevronDown />
-              </div>
-            </div>
-
-            <div className="gift-section-box">
-              <div className="muted small">Membership duration</div>
-              <div className="duration-option active">
-                <span>1 year</span>
-                <div className="pill ghost">save 25%</div>
-                <div className="muted">KSh 7,200</div>
-              </div>
-              <div className="duration-option">
-                <span>1 month</span>
-                <div className="muted">KSh 800</div>
-              </div>
-              <div className="duration-option">
-                <span>Custom months</span>
-                <div className="custom-months">
-                  <input className="text-input small-input" value="3" readOnly />
-                </div>
-              </div>
-            </div>
-
-            <div className="gift-section-box">
-              <div className="muted small">Quantity</div>
-              <input className="text-input" value="1" readOnly />
-            </div>
-
-            <div className="muted small">
-              After payment, you&apos;ll get a shareable gift link. Activate the membership before it
-              expires.
-            </div>
-
-            <button className="primary-btn full" onClick={onGoPayment}>
+            <button className="primary-btn" onClick={onGoPayment} type="button">
               Go to payment
             </button>
           </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+type WalletTab = 'overview' | 'send' | 'receive' | 'history'
+
+function WalletPage({
+  session,
+  activeTab,
+  onTabChange,
+  walletBalance,
+  walletHistory,
+  walletTopupAmount,
+  walletTopupPhone,
+  onTopupAmountChange,
+  onTopupPhoneChange,
+  onTopup,
+  subscriptionHistory,
+  onOpenCreator,
+  onSendTip,
+}: {
+  session: any
+  activeTab: WalletTab
+  onTabChange: (tab: WalletTab) => void
+  walletBalance: WalletBalance | null
+  walletHistory: WalletHistoryItem[]
+  walletTopupAmount: string
+  walletTopupPhone: string
+  onTopupAmountChange: (value: string) => void
+  onTopupPhoneChange: (value: string) => void
+  onTopup: () => void
+  subscriptionHistory: SubscriptionHistoryItem[]
+  onOpenCreator: (creator: CreatorCard) => void
+  onSendTip: (creator: CreatorCard, amountMajor: number) => Promise<void>
+}) {
+  const [search, setSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<CreatorCard[]>([])
+  const [selectedCreator, setSelectedCreator] = useState<CreatorCard | null>(null)
+  const [sendAmount, setSendAmount] = useState('500')
+  const [sending, setSending] = useState(false)
+
+  const walletTabs: Array<{ key: WalletTab; label: string }> = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'send', label: 'Send' },
+    { key: 'receive', label: 'Receive / Top up' },
+    { key: 'history', label: 'History' },
+  ]
+
+  const quickCreators = useMemo(() => {
+    const byId = new Map<string, CreatorCard>()
+    for (const item of subscriptionHistory) {
+      if (!byId.has(item.creator.id)) {
+        byId.set(item.creator.id, item.creator)
+      }
+    }
+    return Array.from(byId.values()).slice(0, 6)
+  }, [subscriptionHistory])
+
+  useEffect(() => {
+    if (!selectedCreator && quickCreators.length > 0) {
+      setSelectedCreator(quickCreators[0])
+    }
+  }, [quickCreators, selectedCreator])
+
+  useEffect(() => {
+    let cancelled = false
+    const normalizedSearch = search.trim()
+    if (!normalizedSearch) {
+      setSearchResults([])
+      return () => {
+        cancelled = true
+      }
+    }
+
+    ;(async () => {
+      const results = await fetchRecommendedCreators({
+        searchTerm: normalizedSearch,
+        limit: 8,
+      })
+      if (!cancelled) {
+        setSearchResults(results)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [search])
+
+  const availableAmount = walletBalance?.available_amount_minor ?? 0
+  const pendingAmount = walletBalance?.pending_amount_minor ?? 0
+  const walletCurrency = walletBalance?.currency ?? 'KES'
+  const creatorOptions = search.trim() ? searchResults : quickCreators
+
+  const handleSend = async () => {
+    if (!selectedCreator) return
+    const amountMajor = Number(sendAmount)
+    if (!Number.isFinite(amountMajor) || amountMajor <= 0) return
+    try {
+      setSending(true)
+      await onSendTip(selectedCreator, amountMajor)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const recentHistory = walletHistory.slice(0, 4)
+
+  return (
+    <div className="wallet-page">
+      <div className="wallet-page__header">
+        <div>
+          <h2>Wallet</h2>
+          <p>Manage your balance, top up safely, and support creators from one place.</p>
+        </div>
+        <div className="wallet-tabs">
+          {walletTabs.map((tab) => (
+            <button
+              key={tab.key}
+              className={`chip ${activeTab === tab.key ? 'active' : ''}`}
+              onClick={() => onTabChange(tab.key)}
+              type="button"
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <section className="wallet-summary-grid">
+        <div className="wallet-summary-card">
+          <span className="wallet-summary-card__label">Available balance</span>
+          <strong>{formatSubscriptionAmount(availableAmount, walletCurrency)}</strong>
+          <p>Ready for PPV unlocks and future wallet actions.</p>
+        </div>
+        <div className="wallet-summary-card">
+          <span className="wallet-summary-card__label">Pending</span>
+          <strong>{formatSubscriptionAmount(pendingAmount, walletCurrency)}</strong>
+          <p>Incoming credits appear here until the provider confirms them.</p>
+        </div>
+        <div className="wallet-summary-card wallet-summary-card--actions">
+          <span className="wallet-summary-card__label">Quick actions</span>
+          <div className="wallet-quick-actions">
+            <button className="pill light" type="button" onClick={() => onTabChange('receive')}>
+              Top up now
+            </button>
+            <button className="pill ghost" type="button" onClick={() => onTabChange('send')}>
+              Send support
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {activeTab === 'overview' && (
+        <div className="wallet-main-grid">
+          <section className="wallet-card">
+            <div className="wallet-card__head">
+              <div>
+                <h3>Top up & receive</h3>
+                <p>Add money to your fan wallet and use it instantly after confirmation.</p>
+              </div>
+            </div>
+            <div className="wallet-receive-note">
+              <strong>Wallet holder</strong>
+              <span>{session?.user?.email ?? 'Signed-in fan'}</span>
+            </div>
+            <div className="wallet-receive-note">
+              <strong>Currency</strong>
+              <span>{walletCurrency}</span>
+            </div>
+            <div className="wallet-card__actions">
+              <button className="pill light" type="button" onClick={() => onTabChange('receive')}>
+                Open top up
+              </button>
+            </div>
+          </section>
+
+          <section className="wallet-card">
+            <div className="wallet-card__head">
+              <div>
+                <h3>Recent activity</h3>
+                <p>Your latest wallet entries appear here.</p>
+              </div>
+              <button className="wallet-link-button" type="button" onClick={() => onTabChange('history')}>
+                View all
+              </button>
+            </div>
+            {recentHistory.length ? (
+              <div className="wallet-history-list">
+                {recentHistory.map((entry) => (
+                  <div className="wallet-history-item" key={entry.id}>
+                    <div>
+                      <div className="wallet-history-item__title">{getWalletEntryLabel(entry)}</div>
+                      <div className="wallet-history-item__meta">{formatWalletDate(entry.created_at)}</div>
+                    </div>
+                    <div className={`wallet-history-item__amount ${getWalletEntryTone(entry.entry_type)}`}>
+                      {getWalletEntryTone(entry.entry_type) === 'credit' ? '+' : '-'}
+                      {formatSubscriptionAmount(entry.amount_minor, entry.currency)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="wallet-empty">Your wallet activity will appear here after your first top up or unlock.</div>
+            )}
+          </section>
         </div>
       )}
+
+      {activeTab === 'send' && (
+        <section className="wallet-card wallet-card--full">
+          <div className="wallet-card__head">
+            <div>
+              <h3>Send support</h3>
+              <p>Send a secure tip to a creator. We only launch real creator tip checkout here.</p>
+            </div>
+          </div>
+
+          <div className="wallet-send-layout">
+            <div className="wallet-send-panel">
+              <label className="input-label">Find creator</label>
+              <input
+                className="text-input"
+                type="text"
+                placeholder="Search creators by name or handle"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+
+              <div className="wallet-creator-grid">
+                {creatorOptions.length ? (
+                  creatorOptions.map((creator) => (
+                    <button
+                      key={creator.id}
+                      type="button"
+                      className={`wallet-creator-option ${selectedCreator?.id === creator.id ? 'active' : ''}`}
+                      onClick={() => setSelectedCreator(creator)}
+                    >
+                      <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
+                      <div>
+                        <strong>{creator.display_name}</strong>
+                        <span>@{creator.handle}</span>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="wallet-empty">
+                    {quickCreators.length
+                      ? 'Start typing to search for more creators.'
+                      : 'Subscribe to creators or search by name to start sending support.'}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="wallet-send-panel">
+              <label className="input-label">Tip amount (KES)</label>
+              <input
+                className="text-input"
+                type="number"
+                min="1"
+                value={sendAmount}
+                onChange={(event) => setSendAmount(event.target.value)}
+              />
+
+              {selectedCreator ? (
+                <button
+                  type="button"
+                  className="wallet-selected-creator"
+                  onClick={() => onOpenCreator(selectedCreator)}
+                >
+                  <img
+                    src={selectedCreator.avatar_url ?? assetUrl('logo.png')}
+                    alt={selectedCreator.display_name}
+                  />
+                  <div>
+                    <strong>{selectedCreator.display_name}</strong>
+                    <span>Open creator page</span>
+                  </div>
+                </button>
+              ) : (
+                <div className="wallet-empty">Select a creator first.</div>
+              )}
+
+              <div className="wallet-card__actions">
+                <button
+                  className="pill light"
+                  type="button"
+                  onClick={handleSend}
+                  disabled={sending || !selectedCreator || Number(sendAmount) <= 0}
+                >
+                  {sending ? 'Launching checkout...' : 'Send tip'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'receive' && (
+        <section className="wallet-card wallet-card--full">
+          <div className="wallet-card__head">
+            <div>
+              <h3>Receive / top up</h3>
+              <p>Use a secure checkout to add funds. The balance updates after provider confirmation.</p>
+            </div>
+          </div>
+
+          <div className="wallet-receive-layout">
+            <div className="wallet-send-panel">
+              <label className="input-label">Top up amount (KES)</label>
+              <input
+                className="text-input"
+                type="number"
+                min="1"
+                value={walletTopupAmount}
+                onChange={(event) => onTopupAmountChange(event.target.value)}
+              />
+              {MPESA_STK_ENABLED ? (
+                <>
+                  <label className="input-label">M-PESA phone</label>
+                  <input
+                    className="text-input"
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="2547XXXXXXXX"
+                    value={walletTopupPhone}
+                    onChange={(event) => onTopupPhoneChange(event.target.value)}
+                  />
+                </>
+              ) : null}
+              <div className="wallet-card__actions">
+                <button className="pill light" type="button" onClick={onTopup}>
+                  {MPESA_STK_ENABLED ? 'Top up via M-PESA' : 'Top up wallet'}
+                </button>
+              </div>
+            </div>
+
+            <div className="wallet-send-panel">
+              <div className="wallet-receive-note">
+                <strong>How it works</strong>
+                <span>1. Enter an amount.</span>
+                <span>2. Confirm on M-PESA or secure checkout.</span>
+                <span>3. Your balance moves into Available after confirmation.</span>
+              </div>
+              <div className="wallet-receive-note">
+                <strong>Wallet address</strong>
+                <span>{session?.user?.email ?? 'Signed-in fan'}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'history' && (
+        <section className="wallet-card wallet-card--full">
+          <div className="wallet-card__head">
+            <div>
+              <h3>History</h3>
+              <p>Review top ups, wallet unlocks, and future refund entries.</p>
+            </div>
+          </div>
+
+          {walletHistory.length ? (
+            <div className="wallet-history-table">
+              {walletHistory.map((entry) => (
+                <div className="wallet-history-row" key={entry.id}>
+                  <div className="wallet-history-row__main">
+                    <strong>{getWalletEntryLabel(entry)}</strong>
+                    <span>{formatWalletDate(entry.created_at)}</span>
+                  </div>
+                  <div className="wallet-history-row__detail">
+                    {entry.creator ? (
+                      <button
+                        type="button"
+                        className="wallet-history-link"
+                        onClick={() => onOpenCreator(entry.creator)}
+                      >
+                        {entry.creator.display_name}
+                      </button>
+                    ) : (
+                      <span>{entry.post_title ?? 'Wallet activity'}</span>
+                    )}
+                  </div>
+                  <div className={`wallet-history-row__amount ${getWalletEntryTone(entry.entry_type)}`}>
+                    {getWalletEntryTone(entry.entry_type) === 'credit' ? '+' : '-'}
+                    {formatSubscriptionAmount(entry.amount_minor, entry.currency)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="wallet-empty">No wallet transactions yet.</div>
+          )}
+        </section>
+      )}
+    </div>
+  )
+}
+
+function CreatorPage({
+  creator,
+  posts,
+  stories,
+  activeSubscriptions,
+  onBack,
+  onSubscribe,
+  onUnlockPost,
+  ppvPurchases,
+}: {
+  creator: CreatorCard
+  posts: FeedPost[]
+  stories: FeedPost[]
+  activeSubscriptions: string[]
+  onBack: () => void
+  onSubscribe: (creator: CreatorCard) => void
+  onUnlockPost: (post: FeedPost) => void
+  ppvPurchases: number[]
+}) {
+  const creatorPosts = posts.filter((post) => post.creator.id === creator.id)
+  const creatorStories = stories.filter((story) => story.creator.id === creator.id)
+  const isSubscribed = activeSubscriptions.includes(creator.id)
+  const ppvPurchaseSet = new Set(ppvPurchases)
+
+  return (
+    <div className="creator-page">
+      <div className="creator-page__header">
+        <button className="pill ghost" type="button" onClick={onBack}>
+          <FiChevronLeft />
+          Back
+        </button>
+      </div>
+
+      <section className="creator-page__hero">
+        <img
+          className="creator-page__avatar"
+          src={creator.avatar_url ?? assetUrl('logo.png')}
+          alt={creator.display_name}
+        />
+        <div className="creator-page__hero-copy">
+          <div className="creator-page__name-row">
+            <h2>{creator.display_name}</h2>
+            <span className="creator-page__handle">@{creator.handle}</span>
+          </div>
+          <div className="creator-page__tags">
+            {creator.categories?.length
+              ? creator.categories.map((category) => (
+                  <span key={category} className="chip active">
+                    {category}
+                  </span>
+                ))
+              : creator.category && <span className="chip active">{creator.category}</span>}
+          </div>
+          <div className="creator-page__actions">
+            <span className="pill ghost">
+              {formatKsh(creator.subscription_price_cents ?? 0)}
+            </span>
+            {!isSubscribed && (creator.subscription_price_cents ?? 0) > 0 ? (
+              <button className="pill light" type="button" onClick={() => onSubscribe(creator)}>
+                Subscribe
+              </button>
+            ) : (
+              <span className="pill">Subscribed</span>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {creatorStories.length ? (
+        <section className="creator-page__section">
+          <div className="section-heading">
+            <h3>Stories</h3>
+          </div>
+          <div className="creator-page__story-row">
+            {creatorStories.map((story) => (
+              <div key={story.id} className="creator-page__story-card">
+                <img
+                  src={story.media[0]?.url ?? creator.avatar_url ?? assetUrl('logo.png')}
+                  alt={story.title}
+                />
+                <div className="creator-page__story-copy">
+                  <div className="name">{story.title}</div>
+                  <div className="muted small">Expires {formatMembershipDate(story.expires_at)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="creator-page__section">
+        <div className="section-heading">
+          <h3>Posts</h3>
+        </div>
+        {creatorPosts.length ? (
+          <div className="creator-page__post-list">
+            {creatorPosts.map((post) => {
+              const isLocked =
+                (post.visibility === 'subscribers' && !isSubscribed) ||
+                (post.visibility === 'ppv' && !ppvPurchaseSet.has(post.id))
+              return (
+                <article key={post.id} className="creator-page__post-card">
+                  <div className="creator-page__post-media">
+                    {post.media[0]?.url ? (
+                      <img src={post.media[0].url} alt={post.title} />
+                    ) : (
+                      <div className="media-placeholder">No media</div>
+                    )}
+                  </div>
+                  <div className="creator-page__post-copy">
+                    <div className="creator-page__post-top">
+                      <h4>{post.title}</h4>
+                      <span className="muted small">{formatMembershipDate(post.created_at)}</span>
+                    </div>
+                    {post.body ? <p className="muted">{post.body}</p> : null}
+                    <div className="creator-page__post-actions">
+                      <span className="pill ghost">
+                        {post.visibility === 'ppv'
+                          ? `PPV ${formatKsh(post.price_cents ?? 0)}`
+                          : post.visibility === 'subscribers'
+                            ? 'Subscribers'
+                            : 'Public'}
+                      </span>
+                      {post.visibility === 'ppv' && isLocked ? (
+                        <button className="pill light" type="button" onClick={() => onUnlockPost(post)}>
+                          Unlock
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="membership-history-empty">
+            <h3>No public content yet</h3>
+            <p className="muted">This creator has not published any visible content yet.</p>
+          </div>
+        )}
+      </section>
     </div>
   )
 }
 
 function HomePage({
   onSeeAll,
+  activeTopicFilter,
+  onClearTopicFilter,
   session,
   creatorProfile,
   onCreateCreator,
@@ -1592,6 +2664,8 @@ function HomePage({
   onUnlockPost,
 }: {
   onSeeAll: () => void
+  activeTopicFilter: string | null
+  onClearTopicFilter: () => void
   session: any
   creatorProfile: CreatorProfile | null
   onCreateCreator: (handle: string) => void
@@ -1740,13 +2814,22 @@ function HomePage({
             <div>
               <div className="name">{displayName}</div>
               <div className="muted">
-                {posts.length
-                  ? 'Latest updates from creators you follow.'
-                  : 'Follow creators to see updates.'}
+                {activeTopicFilter
+                  ? posts.length || stories.length
+                    ? `Showing ${activeTopicFilter} content only.`
+                    : `No ${activeTopicFilter} content yet.`
+                  : posts.length
+                    ? 'Latest updates from creators you follow.'
+                    : 'Follow creators to see updates.'}
               </div>
             </div>
           </div>
           <div className="feed-actions">
+            {activeTopicFilter ? (
+              <button className="see-all" onClick={onClearTopicFilter}>
+                All content
+              </button>
+            ) : null}
             <button className="see-all" onClick={onSeeAll}>
               See all
             </button>
@@ -2146,8 +3229,10 @@ export default function App() {
     | 'explore'
     | 'chats'
     | 'notifications'
+    | 'wallet'
     | 'settings'
     | 'membership'
+    | 'creator'
     | 'news'
     | 'help'
     | 'features'
@@ -2156,9 +3241,11 @@ export default function App() {
   const [sessionChecked, setSessionChecked] = useState(false)
   const [session, setSession] = useState<any>(null)
   const [filter, setFilter] = useState(filters[0])
+  const [homeTopicFilter, setHomeTopicFilter] = useState<string | null>(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [settingsTab, setSettingsTab] = useState('Basics')
   const [membershipTab, setMembershipTab] = useState<'Membership' | 'Gift Creator'>('Membership')
+  const [walletTab, setWalletTab] = useState<WalletTab>('overview')
   const [toast, setToast] = useState<string | null>(null)
   const [consentAccepted, setConsentAccepted] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
@@ -2170,26 +3257,31 @@ export default function App() {
   const [feedPosts, setFeedPosts] = useState<FeedPost[]>([])
   const [storyPosts, setStoryPosts] = useState<FeedPost[]>([])
   const [activeSubscriptions, setActiveSubscriptions] = useState<string[]>([])
+  const [subscriptionHistory, setSubscriptionHistory] = useState<SubscriptionHistoryItem[]>([])
+  const [selectedCreator, setSelectedCreator] = useState<CreatorCard | null>(null)
   const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null)
+  const [walletHistory, setWalletHistory] = useState<WalletHistoryItem[]>([])
   const [walletTopupAmount, setWalletTopupAmount] = useState('1000')
   const [walletTopupPhone, setWalletTopupPhone] = useState('')
   const [ppvPurchases, setPpvPurchases] = useState<number[]>([])
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
   const isAuthed = demoMode || Boolean(session)
   const displayName =
+    userProfile?.display_name ??
     session?.user?.user_metadata?.full_name ??
     session?.user?.user_metadata?.name ??
     session?.user?.email?.split('@')[0] ??
-    ''
+    'Fan'
   const profileAvatar =
     session?.user?.user_metadata?.avatar_url ?? userProfile?.avatar_url ?? assetUrl('logo.png')
-  const sidebarName = userProfile?.display_name || userProfile?.username || displayName || 'Member'
+  const sidebarName = userProfile?.display_name || displayName || 'Fan'
   const sidebarProfile = isAuthed
     ? {
         name: sidebarName,
-        role: demoMode ? 'Demo' : 'Member',
+        role: 'Fan',
         avatar: profileAvatar,
       }
-    : sampleProfile
+    : null
   const envIssues = [
     ...envStatus.missing.map((name) => `Missing ${name}`),
     ...envStatus.invalid.map((name) => `Invalid ${name}`),
@@ -2197,8 +3289,6 @@ export default function App() {
 
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const connectedRef = useRef<HTMLDivElement | null>(null)
-  const upgradeRef = useRef<HTMLDivElement | null>(null)
-  const tiersRef = useRef<HTMLDivElement | null>(null)
   const giftRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -2255,12 +3345,18 @@ export default function App() {
     if (envStatus.hasIssues) return
     if (!session?.user?.id) {
       setActiveSubscriptions([])
+      setSubscriptionHistory([])
       return
     }
     let isMounted = true
     const loadSubscriptions = async () => {
-      const subs = await fetchActiveSubscriptions()
-      if (isMounted) setActiveSubscriptions(subs)
+      const [subs, history] = await Promise.all([
+        fetchActiveSubscriptions(),
+        fetchSubscriptionHistory(),
+      ])
+      if (!isMounted) return
+      setActiveSubscriptions(subs)
+      setSubscriptionHistory(history)
     }
     loadSubscriptions()
     const interval = window.setInterval(loadSubscriptions, 30_000)
@@ -2274,13 +3370,26 @@ export default function App() {
     if (envStatus.hasIssues) return
     if (!session?.user?.id) {
       setWalletBalance(null)
+      setWalletHistory([])
       return
     }
     ;(async () => {
-      const balance = await fetchWalletBalance()
+      const [balance, history] = await Promise.all([fetchWalletBalance(), fetchWalletHistory()])
       setWalletBalance(balance)
+      setWalletHistory(history)
     })()
   }, [session])
+
+  useEffect(() => {
+    if (envStatus.hasIssues) return
+    if (!session?.user?.id) return
+    if (page !== 'wallet') return
+    ;(async () => {
+      const [balance, history] = await Promise.all([fetchWalletBalance(), fetchWalletHistory()])
+      setWalletBalance(balance)
+      setWalletHistory(history)
+    })()
+  }, [page, session])
 
   useEffect(() => {
     if (envStatus.hasIssues) return
@@ -2307,6 +3416,41 @@ export default function App() {
       setStoryPosts(stories)
     })()
   }, [session, ageConfirmed])
+
+  useEffect(() => {
+    if (envStatus.hasIssues || demoMode) {
+      setNotificationUnreadCount(0)
+      return
+    }
+    if (!session?.user?.id) {
+      setNotificationUnreadCount(0)
+      return
+    }
+
+    let isMounted = true
+    let unsubscribe = () => {}
+
+    const loadUnreadCount = async () => {
+      try {
+        const count = await fetchUnreadNotificationCount()
+        if (isMounted) setNotificationUnreadCount(count)
+      } catch (err) {
+        console.error(err)
+      }
+    }
+
+    void loadUnreadCount()
+    void (async () => {
+      unsubscribe = await subscribeToNotifications(() => {
+        void loadUnreadCount()
+      })
+    })()
+
+    return () => {
+      isMounted = false
+      unsubscribe()
+    }
+  }, [session, demoMode])
 
   useEffect(() => {
     const consent = localStorage.getItem('cookieConsent')
@@ -2337,6 +3481,19 @@ export default function App() {
     localStorage.setItem('theme', theme)
   }, [theme])
 
+  const matchesCategoryFilter = (post: FeedPost, category: string | null) => {
+    if (!category || category === 'All') return true
+    return (
+      post.creator.category === category ||
+      Boolean(post.creator.categories?.includes(category))
+    )
+  }
+
+  const filteredHomePosts = feedPosts.filter(
+    (post) => post.post_type === 'post' && matchesCategoryFilter(post, homeTopicFilter)
+  )
+  const filteredHomeStories = storyPosts.filter((post) => matchesCategoryFilter(post, homeTopicFilter))
+
 
   const scrollToRef = (ref: React.RefObject<HTMLElement | null>) => {
     setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
@@ -2358,28 +3515,11 @@ export default function App() {
     window.location.href = `mailto:${SUPPORT_EMAIL}`
   }
 
-  const handleUpgradeClick = () => {
-    if (!isAuthed) return setToast('Sign in to manage memberships')
-    setPage('membership')
-    setMembershipTab('Membership')
-    setToast('Opening upgrade options')
-    scrollToRef(upgradeRef)
-  }
-
-  const handleGiftClick = () => {
-    if (!isAuthed) return setToast('Sign in to send gifts')
-    setPage('membership')
-    setMembershipTab('Gift Creator')
-    setToast('Opening gift creator')
-    scrollToRef(giftRef)
-  }
-
   const handlePaymentMethods = () => {
     if (!isAuthed) return setToast('Sign in to manage payment methods')
-    setPage('settings')
-    setSettingsTab('More')
-    setToast('Opening payment methods')
-    scrollToRef(paymentRef)
+    setPage('wallet')
+    setWalletTab('receive')
+    setToast('Opening your wallet')
   }
 
   const handleGiftCheckout = async () => {
@@ -2462,6 +3602,40 @@ export default function App() {
     }
   }
 
+  const handleSendWalletTip = async (creator: CreatorCard, amountMajor: number) => {
+    if (!session?.user?.email) {
+      setToast('Sign in to send support')
+      return
+    }
+    if (!creator.id) {
+      setToast('Choose a creator first')
+      return
+    }
+    if (!Number.isFinite(amountMajor) || amountMajor <= 0) {
+      setToast('Enter a valid amount')
+      return
+    }
+    try {
+      setToast(`Redirecting to secure checkout for ${creator.display_name}...`)
+      const result = await initiatePaystackPayment({
+        email: session.user.email,
+        creatorId: creator.id,
+        amountMajor,
+        currency: 'KES',
+        type: 'tip',
+        metadata: { source: 'fan_wallet_send' },
+        channels: ['mobile_money', 'card'],
+      })
+      if (!result.authorization_url) {
+        throw new Error('Checkout URL missing')
+      }
+      window.location.href = result.authorization_url
+    } catch (err) {
+      console.error(err)
+      setToast('Could not start the support payment.')
+    }
+  }
+
   const handleSubscribe = async (creator: {
     id: string
     subscription_price_cents?: number | null
@@ -2523,6 +3697,8 @@ export default function App() {
               : { available_amount_minor: result.new_balance_minor, pending_amount_minor: 0, currency: 'KES' }
           )
         }
+        const history = await fetchWalletHistory()
+        setWalletHistory(history)
         setToast('Post unlocked')
       }
     } catch (err: any) {
@@ -2537,7 +3713,7 @@ export default function App() {
   const handleConnectedApp = (app: string) => {
     if (!isAuthed) return setToast('Sign in to connect apps')
     setPage('settings')
-    setSettingsTab('More')
+    setSettingsTab('Account')
     setToast(`Opening ${app} connect`)
     scrollToRef(connectedRef)
   }
@@ -2546,7 +3722,6 @@ export default function App() {
     if (!isAuthed) return setToast('Sign in to view memberships')
     setPage('membership')
     setMembershipTab('Membership')
-    scrollToRef(upgradeRef)
     setToast('Opening memberships')
   }
 
@@ -2587,14 +3762,53 @@ export default function App() {
     }
   }
 
-  const handleVisitedClick = (name: string) => {
-    if (!session) return setToast('Sign in to view creator details')
-    setPage('membership')
-    setToast(`Opening ${name}`)
-    scrollToRef(upgradeRef)
+  const handleOpenCreatorPage = (creator: CreatorCard) => {
+    setSelectedCreator(creator)
+    setPage('creator')
+    setToast(`Opening ${creator.display_name}`)
   }
 
-  const handleGetApp = () => openExternal(APP_DOWNLOAD_URL, 'App download link')
+  const handleVisitedClick = (name: string) => {
+    if (!session) return setToast('Sign in to view creator details')
+    const matched = subscriptionHistory.find(
+      (item) =>
+        item.creator.display_name.toLowerCase() === name.toLowerCase() ||
+        item.creator.handle.toLowerCase() === name.toLowerCase()
+    )
+    if (matched) {
+      handleOpenCreatorPage(matched.creator)
+      return
+    }
+    setPage('membership')
+    setMembershipTab('Membership')
+    setToast(`Opening ${name}`)
+  }
+
+  const handleOpenTopicFeed = (topic: string) => {
+    setFilter(topic)
+    setHomeTopicFilter(topic)
+    setPage('home')
+    setToast(`Showing ${topic} content`)
+  }
+
+  const sidebarMemberships =
+    subscriptionHistory.length > 0
+      ? subscriptionHistory.slice(0, 4).map((item) => ({
+          name: item.creator.display_name,
+          avatar: item.creator.avatar_url ?? assetUrl('logo.png'),
+          creator: item.creator,
+        }))
+      : memberships.map((membership) => ({
+          name: membership.name,
+          avatar: membership.avatar,
+          creator: null,
+        }))
+
+  const handleClearHomeTopicFilter = () => {
+    setHomeTopicFilter(null)
+    setToast('Showing all creator content')
+  }
+
   const handleLogout = async () => {
     await signOut()
     setSession(null)
@@ -2677,7 +3891,7 @@ export default function App() {
           {sidebarNav.map((item) => {
             const Icon = item.icon
             const active = page === item.key
-            const gated = !isAuthed && ['chats', 'notifications', 'settings', 'membership'].includes(item.key)
+            const gated = !isAuthed && ['chats', 'notifications', 'wallet', 'settings', 'membership'].includes(item.key)
             return (
               <button
                 key={item.label}
@@ -2689,12 +3903,18 @@ export default function App() {
                     return
                   }
                   setShowProfileMenu(false)
+                  if (item.key === 'wallet') {
+                    setWalletTab('overview')
+                  }
                   setPage(item.key as typeof page)
                 }}
                 title={gated ? 'Sign in to access' : undefined}
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
+                {item.key === 'notifications' && notificationUnreadCount > 0 ? (
+                  <span className="nav-item__badge">{Math.min(notificationUnreadCount, 99)}</span>
+                ) : null}
               </button>
             )
           })}
@@ -2706,9 +3926,13 @@ export default function App() {
             All memberships
           </button>
           <div className="divider" />
-          {memberships.length ? (
-            memberships.map((m) => (
-              <div key={m.name} className="user-row" onClick={() => handleVisitedClick(m.name)}>
+          {sidebarMemberships.length ? (
+            sidebarMemberships.map((m) => (
+              <div
+                key={m.name}
+                className="user-row"
+                onClick={() => (m.creator ? handleOpenCreatorPage(m.creator) : handleVisitedClick(m.name))}
+              >
                 <img src={m.avatar} alt={m.name} />
                 <span>{m.name}</span>
               </div>
@@ -2731,12 +3955,6 @@ export default function App() {
           ) : (
             <div className="muted small">No recent visits yet.</div>
           )}
-        </div>
-
-        <div className="get-app">
-          <button className="pill full" onClick={handleGetApp}>
-            Get app
-          </button>
         </div>
 
         {sidebarProfile ? (
@@ -2830,12 +4048,14 @@ export default function App() {
         {page === 'home' && (
           <HomePage
             onSeeAll={() => setPage('explore')}
+            activeTopicFilter={homeTopicFilter}
+            onClearTopicFilter={handleClearHomeTopicFilter}
             session={session}
             creatorProfile={creatorProfile}
             onCreateCreator={handleCreateCreator}
             creatorLoading={creatorLoading}
-            posts={feedPosts.filter((post) => post.post_type === 'post')}
-            stories={storyPosts}
+            posts={filteredHomePosts}
+            stories={filteredHomeStories}
             onSubscribe={(creator) => handleSubscribe(creator)}
             activeSubscriptions={activeSubscriptions}
             ppvPurchases={ppvPurchases}
@@ -2846,12 +4066,30 @@ export default function App() {
           <ExplorePage
             filter={filter}
             onSelectFilter={setFilter}
+            onOpenTopic={handleOpenTopicFeed}
             activeSubscriptions={activeSubscriptions}
             onSubscribe={handleSubscribe}
           />
         )}
         {page === 'chats' && <ChatsPage />}
-        {page === 'notifications' && <NotificationsPage />}
+        {page === 'notifications' && <NotificationsPage onNavigate={setPage} />}
+        {page === 'wallet' && (
+          <WalletPage
+            session={session}
+            activeTab={walletTab}
+            onTabChange={setWalletTab}
+            walletBalance={walletBalance}
+            walletHistory={walletHistory}
+            walletTopupAmount={walletTopupAmount}
+            walletTopupPhone={walletTopupPhone}
+            onTopupAmountChange={setWalletTopupAmount}
+            onTopupPhoneChange={setWalletTopupPhone}
+            onTopup={handleWalletTopup}
+            subscriptionHistory={subscriptionHistory}
+            onOpenCreator={handleOpenCreatorPage}
+            onSendTip={handleSendWalletTip}
+          />
+        )}
         {page === 'news' && (
           <div className="info-page">
             <h2>Product News</h2>
@@ -2921,18 +4159,30 @@ export default function App() {
             onTopupAmountChange={setWalletTopupAmount}
             onTopupPhoneChange={setWalletTopupPhone}
             onTopup={handleWalletTopup}
+            subscriptionHistory={subscriptionHistory}
+            onOpenCreator={handleOpenCreatorPage}
           />
         )}
         {page === 'membership' && (
           <MembershipPage
             tab={membershipTab}
             onTabChange={setMembershipTab}
-            upgradeRef={upgradeRef}
-            tiersRef={tiersRef}
             giftRef={giftRef}
-            onUpgrade={handleUpgradeClick}
-            onGift={handleGiftClick}
             onGoPayment={handleGiftCheckout}
+            history={subscriptionHistory}
+            onOpenCreator={handleOpenCreatorPage}
+          />
+        )}
+        {page === 'creator' && selectedCreator && (
+          <CreatorPage
+            creator={selectedCreator}
+            posts={feedPosts}
+            stories={storyPosts}
+            activeSubscriptions={activeSubscriptions}
+            onBack={() => setPage('membership')}
+            onSubscribe={handleSubscribe}
+            onUnlockPost={handleUnlockPost}
+            ppvPurchases={ppvPurchases}
           />
         )}
       </div>
@@ -2948,4 +4198,3 @@ export default function App() {
     </div>
   )
 }
-

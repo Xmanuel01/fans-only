@@ -2,7 +2,11 @@
 import './MyPages.css';
 import './SettingsProfile.css';
 import { useState } from 'react';
-import { fetchCurrentCreatorProfile } from '../supabaseClient';
+import {
+  fetchCurrentCreatorProfile,
+  fetchUnreadNotificationCount,
+  subscribeToNotifications,
+} from '../supabaseClient';
 
 type SettingsItemKey =
   | 'profile'
@@ -64,6 +68,7 @@ export default function SettingsShell({
 }: SettingsShellProps) {
   const [navProfile, setNavProfile] = useState(NAV_PROFILE);
   const [isNavPanelOpen, setIsNavPanelOpen] = useState(false);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
 
   useEffect(() => {
     document.body.classList.add('react-page');
@@ -121,6 +126,39 @@ export default function SettingsShell({
     };
   }, []);
 
+  useEffect(() => {
+    if (USE_SAMPLE_DATA) {
+      setNotificationUnreadCount(4);
+      return;
+    }
+
+    let isMounted = true;
+    let unsubscribe = () => {};
+
+    const loadUnreadCount = async () => {
+      try {
+        const count = await fetchUnreadNotificationCount();
+        if (isMounted) {
+          setNotificationUnreadCount(count);
+        }
+      } catch (error) {
+        console.error('Could not load settings notification unread count', error);
+      }
+    };
+
+    void loadUnreadCount();
+    void (async () => {
+      unsubscribe = await subscribeToNotifications(() => {
+        void loadUnreadCount();
+      });
+    })();
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
+
   const navInitial = navProfile.name.trim().charAt(0).toUpperCase() || 'C';
   const effectiveHandle = userHandle || navProfile.handle;
   const closeNavPanel = () => setIsNavPanelOpen(false);
@@ -170,7 +208,7 @@ export default function SettingsShell({
             href="/my/notifications"
             label="Notifications"
             icon={<BellIcon />}
-            badge="4"
+            badge={notificationUnreadCount > 0 ? String(Math.min(notificationUnreadCount, 99)) : undefined}
             onClick={closeNavPanel}
           />
           <NavItem href="/my/chats" label="Chats" icon={<ChatIcon />} onClick={closeNavPanel} />
@@ -187,7 +225,7 @@ export default function SettingsShell({
             onClick={closeNavPanel}
           />
           <NavItem
-            href="/my/payments/add_card"
+              href="/my/payments"
             label="Wallet"
             icon={<CardIcon />}
             trailing={<span className="wallet-pill">0.00</span>}
