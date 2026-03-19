@@ -2664,6 +2664,7 @@ function HomePage({
   posts,
   stories,
   onSubscribe,
+  onOpenCreator,
   activeSubscriptions,
   ppvPurchases,
   onUnlockPost,
@@ -2678,6 +2679,7 @@ function HomePage({
   posts: FeedPost[]
   stories: FeedPost[]
   onSubscribe: (creator: FeedPost['creator']) => void
+  onOpenCreator: (creator: CreatorCard) => void
   activeSubscriptions: string[]
   ppvPurchases: number[]
   onUnlockPost: (post: FeedPost) => void
@@ -2694,13 +2696,17 @@ function HomePage({
     'Your feed'
   const subscriptionSet = new Set(activeSubscriptions)
   const ppvPurchaseSet = new Set(ppvPurchases)
+  const [activeFilter, setActiveFilter] = useState<'all' | 'photos' | 'videos' | 'texts'>('all')
   const [activeStoryIndex, setActiveStoryIndex] = useState<number | null>(null)
   const [activeStoryMediaIndex, setActiveStoryMediaIndex] = useState(0)
   const [postMediaIndexById, setPostMediaIndexById] = useState<Record<number, number>>({})
+  const [activePostId, setActivePostId] = useState<number | null>(null)
+  const [activePostMediaIndex, setActivePostMediaIndex] = useState(0)
   const activeStory =
     activeStoryIndex === null || activeStoryIndex < 0 || activeStoryIndex >= stories.length
       ? null
       : stories[activeStoryIndex]
+  const activePost = activePostId === null ? null : posts.find((post) => post.id === activePostId) ?? null
 
   const getAccessState = (post: FeedPost) => {
     const isSubscribed = subscriptionSet.has(post.creator.id)
@@ -2720,8 +2726,24 @@ function HomePage({
     }
   }
 
+  const getPostDisplayType = (post: FeedPost) => {
+    if (!post.media.length) return 'text'
+    if (post.media.some((media) => media.mime_type?.startsWith('video'))) return 'video'
+    return 'photo'
+  }
+
+  const filteredPosts = useMemo(() => {
+    return posts.filter((post) => {
+      if (activeFilter === 'all') return true
+      const type = getPostDisplayType(post)
+      if (activeFilter === 'photos') return type === 'photo'
+      if (activeFilter === 'videos') return type === 'video'
+      return type === 'text'
+    })
+  }, [posts, activeFilter])
+
   useEffect(() => {
-    if (activeStoryIndex === null) {
+    if (activeStoryIndex === null && activePostId === null) {
       return
     }
 
@@ -2730,13 +2752,19 @@ function HomePage({
     return () => {
       document.body.style.overflow = previousOverflow
     }
-  }, [activeStoryIndex])
+  }, [activeStoryIndex, activePostId])
 
   useEffect(() => {
     if (activeStoryIndex === null) {
       setActiveStoryMediaIndex(0)
     }
   }, [activeStoryIndex])
+
+  useEffect(() => {
+    if (activePostId === null) {
+      setActivePostMediaIndex(0)
+    }
+  }, [activePostId])
 
   useEffect(() => {
     if (activeStoryIndex === null || !stories.length) {
@@ -2765,13 +2793,33 @@ function HomePage({
   }, [activeStory, activeStoryMediaIndex])
 
   useEffect(() => {
-    if (activeStoryIndex === null) {
+    if (!activePost) {
+      return
+    }
+
+    if (!activePost.media.length) {
+      setActivePostMediaIndex(0)
+      return
+    }
+
+    if (activePostMediaIndex >= activePost.media.length) {
+      setActivePostMediaIndex(0)
+    }
+  }, [activePost, activePostMediaIndex])
+
+  useEffect(() => {
+    if (activeStoryIndex === null && activePostId === null) {
       return
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setActiveStoryIndex(null)
+        setActivePostId(null)
+        return
+      }
+
+      if (activePostId !== null) {
         return
       }
 
@@ -2799,7 +2847,7 @@ function HomePage({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeStoryIndex, stories.length])
+  }, [activeStoryIndex, activePostId, stories.length])
 
   const moveStory = (direction: 1 | -1) => {
     setActiveStoryIndex((prev) => {
@@ -2820,10 +2868,10 @@ function HomePage({
               <div className="name">{displayName}</div>
               <div className="muted">
                 {activeTopicFilter
-                  ? posts.length || stories.length
+                  ? filteredPosts.length || stories.length
                     ? `Showing ${activeTopicFilter} content only.`
                     : `No ${activeTopicFilter} content yet.`
-                  : posts.length
+                  : filteredPosts.length
                     ? 'Latest updates from creators you follow.'
                     : 'Follow creators to see updates.'}
               </div>
@@ -2849,37 +2897,83 @@ function HomePage({
           </div>
         </header>
 
-        {stories.length ? (
-          <section className="card">
-            <div className="section-heading">
-              <h3>Stories</h3>
-            </div>
-            <div className="card-row">
-              {stories.map((story, index) => {
-                const storyMedia = story.media[0]
-                const hasVideo = Boolean(
-                  storyMedia && storyMedia.mime_type?.startsWith('video')
-                )
-                return (
-                  <button
-                    key={story.id}
-                    type="button"
-                    className="avatar-chip story-chip"
-                    onClick={() => {
-                      setActiveStoryIndex(index)
-                      setActiveStoryMediaIndex(0)
-                    }}
-                    aria-label={`Open ${story.creator.display_name} story`}
-                  >
-                    <img src={story.creator.avatar_url ?? assetUrl('logo.png')} alt={story.creator.display_name} />
-                    <span>{story.creator.display_name}</span>
-                    {hasVideo ? <span className="story-chip__type">Video</span> : null}
+        <div className="home-feed">
+          <div className="home-feed__sticky">
+            <section className="home-stories">
+              <div className="home-stories__title">
+                {activeTopicFilter ? `Home · ${activeTopicFilter}` : 'Home'}
+              </div>
+              {stories.length ? (
+                <div className="home-stories__scroller">
+                  <div className="home-stories__track">
+                    {stories.map((story, index) => (
+                      <button
+                        key={story.id}
+                        className="home-story"
+                        type="button"
+                        aria-label={`Open ${story.creator.display_name} story`}
+                        onClick={() => {
+                          setActiveStoryIndex(index)
+                          setActiveStoryMediaIndex(0)
+                        }}
+                      >
+                        <span className="home-story__ring">
+                          {story.creator.avatar_url ? (
+                            <img src={story.creator.avatar_url} alt={story.creator.display_name} />
+                          ) : (
+                            <span className="home-story__placeholder" aria-hidden="true">
+                              {story.creator.display_name.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </span>
+                        <span className="home-story__name">{story.creator.display_name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="home-feed__empty home-feed__empty--stories">
+                  No active stories right now.
+                </div>
+              )}
+
+              <div className="home-feed__filters">
+                <button
+                  className={`home-feed__filter${activeFilter === 'all' ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => setActiveFilter('all')}
+                >
+                  All
+                </button>
+                <button
+                  className={`home-feed__filter${activeFilter === 'photos' ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => setActiveFilter('photos')}
+                >
+                  Photos
+                </button>
+                <button
+                  className={`home-feed__filter${activeFilter === 'videos' ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => setActiveFilter('videos')}
+                >
+                  Videos
+                </button>
+                <button
+                  className={`home-feed__filter${activeFilter === 'texts' ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => setActiveFilter('texts')}
+                >
+                  Texts
+                </button>
+                {activeTopicFilter ? (
+                  <button className="home-feed__filter" type="button" onClick={onClearTopicFilter}>
+                    Clear topic
                   </button>
-                )
-              })}
-            </div>
-          </section>
-        ) : null}
+                ) : null}
+              </div>
+            </section>
+          </div>
 
         {session && (
           <section className="card creator-cta">
@@ -2947,8 +3041,9 @@ function HomePage({
           </section>
         )}
 
-        {posts.length ? (
-          posts.map((post) => {
+        <div className="home-feed__posts">
+          {filteredPosts.length ? (
+            filteredPosts.map((post) => {
             const { isSubscribed, isPpv, isLocked, showSubscribe } = getAccessState(post)
             const mediaCount = post.media.length
             const mediaIndex = Math.max(
@@ -2959,17 +3054,29 @@ function HomePage({
             const isVideo = media?.mime_type?.startsWith('video')
 
             return (
-              <section key={post.id} className={`card ${media ? 'media-card' : 'text-card'}`}>
-                <div className="card-header">
-                  <img
-                    src={post.creator.avatar_url ?? assetUrl('logo.png')}
-                    alt={post.creator.display_name}
-                  />
-                  <div>
-                    <div className="name">{post.creator.display_name}</div>
-                    <div className="muted">@{post.creator.handle}</div>
-                  </div>
-                  <FiMoreHorizontal className="spacer" />
+              <article key={post.id} className="home-post">
+                <header className="home-post__header">
+                  <button
+                    type="button"
+                    className="home-post__author"
+                    onClick={() => onOpenCreator(post.creator)}
+                  >
+                    {post.creator.avatar_url ? (
+                      <img
+                        className="home-post__avatar"
+                        src={post.creator.avatar_url}
+                        alt={post.creator.display_name}
+                      />
+                    ) : (
+                      <div className="home-post__avatar home-post__avatar--placeholder" aria-hidden="true">
+                        {post.creator.display_name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <div className="home-post__name">{post.creator.display_name}</div>
+                      <div className="home-post__handle">@{post.creator.handle}</div>
+                    </div>
+                  </button>
                   {showSubscribe ? (
                     <button className="pill light" onClick={() => onSubscribe(post.creator)}>
                       Subscribe {formatKsh(post.creator.subscription_price_cents)}
@@ -2977,10 +3084,22 @@ function HomePage({
                   ) : isSubscribed ? (
                     <span className="muted small">Subscribed</span>
                   ) : null}
-                </div>
+                </header>
+
+                <button
+                  type="button"
+                  className="home-post__body"
+                  onClick={() => {
+                    setActivePostId(post.id)
+                    setActivePostMediaIndex(mediaIndex)
+                  }}
+                >
+                  <p className="home-post__caption">{post.title}</p>
+                  {post.body ? <p className="home-post__copy">{post.body}</p> : null}
+                </button>
 
                 {media ? (
-                  <div className={`media-wrapper ${isLocked ? 'locked' : ''}`}>
+                  <div className={`media-wrapper home-post__media-frame ${isLocked ? 'locked' : ''}`}>
                     {media.url ? (
                       isVideo ? (
                         <video className="media-hero" controls preload="metadata" playsInline>
@@ -3079,46 +3198,51 @@ function HomePage({
                   </div>
                 ) : null}
 
-                <div className="card-body">
-                  <p className="title">{post.title}</p>
-                  {post.body ? <p className="muted">{post.body}</p> : null}
-                </div>
-              </section>
+                <footer className="home-post__footer">
+                  <span>{formatMembershipDate(post.created_at)}</span>
+                  <span>
+                    {isPpv
+                      ? `PPV · ${formatKsh(post.price_cents ?? 0)}`
+                      : post.visibility === 'subscribers'
+                        ? 'Subscribers'
+                        : 'Public'}
+                  </span>
+                </footer>
+              </article>
             )
           })
-        ) : (
-          <section className="card">
-            <div className="card-body">
-              <p className="title">No posts yet</p>
-              <p className="muted">Follow creators to see new content in your feed.</p>
+          ) : (
+            <div className="home-feed__empty">
+              {activeTopicFilter
+                ? `No ${activeTopicFilter} posts yet.`
+                : 'Follow creators to see new content in your feed.'}
             </div>
-          </section>
-        )}
+          )}
+        </div>
+        </div>
       </main>
 
       {activeStory ? (
-        <div
-          className="story-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${activeStory.creator.display_name} story`}
-          onClick={() => setActiveStoryIndex(null)}
-        >
-          <div className="story-modal__panel" onClick={(event) => event.stopPropagation()}>
-            <header className="story-modal__header">
-              <div>
-                <div className="name">{activeStory.creator.display_name}</div>
-                <div className="muted">@{activeStory.creator.handle}</div>
-              </div>
-              <button
-                className="icon-button"
-                type="button"
-                aria-label="Close story"
-                onClick={() => setActiveStoryIndex(null)}
-              >
-                <FiX size={20} />
-              </button>
-            </header>
+        <div className="home-story-modal" role="dialog" aria-modal="true">
+          <button
+            className="home-story-modal__backdrop"
+            type="button"
+            aria-label="Close story"
+            onClick={() => setActiveStoryIndex(null)}
+          />
+          <div className="home-story-modal__card">
+            <button
+              className="home-story-modal__close"
+              type="button"
+              aria-label="Close story"
+              onClick={() => setActiveStoryIndex(null)}
+            >
+              <FiX size={20} />
+            </button>
+            <div className="home-story-modal__meta">
+              <div className="home-story-modal__name">{activeStory.creator.display_name}</div>
+              <div>{activeStory.expires_at ? formatMembershipDate(activeStory.expires_at) : 'Active story'}</div>
+            </div>
 
             {(() => {
               const { isPpv, isLocked, showSubscribe } = getAccessState(activeStory)
@@ -3130,7 +3254,7 @@ function HomePage({
               const media = mediaCount ? activeStory.media[mediaIndex] : null
               const isVideo = media?.mime_type?.startsWith('video')
               return (
-                <div className={`media-wrapper story-modal__media ${isLocked ? 'locked' : ''}`}>
+                <div className={`media-wrapper home-story-modal__media ${isLocked ? 'locked' : ''}`}>
                   {media ? (
                     media.url ? (
                       isVideo ? (
@@ -3168,9 +3292,6 @@ function HomePage({
                       >
                         <FiChevronRight />
                       </button>
-                      <div className="media-count">
-                        {mediaIndex + 1}/{mediaCount}
-                      </div>
                     </>
                   ) : null}
                   {isLocked ? (
@@ -3193,10 +3314,7 @@ function HomePage({
                             Unlock for {formatKsh(activeStory.price_cents ?? 0)}
                           </button>
                         ) : showSubscribe ? (
-                          <button
-                            className="pill light"
-                            onClick={() => onSubscribe(activeStory.creator)}
-                          >
+                          <button className="pill light" onClick={() => onSubscribe(activeStory.creator)}>
                             Subscribe {formatKsh(activeStory.creator.subscription_price_cents)}
                           </button>
                         ) : null}
@@ -3207,19 +3325,159 @@ function HomePage({
               )
             })()}
 
-            <footer className="story-modal__footer">
+            <div className="home-story-modal__caption">
               <div className="title">{activeStory.title}</div>
               {activeStory.body ? <p className="muted">{activeStory.body}</p> : null}
-              {stories.length > 1 ? (
-                <div className="story-modal__switchers">
-                  <button className="pill ghost" type="button" onClick={() => moveStory(-1)}>
-                    Previous story
-                  </button>
-                  <button className="pill ghost" type="button" onClick={() => moveStory(1)}>
-                    Next story
-                  </button>
+              <div className="story-modal__switchers">
+                <button className="pill ghost" type="button" onClick={() => onOpenCreator(activeStory.creator)}>
+                  Open creator page
+                </button>
+                {stories.length > 1 ? (
+                  <>
+                    <button className="pill ghost" type="button" onClick={() => moveStory(-1)}>
+                      Previous story
+                    </button>
+                    <button className="pill ghost" type="button" onClick={() => moveStory(1)}>
+                      Next story
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activePost ? (
+        <div className="home-post-modal" role="dialog" aria-modal="true">
+          <button
+            className="home-post-modal__backdrop"
+            type="button"
+            aria-label="Close post"
+            onClick={() => setActivePostId(null)}
+          />
+          <div className="home-post-modal__card">
+            <header className="home-post-modal__header">
+              <button
+                type="button"
+                className="home-post__author"
+                onClick={() => onOpenCreator(activePost.creator)}
+              >
+                {activePost.creator.avatar_url ? (
+                  <img
+                    className="home-post__avatar"
+                    src={activePost.creator.avatar_url}
+                    alt={activePost.creator.display_name}
+                  />
+                ) : (
+                  <div className="home-post__avatar home-post__avatar--placeholder" aria-hidden="true">
+                    {activePost.creator.display_name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <div className="home-post__name">{activePost.creator.display_name}</div>
+                  <div className="home-post__handle">@{activePost.creator.handle}</div>
                 </div>
-              ) : null}
+              </button>
+              <button
+                className="home-story-modal__close"
+                type="button"
+                aria-label="Close post"
+                onClick={() => setActivePostId(null)}
+              >
+                <FiX size={20} />
+              </button>
+            </header>
+
+            {(() => {
+              const { isPpv, isLocked, showSubscribe } = getAccessState(activePost)
+              const mediaCount = activePost.media.length
+              const mediaIndex = Math.max(
+                0,
+                Math.min(activePostMediaIndex, Math.max(mediaCount - 1, 0))
+              )
+              const media = mediaCount ? activePost.media[mediaIndex] : null
+              const isVideo = media?.mime_type?.startsWith('video')
+              return (
+                <div className={`media-wrapper home-post-modal__media ${isLocked ? 'locked' : ''}`}>
+                  {media ? (
+                    media.url ? (
+                      isVideo ? (
+                        <video className="media-hero" controls preload="metadata" playsInline autoPlay>
+                          <source src={media.url} type={media.mime_type ?? 'video/mp4'} />
+                        </video>
+                      ) : (
+                        <img src={media.url} alt={activePost.title || 'Post'} />
+                      )
+                    ) : (
+                      <div className="media-placeholder">Post unavailable</div>
+                    )
+                  ) : (
+                    <div className="media-placeholder">No post media</div>
+                  )}
+                  {mediaCount > 1 ? (
+                    <>
+                      <button
+                        className="media-nav media-nav--prev"
+                        type="button"
+                        aria-label="Previous post media"
+                        onClick={() =>
+                          setActivePostMediaIndex((prev) => (prev - 1 + mediaCount) % mediaCount)
+                        }
+                      >
+                        <FiChevronLeft />
+                      </button>
+                      <button
+                        className="media-nav media-nav--next"
+                        type="button"
+                        aria-label="Next post media"
+                        onClick={() =>
+                          setActivePostMediaIndex((prev) => (prev + 1) % mediaCount)
+                        }
+                      >
+                        <FiChevronRight />
+                      </button>
+                    </>
+                  ) : null}
+                  {isLocked ? (
+                    <div className="media-lock-overlay">
+                      <div className="media-lock-tag">
+                        <FiLock size={14} />
+                        {isPpv ? 'Pay-per-view' : 'Subscribers only'}
+                      </div>
+                      <div className="lock-title">
+                        {isPpv ? 'Unlock this post' : 'Subscribe to view'}
+                      </div>
+                      <div className="lock-subtitle">
+                        {isPpv
+                          ? `Price: ${formatKsh(activePost.price_cents ?? 0)}`
+                          : 'Support the creator to access this post.'}
+                      </div>
+                      <div className="media-lock-actions">
+                        {isPpv ? (
+                          <button className="primary-btn" onClick={() => onUnlockPost(activePost)}>
+                            Unlock for {formatKsh(activePost.price_cents ?? 0)}
+                          </button>
+                        ) : showSubscribe ? (
+                          <button className="pill light" onClick={() => onSubscribe(activePost.creator)}>
+                            Subscribe {formatKsh(activePost.creator.subscription_price_cents)}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })()}
+
+            <footer className="home-post-modal__footer">
+              <div className="title">{activePost.title}</div>
+              {activePost.body ? <p className="muted">{activePost.body}</p> : null}
+              <div className="story-modal__switchers">
+                <button className="pill ghost" type="button" onClick={() => onOpenCreator(activePost.creator)}>
+                  Open creator page
+                </button>
+              </div>
             </footer>
           </div>
         </div>
@@ -4062,6 +4320,7 @@ export default function App() {
             posts={filteredHomePosts}
             stories={filteredHomeStories}
             onSubscribe={(creator) => handleSubscribe(creator)}
+            onOpenCreator={handleOpenCreatorPage}
             activeSubscriptions={activeSubscriptions}
             ppvPurchases={ppvPurchases}
             onUnlockPost={handleUnlockPost}
