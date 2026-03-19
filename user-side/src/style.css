@@ -3011,6 +3011,16 @@ body {
     flex-direction: column;
     align-items: flex-start;
   }
+  .wallet-summary-grid,
+  .wallet-main-grid,
+  .wallet-send-layout,
+  .wallet-receive-layout,
+  .wallet-history-row {
+    grid-template-columns: 1fr;
+  }
+  .wallet-card__actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 720px) {
@@ -3020,5 +3030,15 @@ body {
   .creator-page__hero {
     flex-direction: column;
     align-items: flex-start;
+  }
+  .wallet-page__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .wallet-tabs {
+    justify-content: flex-start;
+  }
+  .wallet-creator-grid {
+    grid-template-columns: 1fr;
   }
 }

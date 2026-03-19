@@ -2469,29 +2469,34 @@ function WalletPage({
           {walletHistory.length ? (
             <div className="wallet-history-table">
               {walletHistory.map((entry) => (
-                <div className="wallet-history-row" key={entry.id}>
-                  <div className="wallet-history-row__main">
-                    <strong>{getWalletEntryLabel(entry)}</strong>
-                    <span>{formatWalletDate(entry.created_at)}</span>
-                  </div>
-                  <div className="wallet-history-row__detail">
-                    {entry.creator ? (
-                      <button
-                        type="button"
-                        className="wallet-history-link"
-                        onClick={() => onOpenCreator(entry.creator)}
-                      >
-                        {entry.creator.display_name}
-                      </button>
-                    ) : (
-                      <span>{entry.post_title ?? 'Wallet activity'}</span>
-                    )}
-                  </div>
-                  <div className={`wallet-history-row__amount ${getWalletEntryTone(entry.entry_type)}`}>
-                    {getWalletEntryTone(entry.entry_type) === 'credit' ? '+' : '-'}
-                    {formatSubscriptionAmount(entry.amount_minor, entry.currency)}
-                  </div>
-                </div>
+                (() => {
+                  const linkedCreator = entry.creator
+                  return (
+                    <div className="wallet-history-row" key={entry.id}>
+                      <div className="wallet-history-row__main">
+                        <strong>{getWalletEntryLabel(entry)}</strong>
+                        <span>{formatWalletDate(entry.created_at)}</span>
+                      </div>
+                      <div className="wallet-history-row__detail">
+                        {linkedCreator ? (
+                          <button
+                            type="button"
+                            className="wallet-history-link"
+                            onClick={() => onOpenCreator(linkedCreator)}
+                          >
+                            {linkedCreator.display_name}
+                          </button>
+                        ) : (
+                          <span>{entry.post_title ?? 'Wallet activity'}</span>
+                        )}
+                      </div>
+                      <div className={`wallet-history-row__amount ${getWalletEntryTone(entry.entry_type)}`}>
+                        {getWalletEntryTone(entry.entry_type) === 'credit' ? '+' : '-'}
+                        {formatSubscriptionAmount(entry.amount_minor, entry.currency)}
+                      </div>
+                    </div>
+                  )
+                })()
               ))}
             </div>
           ) : (
