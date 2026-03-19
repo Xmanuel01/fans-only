@@ -3413,7 +3413,7 @@ export default function App() {
     | 'news'
     | 'help'
     | 'features'
-  >('explore')
+  >('home')
   const [ageConfirmed, setAgeConfirmed] = useState(false)
   const [sessionChecked, setSessionChecked] = useState(false)
   const [session, setSession] = useState<any>(null)
