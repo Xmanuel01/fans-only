@@ -52,15 +52,12 @@ import {
   subscribeToMemberChatThreads,
   subscribeToNotifications,
   updateNotificationPreferences,
-  fetchCreatorProfile,
-  createCreatorProfile,
   signInWithPassword,
   signUpWithPassword,
   type AppNotification,
   type ChatMessage,
   type ChatThreadSummary,
   type ChatableCreator,
-  type CreatorProfile,
   type CreatorCard,
   type SubscriptionHistoryItem,
   type NotificationPreferences,
@@ -2657,10 +2654,6 @@ function HomePage({
   onSeeAll,
   activeTopicFilter,
   onClearTopicFilter,
-  session,
-  creatorProfile,
-  onCreateCreator,
-  creatorLoading,
   posts,
   stories,
   onSubscribe,
@@ -2672,10 +2665,6 @@ function HomePage({
   onSeeAll: () => void
   activeTopicFilter: string | null
   onClearTopicFilter: () => void
-  session: any
-  creatorProfile: CreatorProfile | null
-  onCreateCreator: (handle: string) => void
-  creatorLoading: boolean
   posts: FeedPost[]
   stories: FeedPost[]
   onSubscribe: (creator: FeedPost['creator']) => void
@@ -2684,16 +2673,7 @@ function HomePage({
   ppvPurchases: number[]
   onUnlockPost: (post: FeedPost) => void
 }) {
-  const defaultHandle =
-    session?.user?.user_metadata?.username ??
-    session?.user?.email?.split('@')[0]?.replace(/[^a-zA-Z0-9_]/g, '') ??
-    ''
-  const [handle, setHandle] = useState(defaultHandle)
-  const displayName =
-    session?.user?.user_metadata?.full_name ??
-    session?.user?.user_metadata?.name ??
-    session?.user?.email?.split('@')[0] ??
-    'Your feed'
+  const displayName = 'Your feed'
   const subscriptionSet = new Set(activeSubscriptions)
   const ppvPurchaseSet = new Set(ppvPurchases)
   const [activeFilter, setActiveFilter] = useState<'all' | 'photos' | 'videos' | 'texts'>('all')
@@ -2974,72 +2954,6 @@ function HomePage({
               </div>
             </section>
           </div>
-
-        {session && (
-          <section className="card creator-cta">
-            <div className="creator-cta-header">
-              <div>
-                <div className="muted small">Monetize</div>
-                <h3>{creatorProfile ? 'Creator profile ready' : 'Become a creator'}</h3>
-                <p className="muted">
-                  Claim your handle to unlock the creator dashboard. You can update details later.
-                </p>
-              </div>
-              <a
-                className="pill ghost"
-                href={CREATOR_APP_URL}
-                target={CREATOR_APP_EXTERNAL ? '_blank' : undefined}
-                rel={CREATOR_APP_EXTERNAL ? 'noreferrer' : undefined}
-              >
-                Open dashboard
-              </a>
-            </div>
-            {!creatorProfile ? (
-              <div className="creator-cta-body">
-                <label className="creator-label">
-                  Handle
-                  <input
-                    value={handle}
-                    onChange={(e) => setHandle(e.target.value.toLowerCase())}
-                    placeholder="your-handle"
-                    maxLength={30}
-                    pattern="^[a-z0-9_]+$"
-                  />
-                </label>
-                <button
-                  className="primary-btn"
-                  onClick={() => onCreateCreator(handle)}
-                  disabled={!handle || creatorLoading}
-                >
-                  {creatorLoading ? 'Saving...' : 'Claim handle'}
-                </button>
-              </div>
-            ) : (
-              <div className="creator-cta-body">
-                <div className="muted">Handle</div>
-                <div className="creator-handle">@{creatorProfile.handle}</div>
-                <div className="creator-links">
-                  <a
-                    className="primary-btn"
-                    href={CREATOR_APP_URL}
-                    target={CREATOR_APP_EXTERNAL ? '_blank' : undefined}
-                    rel={CREATOR_APP_EXTERNAL ? 'noreferrer' : undefined}
-                  >
-                    Open dashboard
-                  </a>
-                  <a
-                    className="ghost-btn"
-                    href={`/creator/${creatorProfile.handle}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    View public profile
-                  </a>
-                </div>
-              </div>
-            )}
-          </section>
-        )}
 
         <div className="home-feed__posts">
           {filteredPosts.length ? (
@@ -3513,8 +3427,6 @@ export default function App() {
   const [consentAccepted, setConsentAccepted] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
   const [featureText, setFeatureText] = useState('')
-  const [creatorProfile, setCreatorProfile] = useState<CreatorProfile | null>(null)
-  const [creatorLoading, setCreatorLoading] = useState(false)
   const [demoMode, setDemoMode] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [feedPosts, setFeedPosts] = useState<FeedPost[]>([])
@@ -3573,20 +3485,6 @@ export default function App() {
       setSessionChecked(true)
     })()
   }, [])
-
-  useEffect(() => {
-    if (envStatus.hasIssues) return
-    if (!session?.user?.id) {
-      setCreatorProfile(null)
-      return
-    }
-    ;(async () => {
-      setCreatorLoading(true)
-      const prof = await fetchCreatorProfile(session.user.id)
-      setCreatorProfile(prof)
-      setCreatorLoading(false)
-    })()
-  }, [session])
 
   useEffect(() => {
     if (envStatus.hasIssues || demoMode) return
@@ -3988,43 +3886,6 @@ export default function App() {
     setToast('Opening memberships')
   }
 
-  const handleCreateCreator = async (handle: string) => {
-    if (!session?.user?.id) {
-      setToast('Sign in first')
-      return
-    }
-    const normalized = handle.trim().toLowerCase()
-    if (!normalized) {
-      setToast('Enter a handle to continue')
-      return
-    }
-    if (!/^[a-z0-9_]+$/.test(normalized)) {
-      setToast('Handle can only use letters, numbers, and underscores')
-      return
-    }
-    if (normalized.length > 30) {
-      setToast('Handle must be 30 characters or less')
-      return
-    }
-    const displayName =
-      session.user.user_metadata?.full_name ?? session.user.email?.split('@')[0] ?? 'Creator'
-    try {
-      setCreatorLoading(true)
-      const created = await createCreatorProfile({
-        userId: session.user.id,
-        handle: normalized,
-        displayName,
-      })
-      setCreatorProfile(created)
-      setToast('Creator profile created. Open dashboard to continue.')
-    } catch (err) {
-      console.error(err)
-      setToast('Handle already taken or invalid. Try another.')
-    } finally {
-      setCreatorLoading(false)
-    }
-  }
-
   const handleOpenCreatorPage = (creator: CreatorCard) => {
     setSelectedCreator(creator)
     setPage('creator')
@@ -4313,10 +4174,6 @@ export default function App() {
             onSeeAll={() => setPage('explore')}
             activeTopicFilter={homeTopicFilter}
             onClearTopicFilter={handleClearHomeTopicFilter}
-            session={session}
-            creatorProfile={creatorProfile}
-            onCreateCreator={handleCreateCreator}
-            creatorLoading={creatorLoading}
             posts={filteredHomePosts}
             stories={filteredHomeStories}
             onSubscribe={(creator) => handleSubscribe(creator)}
