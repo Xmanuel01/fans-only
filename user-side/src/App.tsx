@@ -3490,6 +3490,10 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null)
   const [consentAccepted, setConsentAccepted] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
+  const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window === 'undefined') return 'dark'
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  })
   const [featureText, setFeatureText] = useState('')
   const [demoMode, setDemoMode] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
@@ -3530,6 +3534,7 @@ export default function App() {
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const connectedRef = useRef<HTMLDivElement | null>(null)
   const giftRef = useRef<HTMLDivElement | null>(null)
+  const resolvedTheme = theme === 'system' ? systemTheme : theme
 
   const resolveCheckoutUrl = () => {
     if (typeof window === 'undefined') return undefined
@@ -3692,6 +3697,21 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia('(prefers-color-scheme: light)')
+    const updateTheme = () => setSystemTheme(media.matches ? 'light' : 'dark')
+    updateTheme()
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', updateTheme)
+      return () => media.removeEventListener('change', updateTheme)
+    }
+
+    media.addListener(updateTheme)
+    return () => media.removeListener(updateTheme)
+  }, [])
+
+  useEffect(() => {
     if (envStatus.hasIssues || ageConfirmed || (!session && !demoMode)) return
     ;(async () => {
       const remote = await fetchAgeConfirmation()
@@ -3708,9 +3728,10 @@ export default function App() {
   }, [toast])
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
+    document.documentElement.setAttribute('data-theme', resolvedTheme)
+    document.documentElement.setAttribute('data-theme-preference', theme)
     localStorage.setItem('theme', theme)
-  }, [theme])
+  }, [resolvedTheme, theme])
 
   const matchesCategoryFilter = (post: FeedPost, category: string | null) => {
     if (!category || category === 'All') return true
@@ -4209,18 +4230,24 @@ export default function App() {
                   <button
                     className={`chip tiny ${theme === 'light' ? 'active' : ''}`}
                     onClick={() => setTheme('light')}
+                    type="button"
+                    aria-pressed={theme === 'light'}
                   >
                     Light
                   </button>
                   <button
                     className={`chip tiny ${theme === 'dark' ? 'active' : ''}`}
                     onClick={() => setTheme('dark')}
+                    type="button"
+                    aria-pressed={theme === 'dark'}
                   >
                     Dark
                   </button>
                   <button
                     className={`chip tiny ${theme === 'system' ? 'active' : ''}`}
                     onClick={() => setTheme('system')}
+                    type="button"
+                    aria-pressed={theme === 'system'}
                   >
                     System
                   </button>
