@@ -2651,7 +2651,6 @@ function CreatorPage({
 }
 
 function HomePage({
-  onSeeAll,
   activeTopicFilter,
   onClearTopicFilter,
   posts,
@@ -2662,7 +2661,6 @@ function HomePage({
   ppvPurchases,
   onUnlockPost,
 }: {
-  onSeeAll: () => void
   activeTopicFilter: string | null
   onClearTopicFilter: () => void
   posts: FeedPost[]
@@ -2673,7 +2671,6 @@ function HomePage({
   ppvPurchases: number[]
   onUnlockPost: (post: FeedPost) => void
 }) {
-  const displayName = 'Your feed'
   const subscriptionSet = new Set(activeSubscriptions)
   const ppvPurchaseSet = new Set(ppvPurchases)
   const [activeFilter, setActiveFilter] = useState<'all' | 'photos' | 'videos' | 'texts'>('all')
@@ -2842,41 +2839,6 @@ function HomePage({
   return (
     <>
       <main className="feed">
-        <header className="feed-header">
-          <div className="feed-user">
-            <div>
-              <div className="name">{displayName}</div>
-              <div className="muted">
-                {activeTopicFilter
-                  ? filteredPosts.length || stories.length
-                    ? `Showing ${activeTopicFilter} content only.`
-                    : `No ${activeTopicFilter} content yet.`
-                  : filteredPosts.length
-                    ? 'Latest updates from creators you follow.'
-                    : 'Follow creators to see updates.'}
-              </div>
-            </div>
-          </div>
-          <div className="feed-actions">
-            {activeTopicFilter ? (
-              <button className="see-all" onClick={onClearTopicFilter}>
-                All content
-              </button>
-            ) : null}
-            <button className="see-all" onClick={onSeeAll}>
-              See all
-            </button>
-            <a
-              className="see-all"
-              href={CREATOR_APP_URL}
-              target={CREATOR_APP_EXTERNAL ? '_blank' : undefined}
-              rel={CREATOR_APP_EXTERNAL ? 'noreferrer' : undefined}
-            >
-              Creator dashboard
-            </a>
-          </div>
-        </header>
-
         <div className="home-feed">
           <div className="home-feed__sticky">
             <section className="home-stories">
@@ -4171,7 +4133,6 @@ export default function App() {
       <div className="main-area">
         {page === 'home' && (
           <HomePage
-            onSeeAll={() => setPage('explore')}
             activeTopicFilter={homeTopicFilter}
             onClearTopicFilter={handleClearHomeTopicFilter}
             posts={filteredHomePosts}
