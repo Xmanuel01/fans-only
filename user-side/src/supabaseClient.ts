@@ -231,6 +231,9 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   content: true,
 }
 
+const notificationPreferencesStorageKey = (userId: string) =>
+  `fans-only:notification-preferences:${userId}`
+
 function normalizeNotificationPreferences(value: unknown): NotificationPreferences {
   const parsed =
     value && typeof value === 'object' && !Array.isArray(value)
@@ -264,6 +267,31 @@ function normalizeNotificationPreferences(value: unknown): NotificationPreferenc
       typeof parsed.content === 'boolean'
         ? parsed.content
         : DEFAULT_NOTIFICATION_PREFERENCES.content,
+  }
+}
+
+function readNotificationPreferencesFallback(userId: string): NotificationPreferences {
+  if (typeof window === 'undefined') {
+    return DEFAULT_NOTIFICATION_PREFERENCES
+  }
+
+  try {
+    const raw = window.localStorage.getItem(notificationPreferencesStorageKey(userId))
+    if (!raw) return DEFAULT_NOTIFICATION_PREFERENCES
+    return normalizeNotificationPreferences(JSON.parse(raw))
+  } catch (error) {
+    console.warn('Notification preferences local fallback read failed', error)
+    return DEFAULT_NOTIFICATION_PREFERENCES
+  }
+}
+
+function persistNotificationPreferencesFallback(userId: string, value: NotificationPreferences) {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.localStorage.setItem(notificationPreferencesStorageKey(userId), JSON.stringify(value))
+  } catch (error) {
+    console.warn('Notification preferences local fallback save failed', error)
   }
 }
 
@@ -535,8 +563,14 @@ export async function fetchNotificationPreferences(): Promise<NotificationPrefer
     .eq('id', userId)
     .maybeSingle()
 
-  if (error) throw error
-  return normalizeNotificationPreferences(data?.notification_preferences)
+  if (error) {
+    console.warn('Supabase notification preferences fetch failed; using local fallback', error)
+    return readNotificationPreferencesFallback(userId)
+  }
+
+  const normalized = normalizeNotificationPreferences(data?.notification_preferences)
+  persistNotificationPreferencesFallback(userId, normalized)
+  return normalized
 }
 
 export async function updateNotificationPreferences(
@@ -560,7 +594,13 @@ export async function updateNotificationPreferences(
       { onConflict: 'id' }
     )
 
-  if (error) throw error
+  if (error) {
+    console.warn('Supabase notification preferences update failed; using local fallback', error)
+    persistNotificationPreferencesFallback(userId, merged)
+    return merged
+  }
+
+  persistNotificationPreferencesFallback(userId, merged)
   return merged
 }
 
