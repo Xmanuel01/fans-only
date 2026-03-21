@@ -4081,12 +4081,6 @@ export default function App() {
                 <button className="menu-item" onClick={() => setPage('news')}>
                   News
                 </button>
-                <button
-                  className="menu-item"
-                  onClick={() => openExternal(CREATOR_APP_URL, 'Creator dashboard')}
-                >
-                  Creator dashboard
-                </button>
                 <button className="menu-item" onClick={() => setPage('help')}>
                   Help Center & FAQ
                 </button>
