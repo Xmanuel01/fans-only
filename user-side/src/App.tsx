@@ -590,6 +590,7 @@ function SquareCard({
   priceLabel,
   subscribed,
   onSubscribe,
+  subscribing,
 }: {
   name: string
   tag: string
@@ -597,6 +598,7 @@ function SquareCard({
   priceLabel?: string | null
   subscribed?: boolean
   onSubscribe?: () => void
+  subscribing?: boolean
 }) {
   return (
     <div className="square-card">
@@ -605,8 +607,13 @@ function SquareCard({
       <div className="card-tag">{tag}</div>
       {priceLabel ? <div className="card-tag">{priceLabel}</div> : null}
       {onSubscribe ? (
-        <button className="pill light full" onClick={onSubscribe} disabled={subscribed}>
-          {subscribed ? 'Subscribed' : 'Subscribe'}
+        <button
+          className="pill light full"
+          onClick={onSubscribe}
+          disabled={subscribed || subscribing}
+          type="button"
+        >
+          {subscribed ? 'Subscribed' : subscribing ? 'Starting checkout...' : 'Subscribe'}
         </button>
       ) : null}
     </div>
@@ -658,12 +665,14 @@ function ExplorePage({
   onOpenTopic,
   activeSubscriptions,
   onSubscribe,
+  subscribingCreatorId,
 }: {
   filter: string
   onSelectFilter: (value: string) => void
   onOpenTopic: (value: string) => void
   activeSubscriptions: string[]
   onSubscribe: (creator: CreatorCard) => void
+  subscribingCreatorId: string | null
 }) {
   const [recommendedCreators, setRecommendedCreators] = useState<CreatorCard[]>([])
   const [recommendedLoading, setRecommendedLoading] = useState(true)
@@ -738,6 +747,7 @@ function ExplorePage({
                 img={c.avatar_url ?? assetUrl('logo.png')}
                 priceLabel={formatKsh(c.subscription_price_cents ?? 0)}
                 subscribed={subscriptionSet.has(c.id)}
+                subscribing={subscribingCreatorId === c.id}
                 onSubscribe={() => onSubscribe(c)}
               />
             ))}
@@ -3494,6 +3504,7 @@ export default function App() {
   const [walletTopupPhone, setWalletTopupPhone] = useState('')
   const [ppvPurchases, setPpvPurchases] = useState<number[]>([])
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
+  const [subscribingCreatorId, setSubscribingCreatorId] = useState<string | null>(null)
   const isAuthed = demoMode || Boolean(session)
   const displayName =
     userProfile?.display_name ??
@@ -3519,6 +3530,11 @@ export default function App() {
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const connectedRef = useRef<HTMLDivElement | null>(null)
   const giftRef = useRef<HTMLDivElement | null>(null)
+
+  const resolveCheckoutUrl = () => {
+    if (typeof window === 'undefined') return undefined
+    return new URL(import.meta.env.BASE_URL ?? '/', window.location.origin).toString()
+  }
 
   useEffect(() => {
     if (envStatus.hasIssues) {
@@ -3853,11 +3869,35 @@ export default function App() {
 
   const handleSubscribe = async (creator: {
     id: string
+    handle?: string | null
+    display_name?: string | null
     subscription_price_cents?: number | null
     subscription_currency?: string | null
   }) => {
-    if (!session?.user?.email) {
+    const email =
+      session?.user?.email ??
+      session?.user?.user_metadata?.email ??
+      session?.user?.identities?.find?.((identity: { identity_data?: { email?: string } }) =>
+        Boolean(identity?.identity_data?.email)
+      )?.identity_data?.email ??
+      null
+    if (!email) {
       setToast('Sign in to subscribe')
+      return
+    }
+    if (!creator.id) {
+      setToast('This creator is not available for subscription right now.')
+      return
+    }
+    if (session?.user?.id && creator.id === session.user.id) {
+      setToast('You cannot subscribe to your own creator account.')
+      return
+    }
+    if (activeSubscriptions.includes(creator.id)) {
+      setToast('You are already subscribed to this creator.')
+      return
+    }
+    if (subscribingCreatorId === creator.id) {
       return
     }
     const priceCents = creator.subscription_price_cents ?? 0
@@ -3866,23 +3906,32 @@ export default function App() {
       return
     }
     try {
-      setToast('Redirecting to secure checkout...')
+      setSubscribingCreatorId(creator.id)
+      setToast(`Starting secure checkout for ${creator.display_name ?? creator.handle ?? 'this creator'}...`)
       const result = await initiatePaystackPayment({
-        email: session.user.email,
+        email,
         creatorId: creator.id,
         amountMajor: priceCents / 100,
         currency: creator.subscription_currency ?? 'KES',
         type: 'subscription',
-        metadata: { source: 'subscribe' },
-        channels: ['mobile_money'],
+        metadata: {
+          source: 'subscribe',
+          creator_handle: creator.handle ?? null,
+        },
+        channels: ['mobile_money', 'card'],
+        callbackUrl: resolveCheckoutUrl(),
       })
       if (!result.authorization_url) {
         throw new Error('Checkout URL missing')
       }
-      window.location.href = result.authorization_url
+      window.location.assign(result.authorization_url)
     } catch (err) {
       console.error(err)
-      setToast('Could not start subscription checkout.')
+      const message =
+        err instanceof Error && err.message ? err.message : 'Could not start subscription checkout.'
+      setToast(message)
+    } finally {
+      setSubscribingCreatorId(null)
     }
   }
 
@@ -3931,13 +3980,6 @@ export default function App() {
     setSettingsTab('Account')
     setToast(`Opening ${app} connect`)
     scrollToRef(connectedRef)
-  }
-
-  const handleMembershipEntry = () => {
-    if (!isAuthed) return setToast('Sign in to view memberships')
-    setPage('membership')
-    setMembershipTab('Membership')
-    setToast('Opening memberships')
   }
 
   const handleOpenCreatorPage = (creator: CreatorCard) => {
@@ -4100,9 +4142,6 @@ export default function App() {
 
         <div className="section">
           <p className="section-title">Memberships</p>
-          <button className="pill" onClick={handleMembershipEntry}>
-            All memberships
-          </button>
           <div className="divider" />
           {sidebarMemberships.length ? (
             sidebarMemberships.map((m) => (
@@ -4237,6 +4276,7 @@ export default function App() {
             onOpenTopic={handleOpenTopicFeed}
             activeSubscriptions={activeSubscriptions}
             onSubscribe={handleSubscribe}
+            subscribingCreatorId={subscribingCreatorId}
           />
         )}
         {page === 'chats' && <ChatsPage />}

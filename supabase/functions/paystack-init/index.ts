@@ -21,7 +21,45 @@ type InitRequest = {
   post_id?: number;
   type: "tip" | "subscription" | "wallet_topup" | "ppv";
   channels?: string[];
+  callback_url?: string;
 };
+
+function resolveCallbackUrl(req: Request, requestedCallbackUrl?: string | null) {
+  const trimmed = requestedCallbackUrl?.trim();
+  if (!trimmed) {
+    return (
+      Deno.env.get("PAYSTACK_CALLBACK_URL") ??
+      new URL("/paystack/callback", req.url).toString()
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error("Invalid callback_url");
+  }
+
+  const requestOrigin = req.headers.get("origin");
+  if (requestOrigin) {
+    let requestUrl: URL;
+    try {
+      requestUrl = new URL(requestOrigin);
+    } catch {
+      throw new Error("Invalid request origin");
+    }
+    if (parsed.origin !== requestUrl.origin) {
+      throw new Error("callback_url origin must match request origin");
+    }
+  }
+
+  const isLocalhost = ["localhost", "127.0.0.1"].includes(parsed.hostname);
+  if (parsed.protocol !== "https:" && !isLocalhost) {
+    throw new Error("callback_url must use https");
+  }
+
+  return parsed.toString();
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -74,9 +112,15 @@ serve(async (req) => {
   const currency = (body.currency ?? "KES").toUpperCase();
   const creatorRef = creatorId ? creatorId.slice(0, 8) : "wallet";
   const reference = `pay_${userId.slice(0, 8)}_${creatorRef}_${Date.now()}`;
-  const callback_url =
-    Deno.env.get("PAYSTACK_CALLBACK_URL") ??
-    new URL("/paystack/callback", req.url).toString();
+  let callback_url: string;
+  try {
+    callback_url = resolveCallbackUrl(req, body.callback_url ?? null);
+  } catch (error) {
+    return jsonWithCors(
+      { error: error instanceof Error ? error.message : "Invalid callback_url" },
+      400,
+    );
+  }
 
   const payload = {
     email: body.email,

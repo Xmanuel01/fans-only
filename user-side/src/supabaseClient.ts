@@ -35,6 +35,81 @@ const isMissingRpcError = (error: unknown, functionName: string) => {
   )
 }
 
+async function describeFunctionInvokeError(error: unknown, fallback: string): Promise<string> {
+  if (!error || typeof error !== 'object') {
+    return fallback
+  }
+
+  const candidate = error as {
+    message?: string
+    details?: string
+    context?: {
+      json?: () => Promise<unknown>
+      text?: () => Promise<string>
+      status?: number
+      statusText?: string
+      clone?: () => {
+        json?: () => Promise<unknown>
+        text?: () => Promise<string>
+        status?: number
+        statusText?: string
+      }
+    }
+  }
+
+  const response = candidate.context?.clone?.() ?? candidate.context
+  if (response?.json) {
+    try {
+      const payload = await response.json()
+      if (payload && typeof payload === 'object') {
+        const body = payload as { error?: unknown; details?: unknown; message?: unknown }
+        const directMessage =
+          typeof body.error === 'string'
+            ? body.error
+            : typeof body.message === 'string'
+              ? body.message
+              : null
+        if (directMessage) {
+          return directMessage
+        }
+        if (typeof body.details === 'string' && body.details.trim()) {
+          return body.details
+        }
+      }
+    } catch {
+      // ignore invalid JSON payloads and fall through to text/message handling
+    }
+  }
+
+  if (response?.text) {
+    try {
+      const text = await response.text()
+      if (text.trim()) {
+        return text.trim()
+      }
+    } catch {
+      // ignore response body read failures
+    }
+  }
+
+  if (typeof candidate.details === 'string' && candidate.details.trim()) {
+    return candidate.details
+  }
+
+  if (typeof candidate.message === 'string' && candidate.message.trim()) {
+    const rawMessage = candidate.message.trim()
+    return rawMessage === 'Failed to send a request to the Edge Function'
+      ? 'Could not reach the payment service'
+      : rawMessage
+  }
+
+  if (response?.status && response?.statusText) {
+    return `${fallback} (${response.status} ${response.statusText})`
+  }
+
+  return fallback
+}
+
 export type CreatorProfile = {
   id: string
   handle: string
@@ -436,6 +511,7 @@ export async function initiatePaystackPayment({
   type = 'tip',
   metadata = {},
   channels,
+  callbackUrl,
 }: {
   email: string
   creatorId?: string
@@ -445,6 +521,7 @@ export async function initiatePaystackPayment({
   type?: 'tip' | 'subscription' | 'wallet_topup' | 'ppv'
   metadata?: Record<string, unknown>
   channels?: string[]
+  callbackUrl?: string
 }) {
   if (!supabase) throw new Error('Supabase not configured')
   const { data, error } = await supabase.functions.invoke('paystack-init', {
@@ -457,9 +534,12 @@ export async function initiatePaystackPayment({
       type,
       metadata,
       channels,
+      callback_url: callbackUrl,
     },
   })
-  if (error) throw error
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not start checkout'))
+  }
   return data as { authorization_url?: string; reference?: string }
 }
 
