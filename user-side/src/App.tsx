@@ -979,8 +979,12 @@ function ChatsPage() {
     <div className="chats-page">
       <aside className="chat-list">
         <div className="chat-header">
-          <h2>Chats</h2>
+          <div className="chat-header-copy">
+            <h2>Chats</h2>
+            <p>Direct messages with creators you support</p>
+          </div>
           <div className="chat-actions">
+            <div className="chat-count">{threads.length}</div>
             <button
               className="chat-action-btn"
               type="button"
@@ -996,19 +1000,26 @@ function ChatsPage() {
           <FiSearch size={16} />
           <input
             type="search"
-            placeholder="Search chats"
+            placeholder="Search creators or messages"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
           />
         </div>
 
         <div className="chat-intro">
-          Direct messages are available with creators you actively support.
+          <div className="chat-intro-title">Inbox access</div>
+          <div>
+            Direct messages are available with creators you actively support.
+            {chatableCreators.length ? ` ${chatableCreators.length} creator${chatableCreators.length === 1 ? '' : 's'} available to message.` : ''}
+          </div>
         </div>
 
         {showComposer ? (
           <div className="chat-starters">
-            <div className="chat-starters-title">Start a new chat</div>
+            <div className="chat-starters-title">
+              Start a new chat
+              <span>{starterCreators.length}</span>
+            </div>
             {starterCreators.length ? (
               starterCreators.map((creator) => (
                 <button
@@ -1062,11 +1073,18 @@ function ChatsPage() {
                     {thread.last_message_preview ?? 'Start the conversation'}
                   </div>
                 </div>
-                {thread.unread_count > 0 ? <span className="chat-dot" /> : null}
+                {thread.unread_count > 0 ? (
+                  <span className="chat-dot">{Math.min(thread.unread_count, 99)}</span>
+                ) : null}
               </button>
             ))
           ) : (
-            <div className="muted">No direct messages yet.</div>
+            <div className="chat-list-empty">
+              <div className="chat-list-empty__title">No direct messages yet</div>
+              <div className="chat-list-empty__copy">
+                Start a new chat from your subscribed creators when you are ready.
+              </div>
+            </div>
           )}
         </div>
       </aside>
@@ -1119,7 +1137,10 @@ function ChatsPage() {
                 ))
               ) : (
                 <div className="chat-empty-state">
-                  Send the first message to start this conversation.
+                  <div className="chat-empty-state__title">Say hello</div>
+                  <div className="chat-empty-state__copy">
+                    Send the first message to start this conversation.
+                  </div>
                 </div>
               )}
               <div ref={threadEndRef} />
@@ -1145,11 +1166,16 @@ function ChatsPage() {
           </>
         ) : (
           <div className="chat-guidelines">
-            <h3>No chat selected</h3>
-            <p>
-              Choose an existing conversation or start a new direct message with a creator you are
-              actively subscribed to.
-            </p>
+            <div className="chat-guidelines-card">
+              <div className="chat-guidelines-icon">
+                <FiMessageCircle size={26} />
+              </div>
+              <h3>No chat selected</h3>
+              <p>
+                Choose an existing conversation or start a new direct message with a creator you are
+                actively subscribed to.
+              </p>
+            </div>
           </div>
         )}
         {error ? <div className="chat-error">{error}</div> : null}
