@@ -1470,6 +1470,15 @@ const settingsTabs = [
   'More',
 ]
 
+const settingsTabDescriptions: Record<string, string> = {
+  Basics: 'Profile identity, email details, and location.',
+  Account: 'Security, login methods, and connected account preferences.',
+  'Email notifications': 'Choose which alerts reach you in-app, email, and SMS.',
+  Memberships: 'Track active creator support and recurring subscriptions.',
+  'Billing history': 'Review wallet funds and prepare payment activity.',
+  More: 'Manage payment methods, connected apps, and compliance links.',
+}
+
 function SettingsTabs({ active, onChange }: { active: string; onChange: (t: string) => void }) {
   return (
     <div className="settings-tabs">
@@ -1478,8 +1487,10 @@ function SettingsTabs({ active, onChange }: { active: string; onChange: (t: stri
           key={t}
           className={`settings-tab ${active === t ? 'active' : ''}`}
           onClick={() => onChange(t)}
+          type="button"
         >
-          {t}
+          <span className="settings-tab-label">{t}</span>
+          {active === t ? <span className="settings-tab-dot" /> : null}
         </button>
       ))}
       <div className="settings-more-caret">
@@ -1506,32 +1517,66 @@ function BasicsCard({ session, userProfile }: { session: any; userProfile: UserP
     'Fan'
   const email = session.user.email ?? ''
   const avatar = session.user.user_metadata?.avatar_url ?? assetUrl('logo.png')
+  const joinDate = session.user.created_at
+    ? new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric' }).format(
+        new Date(session.user.created_at)
+      )
+    : 'Recently'
 
   return (
     <div className="settings-card">
-      <div className="profile-avatar">
-        <img src={avatar} alt={displayName || 'Profile'} />
-        <div className="lock-pill mini">
-          <FiLock size={12} />
+      <div className="settings-profile-hero">
+        <div className="profile-avatar">
+          <img src={avatar} alt={displayName || 'Profile'} />
+          <div className="lock-pill mini">
+            <FiLock size={12} />
+          </div>
+        </div>
+        <div className="settings-profile-copy">
+          <div className="settings-card-kicker">Profile overview</div>
+          <div className="settings-profile-name">{displayName}</div>
+          <div className="settings-profile-meta">
+            <span>@{userProfile?.username || 'username pending'}</span>
+            <span>{email}</span>
+          </div>
+          <div className="settings-profile-pills">
+            <span className="pill ghost">Private account controls</span>
+            <span className="pill ghost">Member since {joinDate}</span>
+          </div>
         </div>
       </div>
-      <label className="input-label">Display name</label>
-      <input className="text-input" value={displayName} placeholder="Your name" readOnly />
-      <label className="input-label">Username</label>
-      <input
-        className="text-input"
-        value={userProfile?.username ?? ''}
-        placeholder="Not set"
-        readOnly
-      />
-      <label className="input-label">Email</label>
-      <input className="text-input" value={email} placeholder="you@example.com" readOnly />
-      <label className="input-label">Country of Residence</label>
-      <div className="select-input">
-        <span>Select your country...</span>
-        <FiChevronDown />
+      <div className="settings-form-grid">
+        <div className="settings-field">
+          <label className="input-label">Display name</label>
+          <input className="text-input" value={displayName} placeholder="Your name" readOnly />
+        </div>
+        <div className="settings-field">
+          <label className="input-label">Username</label>
+          <input
+            className="text-input"
+            value={userProfile?.username ?? ''}
+            placeholder="Not set"
+            readOnly
+          />
+        </div>
+        <div className="settings-field settings-field--full">
+          <label className="input-label">Email</label>
+          <input className="text-input" value={email} placeholder="you@example.com" readOnly />
+        </div>
+        <div className="settings-field settings-field--full">
+          <label className="input-label">Country of Residence</label>
+          <div className="select-input">
+            <span>Select your country...</span>
+            <FiChevronDown />
+          </div>
+        </div>
       </div>
-      <button className="primary-btn">Save</button>
+      <div className="settings-card-footer">
+        <div className="muted small">Public profile changes are controlled from verified account data.</div>
+        <button className="primary-btn" type="button">
+          Save
+        </button>
+      </div>
     </div>
   )
 }
@@ -1935,67 +1980,91 @@ function SettingsPage({
     setLocalTab(t)
     onTabChange(t)
   }
+  const activeDescription = settingsTabDescriptions[localTab] ?? 'Manage your account preferences.'
+
   return (
     <div className="settings-page">
-      <h2>Settings</h2>
-      <SettingsTabs active={localTab} onChange={changeTab} />
-      {localTab === 'Basics' && <BasicsCard session={session} userProfile={userProfile} />}
-      {localTab === 'Account' && <AccountCard session={session} />}
-      {localTab === 'Email notifications' && <EmailNotificationsCard />}
-      {localTab === 'Memberships' && (
-        <MembershipsCard history={subscriptionHistory} onOpenCreator={onOpenCreator} />
-      )}
-      {localTab === 'Billing history' && (
-        <BillingHistoryCard
-          walletBalance={walletBalance}
-          walletTopupAmount={walletTopupAmount}
-          walletTopupPhone={walletTopupPhone}
-          onTopupAmountChange={onTopupAmountChange}
-          onTopupPhoneChange={onTopupPhoneChange}
-          onTopup={onTopup}
-        />
-      )}
-      {localTab === 'More' && (
-        <div className="settings-stack">
-          <div className="settings-card" ref={paymentRef}>
-            <div className="card-title">Payment methods</div>
-            <button className="pill ghost" onClick={onPaymentClick}>
-              Add Payment Method
-            </button>
-            <div className="muted small">You do not currently have any payment methods.</div>
+      <div className="settings-hero">
+        <div>
+          <div className="settings-eyebrow">Fan account</div>
+          <h2>Settings</h2>
+          <p className="settings-subtitle">{activeDescription}</p>
+        </div>
+        <div className="settings-hero-metrics">
+          <div className="settings-metric">
+            <span className="settings-metric-label">Wallet</span>
+            <strong>{formatKsh(walletBalance?.available_amount_minor ?? 0)}</strong>
           </div>
-          <div className="settings-card" ref={connectedRef}>
-            <div className="card-title">Connected apps</div>
-            {['Discord', 'Vimeo', 'Spotify'].map((app) => (
-              <div key={app} className="connect-row">
-                <div>
-                  <div className="name">{app}</div>
-                  <div className="muted">Connect to {app} for extra perks.</div>
-                </div>
-                <button className="pill light" onClick={() => onConnectClick(app)}>
-                  Connect
-                </button>
-              </div>
-            ))}
+          <div className="settings-metric">
+            <span className="settings-metric-label">Memberships</span>
+            <strong>{subscriptionHistory.length}</strong>
           </div>
-          <div className="settings-card">
-            <div className="card-title">Blocked users</div>
-            <div className="muted">You haven't blocked any users.</div>
-          </div>
-          <div className="settings-card">
-            <div className="card-title">Policies & Compliance</div>
-            <div className="footer-links">
-              <a href={assetUrl('pages/terms.html')}>Terms</a>
-              <a href={assetUrl('pages/privacy.html')}>Privacy</a>
-              <a href={assetUrl('pages/cookies.html')}>Cookies</a>
-              <a href={assetUrl('pages/dmca.html')}>DMCA</a>
-              <a href={assetUrl('pages/acceptable-use-policy.html')}>Acceptable Use</a>
-              <a href={assetUrl('pages/usc2257.html')}>2257</a>
-            </div>
-            <div className="footer-note">Age verification required. Adults 18+ only.</div>
+          <div className="settings-metric">
+            <span className="settings-metric-label">Active tab</span>
+            <strong>{localTab}</strong>
           </div>
         </div>
-      )}
+      </div>
+      <SettingsTabs active={localTab} onChange={changeTab} />
+      <div className="settings-panel">
+        {localTab === 'Basics' && <BasicsCard session={session} userProfile={userProfile} />}
+        {localTab === 'Account' && <AccountCard session={session} />}
+        {localTab === 'Email notifications' && <EmailNotificationsCard />}
+        {localTab === 'Memberships' && (
+          <MembershipsCard history={subscriptionHistory} onOpenCreator={onOpenCreator} />
+        )}
+        {localTab === 'Billing history' && (
+          <BillingHistoryCard
+            walletBalance={walletBalance}
+            walletTopupAmount={walletTopupAmount}
+            walletTopupPhone={walletTopupPhone}
+            onTopupAmountChange={onTopupAmountChange}
+            onTopupPhoneChange={onTopupPhoneChange}
+            onTopup={onTopup}
+          />
+        )}
+        {localTab === 'More' && (
+          <div className="settings-stack">
+            <div className="settings-card" ref={paymentRef}>
+              <div className="card-title">Payment methods</div>
+              <button className="pill ghost" onClick={onPaymentClick}>
+                Add Payment Method
+              </button>
+              <div className="muted small">You do not currently have any payment methods.</div>
+            </div>
+            <div className="settings-card" ref={connectedRef}>
+              <div className="card-title">Connected apps</div>
+              {['Discord', 'Vimeo', 'Spotify'].map((app) => (
+                <div key={app} className="connect-row">
+                  <div>
+                    <div className="name">{app}</div>
+                    <div className="muted">Connect to {app} for extra perks.</div>
+                  </div>
+                  <button className="pill light" onClick={() => onConnectClick(app)}>
+                    Connect
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="settings-card">
+              <div className="card-title">Blocked users</div>
+              <div className="muted">You haven't blocked any users.</div>
+            </div>
+            <div className="settings-card">
+              <div className="card-title">Policies & Compliance</div>
+              <div className="footer-links">
+                <a href={assetUrl('pages/terms.html')}>Terms</a>
+                <a href={assetUrl('pages/privacy.html')}>Privacy</a>
+                <a href={assetUrl('pages/cookies.html')}>Cookies</a>
+                <a href={assetUrl('pages/dmca.html')}>DMCA</a>
+                <a href={assetUrl('pages/acceptable-use-policy.html')}>Acceptable Use</a>
+                <a href={assetUrl('pages/usc2257.html')}>2257</a>
+              </div>
+              <div className="footer-note">Age verification required. Adults 18+ only.</div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
