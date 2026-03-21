@@ -69,9 +69,6 @@ import {
 import { useMemo } from 'react'
 import { env, envStatus, isSupabaseConfigured } from './env'
 
-const CREATOR_APP_URL = env.creatorAppUrl
-const isExternalUrl = (value: string | null) => Boolean(value && /^https?:\/\//i.test(value))
-const CREATOR_APP_EXTERNAL = isExternalUrl(CREATOR_APP_URL)
 const HELP_CENTER_URL = env.helpCenterUrl
 const RELEASE_NOTES_URL = env.releaseNotesUrl
 const SUPPORT_EMAIL = env.supportEmail
