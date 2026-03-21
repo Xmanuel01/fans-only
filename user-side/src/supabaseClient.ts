@@ -25,6 +25,16 @@ const resolveAuthRedirectOrigin = () => {
 const appRedirectUrl = () =>
   new URL(import.meta.env.BASE_URL ?? '/', resolveAuthRedirectOrigin()).toString()
 
+const isMissingRpcError = (error: unknown, functionName: string) => {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { code?: string; message?: string }
+  return (
+    candidate.code === 'PGRST202' &&
+    typeof candidate.message === 'string' &&
+    candidate.message.includes(functionName)
+  )
+}
+
 export type CreatorProfile = {
   id: string
   handle: string
@@ -1039,7 +1049,13 @@ export async function fetchChatMessages(
 export async function fetchChatableCreators(): Promise<ChatableCreator[]> {
   if (!supabase) return []
   const { data, error } = await supabase.rpc('get_chatable_creators')
-  if (error) throw error
+  if (error) {
+    if (isMissingRpcError(error, 'get_chatable_creators')) {
+      console.warn('Chat creators RPC is unavailable. Apply direct message migrations.', error)
+      return []
+    }
+    throw error
+  }
   return (data ?? []) as ChatableCreator[]
 }
 
