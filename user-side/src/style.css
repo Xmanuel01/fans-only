@@ -116,12 +116,33 @@ body {
   margin-top: 18px;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .section-title {
   color: #7f7f7f;
   text-transform: uppercase;
   font-size: 11px;
   margin: 0 0 8px;
   letter-spacing: 0.08em;
+}
+
+.section-link {
+  border: none;
+  background: transparent;
+  color: #9cb8e5;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.section-link:hover {
+  color: #c5d8f4;
 }
 
 .pill {
@@ -159,6 +180,23 @@ body {
   height: 28px;
   border-radius: 8px;
   object-fit: cover;
+}
+
+.sidebar-empty-action {
+  width: 100%;
+  text-align: left;
+  border: 1px dashed #263242;
+  background: #10151d;
+  color: #b7c7dc;
+  border-radius: 12px;
+  padding: 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.sidebar-empty-action:hover {
+  border-color: #35507a;
+  color: #e7eef9;
 }
 
 .creator-cta {

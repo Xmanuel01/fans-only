@@ -3999,9 +3999,14 @@ export default function App() {
       handleOpenCreatorPage(matched.creator)
       return
     }
+    openMembershipsPage(`Opening ${name}`)
+  }
+
+  const openMembershipsPage = (message = 'Opening memberships') => {
+    if (!isAuthed) return setToast('Sign in to view memberships')
     setPage('membership')
     setMembershipTab('Membership')
-    setToast(`Opening ${name}`)
+    setToast(message)
   }
 
   const handleOpenTopicFeed = (topic: string) => {
@@ -4141,7 +4146,12 @@ export default function App() {
         </nav>
 
         <div className="section">
-          <p className="section-title">Memberships</p>
+          <div className="section-header">
+            <p className="section-title">Memberships</p>
+            <button className="section-link" type="button" onClick={() => openMembershipsPage()}>
+              Open
+            </button>
+          </div>
           <div className="divider" />
           {sidebarMemberships.length ? (
             sidebarMemberships.map((m) => (
@@ -4155,7 +4165,13 @@ export default function App() {
               </div>
             ))
           ) : (
-            <div className="muted small">No memberships yet.</div>
+            <button
+              className="sidebar-empty-action"
+              type="button"
+              onClick={() => openMembershipsPage('Open memberships to track your creator support')}
+            >
+              No memberships yet.
+            </button>
           )}
         </div>
 
