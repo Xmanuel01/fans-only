@@ -59,6 +59,7 @@ import {
   type ChatThreadSummary,
   type ChatableCreator,
   type CreatorCard,
+  type ExploreSort,
   type SubscriptionHistoryItem,
   type NotificationPreferences,
   type UserProfile,
@@ -402,6 +403,13 @@ const filters = [
   'POV content',
 ]
 
+const exploreSortOptions: { value: ExploreSort; label: string }[] = [
+  { value: 'recommended', label: 'Recommended' },
+  { value: 'name', label: 'Name A-Z' },
+  { value: 'price_asc', label: 'Price low-high' },
+  { value: 'price_desc', label: 'Price high-low' },
+]
+
 const topics = [
   { label: 'Anime & cosplay', color: ['#6a11cb', '#2575fc'], icon: 'AC' },
   { label: 'Gamer girl', color: ['#1f4037', '#99f2c8'], icon: 'GG' },
@@ -566,6 +574,7 @@ function PillRow({ active, onSelect }: { active: string; onSelect: (value: strin
           key={f}
           className={`chip ${active === f ? 'active' : ''}`}
           onClick={() => onSelect(f)}
+          type="button"
         >
           {f}
         </button>
@@ -676,33 +685,116 @@ function ExplorePage({
 }) {
   const [recommendedCreators, setRecommendedCreators] = useState<CreatorCard[]>([])
   const [recommendedLoading, setRecommendedLoading] = useState(true)
+  const [recommendedError, setRecommendedError] = useState<string | null>(null)
+  const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const [sortBy, setSortBy] = useState<ExploreSort>('recommended')
   const subscriptionSet = new Set(activeSubscriptions)
+  const activeCategory = filter !== 'All' ? filter : null
+  const exploreHeading = searchTerm || activeCategory ? 'Matching creators' : 'Popular this week'
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setSearchTerm(searchInput.trim())
+    }, 220)
+
+    return () => window.clearTimeout(timeout)
+  }, [searchInput])
+
+  useEffect(() => {
+    let isCurrent = true
     setRecommendedLoading(true)
+    setRecommendedError(null)
     ;(async () => {
-      const data = await fetchRecommendedCreators({
-        searchTerm,
-        category: filter,
-        limit: 12,
-      })
-      setRecommendedCreators(data)
-      setRecommendedLoading(false)
+      try {
+        const data = await fetchRecommendedCreators({
+          searchTerm,
+          category: filter,
+          sortBy,
+          limit: 12,
+        })
+        if (!isCurrent) return
+        setRecommendedCreators(data)
+      } catch (err) {
+        console.error(err)
+        if (!isCurrent) return
+        setRecommendedCreators([])
+        setRecommendedError('Could not load creators right now.')
+      } finally {
+        if (isCurrent) {
+          setRecommendedLoading(false)
+        }
+      }
     })()
-  }, [searchTerm, filter])
+
+    return () => {
+      isCurrent = false
+    }
+  }, [searchTerm, filter, sortBy])
+
+  const searchSummary = useMemo(() => {
+    const parts = []
+    if (searchTerm) {
+      parts.push(`"${searchTerm}"`)
+    }
+    if (activeCategory) {
+      parts.push(activeCategory)
+    }
+    return parts.join(' in ')
+  }, [activeCategory, searchTerm])
+
   return (
     <div className="explore">
-      <div className="search-bar">
-        <FiSearch size={18} />
-        <input
-          placeholder="Search creators or topics"
-          value={searchTerm}
-          onChange={(event) => setSearchTerm(event.target.value)}
-        />
+      <div className="explore-toolbar">
+        <div className="search-bar">
+          <FiSearch size={18} />
+          <input
+            placeholder="Search creators or topics"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+          />
+          {searchInput ? (
+            <button className="search-clear" type="button" onClick={() => setSearchInput('')}>
+              Clear
+            </button>
+          ) : null}
+        </div>
+        <label className="explore-sort">
+          <span>Sort by</span>
+          <select value={sortBy} onChange={(event) => setSortBy(event.target.value as ExploreSort)}>
+            {exploreSortOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <PillRow active={filter} onSelect={onSelectFilter} />
+
+      <div className="explore-meta">
+        <div className="muted">
+          {recommendedLoading
+            ? 'Refreshing recommendations...'
+            : `${recommendedCreators.length} creator${recommendedCreators.length === 1 ? '' : 's'} found`}
+          {searchSummary ? ` for ${searchSummary}` : ''}
+        </div>
+        {(searchTerm || activeCategory || sortBy !== 'recommended') && (
+          <button
+            className="pill ghost"
+            type="button"
+            onClick={() => {
+              setSearchInput('')
+              setSearchTerm('')
+              setSortBy('recommended')
+              onSelectFilter('All')
+            }}
+          >
+            Reset explore
+          </button>
+        )}
+      </div>
 
       <div className="recent-row">
         <h3>Recently visited</h3>
@@ -727,13 +819,21 @@ function ExplorePage({
         </ExploreSection>
       ) : null}
 
-      <ExploreSection title="Popular this week">
+      <ExploreSection title={exploreHeading}>
         <div className="list-grid">
           {recommendedLoading && <p className="muted">Loading top creators...</p>}
-          {!recommendedLoading && !recommendedCreators.length && (
-            <p className="muted">No popular creators yet.</p>
+          {!recommendedLoading && recommendedError && (
+            <div className="explore-status explore-status--error">{recommendedError}</div>
+          )}
+          {!recommendedLoading && !recommendedError && !recommendedCreators.length && (
+            <div className="explore-status">
+              {searchSummary
+                ? `No creators matched ${searchSummary}.`
+                : 'No popular creators are available right now.'}
+            </div>
           )}
           {!recommendedLoading &&
+            !recommendedError &&
             recommendedCreators.map((c) => (
               <SquareCard
                 key={c.id}

@@ -159,6 +159,8 @@ export type CreatorCard = {
   score?: number | null
 }
 
+export type ExploreSort = 'recommended' | 'name' | 'price_asc' | 'price_desc'
+
 export type SubscriptionHistoryItem = {
   payment_id: number
   creator: CreatorCard
@@ -561,19 +563,22 @@ export async function initiateMpesaStkPush({
 export async function fetchRecommendedCreators({
   searchTerm,
   category,
+  sortBy = 'recommended',
   limit = 12,
 }: {
   searchTerm?: string
   category?: string
+  sortBy?: ExploreSort
   limit?: number
 } = {}): Promise<CreatorCard[]> {
   if (!supabase) return []
   const normalizedSearch = searchTerm?.trim().toLowerCase() ?? ''
   const activeCategory = category && category !== 'All' ? category : null
+  const fetchLimit = Math.max(limit * 8, 120)
   const { data, error } = await supabase.rpc('get_recommended_creators', {
     search_term: searchTerm?.trim() || null,
     category: activeCategory,
-    limit_count: limit,
+    limit_count: fetchLimit,
   })
 
   if (error) {
@@ -582,44 +587,102 @@ export async function fetchRecommendedCreators({
 
   let creators = data?.map((creator: any) => mapCreatorCard(creator)) ?? []
 
-  if (activeCategory) {
+  if (error || normalizedSearch || activeCategory || sortBy !== 'recommended') {
     const directSelect =
       'id, handle, display_name, avatar_url, category, categories, popularity_score, subscription_price_cents, subscription_currency'
-    const [{ data: directPrimary, error: primaryError }, { data: directSecondary, error: secondaryError }] =
-      await Promise.all([
+    const directQueries = [
+      supabase
+        .from('creators')
+        .select(directSelect)
+        .order('popularity_score', { ascending: false, nullsFirst: false })
+        .limit(fetchLimit),
+    ]
+
+    if (activeCategory) {
+      directQueries.push(
         supabase
           .from('creators')
           .select(directSelect)
           .eq('category', activeCategory)
-          .order('popularity_score', { ascending: false })
-          .limit(limit),
+          .order('popularity_score', { ascending: false, nullsFirst: false })
+          .limit(fetchLimit),
         supabase
           .from('creators')
           .select(directSelect)
           .contains('categories', [activeCategory])
-          .order('popularity_score', { ascending: false })
-          .limit(limit),
-      ])
-
-    if (primaryError) {
-      console.warn('Supabase primary creator category fetch failed', primaryError)
-    }
-    if (secondaryError) {
-      console.warn('Supabase secondary creator category fetch failed', secondaryError)
+          .order('popularity_score', { ascending: false, nullsFirst: false })
+          .limit(fetchLimit)
+      )
     }
 
-    creators = mergeCreatorCards(creators, [
-      ...(directPrimary?.map((creator: any) => mapCreatorCard(creator)) ?? []),
-      ...(directSecondary?.map((creator: any) => mapCreatorCard(creator)) ?? []),
-    ])
-  }
+    const directResults = await Promise.all(directQueries)
+    const mergedDirectCreators: CreatorCard[] = []
 
-  if (normalizedSearch) {
-    creators = creators.filter((creator: CreatorCard) => {
-      const haystacks = [creator.handle, creator.display_name]
-      return haystacks.some((value: string) => value.toLowerCase().includes(normalizedSearch))
+    directResults.forEach(({ data: directData, error: directError }, index) => {
+      if (directError) {
+        console.warn(`Supabase direct creator fetch ${index + 1} failed`, directError)
+        return
+      }
+      mergedDirectCreators.push(
+        ...(directData?.map((creator: any) => mapCreatorCard(creator)) ?? [])
+      )
     })
+
+    creators = mergeCreatorCards(creators, mergedDirectCreators)
   }
+
+  creators = creators.filter((creator: CreatorCard) => {
+    const matchesCategory = activeCategory
+      ? creator.category === activeCategory || Boolean(creator.categories?.includes(activeCategory))
+      : true
+
+    if (!matchesCategory) {
+      return false
+    }
+
+    if (!normalizedSearch) {
+      return true
+    }
+
+    const haystacks = [
+      creator.handle,
+      creator.display_name,
+      creator.category,
+      ...(creator.categories ?? []),
+    ]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => value.toLowerCase())
+
+    return haystacks.some((value) => value.includes(normalizedSearch))
+  })
+
+  creators.sort((left: CreatorCard, right: CreatorCard) => {
+    if (sortBy === 'name') {
+      return left.display_name.localeCompare(right.display_name, undefined, { sensitivity: 'base' })
+    }
+
+    if (sortBy === 'price_asc' || sortBy === 'price_desc') {
+      const leftPrice = left.subscription_price_cents ?? 0
+      const rightPrice = right.subscription_price_cents ?? 0
+      if (leftPrice !== rightPrice) {
+        return sortBy === 'price_asc' ? leftPrice - rightPrice : rightPrice - leftPrice
+      }
+    }
+
+    const leftScore = left.score ?? left.popularity_score ?? 0
+    const rightScore = right.score ?? right.popularity_score ?? 0
+    if (leftScore !== rightScore) {
+      return rightScore - leftScore
+    }
+
+    const leftPopularity = left.popularity_score ?? 0
+    const rightPopularity = right.popularity_score ?? 0
+    if (leftPopularity !== rightPopularity) {
+      return rightPopularity - leftPopularity
+    }
+
+    return left.display_name.localeCompare(right.display_name, undefined, { sensitivity: 'base' })
+  })
 
   return creators.slice(0, limit)
 }
