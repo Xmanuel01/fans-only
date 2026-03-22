@@ -387,22 +387,6 @@ const visited = USE_SAMPLE_DATA
     ]
   : []
 
-const filters = [
-  'All',
-  'Anime & cosplay',
-  'Gamer girl',
-  'Gym baddie',
-  'Soft girlfriend aesthetic',
-  'Luxury / high-class muse',
-  'Beach babe',
-  'Yoga/stretch goddess',
-  'Shy innocent',
-  'AI influencer',
-  'ASMR',
-  'Girlfriend Experience',
-  'POV content',
-]
-
 const exploreSortOptions: { value: ExploreSort; label: string }[] = [
   { value: 'recommended', label: 'Recommended' },
   { value: 'name', label: 'Name A-Z' },
@@ -424,6 +408,8 @@ const topics = [
   { label: 'Girlfriend Experience', color: ['#ff7e5f', '#feb47b'], icon: 'GFE' },
   { label: 'POV content', color: ['#654ea3', '#eaafc8'], icon: 'POV' },
 ]
+
+const filters = ['All', ...topics.map((topic) => topic.label)]
 
 const exploreCreators = USE_SAMPLE_DATA
   ? [
@@ -568,13 +554,14 @@ const topCreatorsBlocks = USE_SAMPLE_DATA
 
 function PillRow({ active, onSelect }: { active: string; onSelect: (value: string) => void }) {
   return (
-    <div className="pill-row">
+    <div className="pill-row" role="toolbar" aria-label="Explore creator categories">
       {filters.map((f) => (
         <button
           key={f}
           className={`chip ${active === f ? 'active' : ''}`}
           onClick={() => onSelect(f)}
           type="button"
+          aria-pressed={active === f}
         >
           {f}
         </button>
@@ -611,10 +598,17 @@ function SquareCard({
 }) {
   return (
     <div className="square-card">
-      <img src={img} alt={name} />
-      <div className="card-name">{name}</div>
-      <div className="card-tag">{tag}</div>
-      {priceLabel ? <div className="card-tag">{priceLabel}</div> : null}
+      <div className="square-card__media">
+        <img src={img} alt={name} />
+        <div className="square-card__badge">{tag}</div>
+      </div>
+      <div className="square-card__body">
+        <div className="square-card__head">
+          <div className="card-name">{name}</div>
+          {priceLabel ? <div className="square-card__price">{priceLabel}</div> : null}
+        </div>
+        <div className="card-tag">{tag}</div>
+      </div>
       {onSubscribe ? (
         <button
           className="pill light full"
@@ -644,7 +638,13 @@ function ExploreSection({ title, children }: { title: string; children: React.Re
   )
 }
 
-function TopicsGrid({ onOpenTopic }: { onOpenTopic: (value: string) => void }) {
+function TopicsGrid({
+  activeTopic,
+  onOpenTopic,
+}: {
+  activeTopic: string | null
+  onOpenTopic: (value: string) => void
+}) {
   return (
     <section className="topics">
       <div className="section-heading">
@@ -654,10 +654,11 @@ function TopicsGrid({ onOpenTopic }: { onOpenTopic: (value: string) => void }) {
         {topics.map((t) => (
           <button
             key={t.label}
-            className="topic-tile"
+            className={`topic-tile ${activeTopic === t.label ? 'active' : ''}`}
             style={{ background: `linear-gradient(135deg, ${t.color[0]}, ${t.color[1]})` }}
             onClick={() => onOpenTopic(t.label)}
             type="button"
+            aria-pressed={activeTopic === t.label}
           >
             <span>{t.label}</span>
             <div className="topic-icon">{t.icon}</div>
@@ -692,6 +693,7 @@ function ExplorePage({
   const subscriptionSet = new Set(activeSubscriptions)
   const activeCategory = filter !== 'All' ? filter : null
   const exploreHeading = searchTerm || activeCategory ? 'Matching creators' : 'Popular this week'
+  const activeTopic = activeCategory
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -745,66 +747,96 @@ function ExplorePage({
 
   return (
     <div className="explore">
-      <div className="explore-toolbar">
-        <div className="search-bar">
-          <FiSearch size={18} />
-          <input
-            placeholder="Search creators or topics"
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-          />
-          {searchInput ? (
-            <button className="search-clear" type="button" onClick={() => setSearchInput('')}>
-              Clear
+      <section className="explore-hero">
+        <div className="explore-hero__copy">
+          <div className="explore-eyebrow">Discover creators</div>
+          <h2>Explore</h2>
+          <p>
+            Search by niche, refine the feed, and find creators worth subscribing to without
+            losing context.
+          </p>
+        </div>
+        <div className="explore-hero__stats">
+          <div className="explore-stat">
+            <span className="explore-stat__label">Results</span>
+            <strong>{recommendedLoading ? '...' : recommendedCreators.length}</strong>
+          </div>
+          <div className="explore-stat">
+            <span className="explore-stat__label">Category</span>
+            <strong>{activeCategory ?? 'All'}</strong>
+          </div>
+          <div className="explore-stat">
+            <span className="explore-stat__label">Sort</span>
+            <strong>{exploreSortOptions.find((option) => option.value === sortBy)?.label}</strong>
+          </div>
+        </div>
+      </section>
+
+      <div className="explore-controls">
+        <div className="explore-toolbar">
+          <div className="search-bar">
+            <FiSearch size={18} />
+            <input
+              placeholder="Search creators or topics"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            {searchInput ? (
+              <button className="search-clear" type="button" onClick={() => setSearchInput('')}>
+                Clear
+              </button>
+            ) : null}
+          </div>
+          <label className="explore-sort">
+            <span>Sort by</span>
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as ExploreSort)}>
+              {exploreSortOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <PillRow active={filter} onSelect={onSelectFilter} />
+
+        <div className="explore-meta">
+          <div className="muted">
+            {recommendedLoading
+              ? 'Refreshing recommendations...'
+              : `${recommendedCreators.length} creator${recommendedCreators.length === 1 ? '' : 's'} found`}
+            {searchSummary ? ` for ${searchSummary}` : ''}
+          </div>
+          {(searchTerm || activeCategory || sortBy !== 'recommended') && (
+            <button
+              className="pill ghost"
+              type="button"
+              onClick={() => {
+                setSearchInput('')
+                setSearchTerm('')
+                setSortBy('recommended')
+                onSelectFilter('All')
+              }}
+            >
+              Reset explore
             </button>
-          ) : null}
+          )}
         </div>
-        <label className="explore-sort">
-          <span>Sort by</span>
-          <select value={sortBy} onChange={(event) => setSortBy(event.target.value as ExploreSort)}>
-            {exploreSortOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <PillRow active={filter} onSelect={onSelectFilter} />
-
-      <div className="explore-meta">
-        <div className="muted">
-          {recommendedLoading
-            ? 'Refreshing recommendations...'
-            : `${recommendedCreators.length} creator${recommendedCreators.length === 1 ? '' : 's'} found`}
-          {searchSummary ? ` for ${searchSummary}` : ''}
-        </div>
-        {(searchTerm || activeCategory || sortBy !== 'recommended') && (
-          <button
-            className="pill ghost"
-            type="button"
-            onClick={() => {
-              setSearchInput('')
-              setSearchTerm('')
-              setSortBy('recommended')
-              onSelectFilter('All')
-            }}
-          >
-            Reset explore
-          </button>
-        )}
       </div>
 
       <div className="recent-row">
-        <h3>Recently visited</h3>
+        <div className="recent-row__head">
+          <h3>Recently visited</h3>
+          <span className="recent-row__hint">Jump back into creators you opened before.</span>
+        </div>
         <div className="recent-chips">
           {visited.length ? (
             visited.map((v) => (
               <AvatarChip key={v.name} name={v.name} avatar={v.avatar} />
             ))
           ) : (
-            <div className="muted">No recent visits yet.</div>
+            <div className="explore-status">No recent visits yet.</div>
           )}
         </div>
       </div>
@@ -854,7 +886,7 @@ function ExplorePage({
         </div>
       </ExploreSection>
 
-      <TopicsGrid onOpenTopic={onOpenTopic} />
+      <TopicsGrid activeTopic={activeTopic} onOpenTopic={onOpenTopic} />
 
       {newOnChic.length ? (
         <ExploreSection title="New on SpicyX">
@@ -4152,6 +4184,7 @@ export default function App() {
 
   const handleClearHomeTopicFilter = () => {
     setHomeTopicFilter(null)
+    setFilter('All')
     setToast('Showing all creator content')
   }
 
