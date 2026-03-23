@@ -1,55 +1,84 @@
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { ArrowRight, Sparkles, TrendingUp, DollarSign } from "lucide-react";
+import { ArrowRight, BadgeDollarSign, LockKeyhole, WalletCards } from "lucide-react";
+
+const creatorPoints = [
+  {
+    icon: LockKeyhole,
+    title: "Control every access layer",
+    desc: "Use public, subscriber-only, and paid-unlock content without exposing premium drops for free.",
+  },
+  {
+    icon: BadgeDollarSign,
+    title: "Monetize in KES",
+    desc: "Run subscription and PPV logic around the same wallet and local payment rails used by your fans.",
+  },
+  {
+    icon: WalletCards,
+    title: "Stay payout-review ready",
+    desc: "Save a payout destination, pass manual ops review, and keep transfers aligned to a real launch workflow.",
+  },
+];
 
 const BecomeCreatorCTA = () => {
   return (
-    <section className="py-24 bg-card/50">
-      <div className="container mx-auto px-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="max-w-3xl mx-auto text-center"
-        >
-          <span className="inline-block mb-4 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium tracking-wider uppercase">
-            For Creators
-          </span>
-          <h2 className="text-3xl md:text-5xl font-display font-bold mb-6">
-            Turn Your Passion Into <span className="text-gradient-gold">Income</span>
-          </h2>
-          <p className="text-muted-foreground text-lg mb-10 max-w-xl mx-auto">
-            Build a direct subscription business, publish premium content, and manage your audience
-            on your own terms.
-          </p>
+    <section id="creator-launch" className="relative overflow-hidden border-t border-border/60 py-24">
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(191,149,62,0.12),transparent_26%),linear-gradient(180deg,#111522_0%,#0d1019_100%)]" />
+      <div className="container relative mx-auto px-4">
+        <div className="landing-cta-shell">
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-80px" }}
+            className="landing-cta-copy"
+          >
+            <span className="landing-kicker">Creator launch workflow</span>
+            <h2 className="mt-5 text-4xl font-display font-bold leading-tight text-foreground md:text-6xl">
+              Turn premium attention into recurring spend, direct unlocks, and controlled payouts.
+            </h2>
+            <p className="mt-5 max-w-2xl text-base leading-8 text-muted-foreground md:text-lg">
+              The live product is now positioned around a tighter adult-platform workflow: publish,
+              gate access, get paid in KES, and move revenue to reviewed payout rails.
+            </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12">
-            {[
-              { icon: DollarSign, title: "KES-ready payouts", desc: "Kenya-first payment and payout flow" },
-              { icon: TrendingUp, title: "Grow steadily", desc: "Built-in discovery and direct audience tools" },
-              { icon: Sparkles, title: "Full Freedom", desc: "SFW & NSFW welcome" },
-            ].map((item, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 15 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="glass-card rounded-xl p-6 text-center"
-              >
-                <item.icon className="h-8 w-8 text-primary mx-auto mb-3" />
-                <h3 className="font-display font-semibold mb-1">{item.title}</h3>
-                <p className="text-sm text-muted-foreground">{item.desc}</p>
-              </motion.div>
-            ))}
-          </div>
+            <div className="mt-10 grid gap-4 md:grid-cols-3">
+              {creatorPoints.map((point) => (
+                <div key={point.title} className="landing-cta-point">
+                  <point.icon className="h-5 w-5 text-primary" />
+                  <h3 className="mt-4 text-lg font-display font-semibold text-foreground">{point.title}</h3>
+                  <p className="mt-2 text-sm leading-7 text-muted-foreground">{point.desc}</p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
 
-          <Button variant="hero" size="lg" className="text-base px-8 py-6" asChild>
-            <a href="/creator/">
-              Start Creating Today <ArrowRight className="ml-2 h-5 w-5" />
-            </a>
-          </Button>
-        </motion.div>
+          <motion.div
+            initial={{ opacity: 0, x: 24 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true, margin: "-80px" }}
+            className="landing-cta-actions"
+          >
+            <div className="landing-cta-actions__panel">
+              <span className="landing-cta-actions__label">Live launch direction</span>
+              <div className="landing-cta-actions__headline">Kenya-first, KES-first, creator-first.</div>
+              <p className="landing-cta-actions__copy">
+                Start with the surfaces that can actually operate in production instead of exposing
+                unfinished routes.
+              </p>
+
+              <div className="mt-8 space-y-3">
+                <Button variant="hero" size="lg" className="w-full rounded-full py-6 text-base" asChild>
+                  <a href="/creator/">
+                    Become a Creator <ArrowRight className="h-5 w-5" />
+                  </a>
+                </Button>
+                <Button variant="hero-outline" size="lg" className="w-full rounded-full py-6 text-base" asChild>
+                  <a href="/user/">Explore Creators</a>
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
       </div>
     </section>
   );

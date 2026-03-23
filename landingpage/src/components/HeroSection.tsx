@@ -1,67 +1,88 @@
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import heroBg from "@/assets/hero-bg.jpg";
-import { ArrowRight, Shield, Star, Users } from "lucide-react";
+import { ArrowRight, BadgeDollarSign, LockKeyhole, MessageCircleMore, PlayCircle, ShieldCheck } from "lucide-react";
+
+const heroSignals = [
+  { icon: LockKeyhole, label: "Subscriber and PPV control" },
+  { icon: BadgeDollarSign, label: "KES-ready monetization" },
+  { icon: MessageCircleMore, label: "Direct premium fan access" },
+];
 
 const HeroSection = () => {
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-      <div
-        className="absolute inset-0 bg-cover bg-center opacity-40"
-        style={{ backgroundImage: `url(${heroBg})` }}
-      />
-      <div className="absolute inset-0 bg-gradient-dark opacity-70" />
+    <section id="why-spicyx" className="relative overflow-hidden pt-32">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(191,149,62,0.18),transparent_26%),radial-gradient(circle_at_82%_18%,rgba(191,149,62,0.08),transparent_24%),linear-gradient(180deg,#080a12_0%,#0a0d16_48%,#090c14_100%)]" />
+      <div className="absolute inset-y-0 left-0 w-[40vw] bg-[radial-gradient(circle_at_left,rgba(191,149,62,0.08),transparent_60%)]" />
 
-      <div className="relative z-10 container mx-auto px-4 text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="max-w-3xl mx-auto"
-        >
-          <span className="inline-block mb-4 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium tracking-wider uppercase">
-            The Premium Creator Platform
-          </span>
+      <div className="container relative mx-auto px-4 pb-24">
+        <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
+          <motion.div
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, ease: "easeOut" }}
+            className="max-w-2xl"
+          >
+            <span className="landing-kicker">Premium fan monetization platform</span>
+            <h1 className="mt-6 text-5xl font-display font-bold leading-[0.98] text-foreground md:text-7xl">
+              Launch a creator business that feels private, premium, and built to sell access.
+            </h1>
+            <p className="mt-6 max-w-xl text-base leading-8 text-muted-foreground md:text-lg">
+              SpicyX is positioned for creators who monetize subscriptions, premium stories, direct
+              chat, and paid unlocks without flattening the experience into a generic social app.
+            </p>
 
-          <h1 className="text-5xl md:text-7xl font-display font-bold leading-tight mb-6">
-            Where Creators{" "}
-            <span className="text-gradient-gold">Thrive</span>
-          </h1>
-
-          <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-xl mx-auto leading-relaxed">
-            Monetize your content, build your community, and connect with fans on the most creator-friendly platform.
-          </p>
-
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button variant="hero" size="lg" className="text-base px-8 py-6" asChild>
-              <a href="/creator/">
-                Start Creating <ArrowRight className="ml-2 h-5 w-5" />
-              </a>
-            </Button>
-            <Button variant="hero-outline" size="lg" className="text-base px-8 py-6" asChild>
-              <a href="/user/">Explore Creators</a>
-            </Button>
-          </div>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.4 }}
-          className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-2xl mx-auto"
-        >
-          {[
-            { icon: Users, label: "Creator-first tools", desc: "Built for direct fan relationships" },
-            { icon: Shield, label: "SFW & NSFW", desc: "Managed under platform policies" },
-            { icon: Star, label: "Fast payouts", desc: "Built around secure Kenya-first payment rails" },
-          ].map((stat, i) => (
-            <div key={i} className="flex flex-col items-center gap-2 p-4">
-              <stat.icon className="h-6 w-6 text-primary mb-1" />
-              <span className="text-lg font-display font-semibold text-foreground">{stat.label}</span>
-              <span className="text-sm text-muted-foreground">{stat.desc}</span>
+            <div className="mt-8 flex flex-col gap-4 sm:flex-row">
+              <Button variant="hero" size="lg" className="rounded-full px-8 py-6 text-base" asChild>
+                <a href="/creator/">
+                  Become a Creator <ArrowRight className="h-5 w-5" />
+                </a>
+              </Button>
+              <Button variant="hero-outline" size="lg" className="rounded-full px-8 py-6 text-base" asChild>
+                <a href="/user/">Explore Creators</a>
+              </Button>
             </div>
-          ))}
-        </motion.div>
+
+            <div className="mt-10 grid gap-4 sm:grid-cols-3">
+              {heroSignals.map((signal) => (
+                <div key={signal.label} className="landing-signal">
+                  <signal.icon className="h-4 w-4 text-primary" />
+                  <span>{signal.label}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 38 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.15, ease: "easeOut" }}
+            className="landing-hero-visual"
+          >
+            <div className="landing-hero-visual__frame">
+              <div className="landing-hero-visual__badge">
+                <ShieldCheck className="h-4 w-4" />
+                Premium creator zone
+              </div>
+              <img
+                src={heroBg}
+                alt="Premium creator campaign visual"
+                className="landing-hero-visual__image"
+              />
+              <div className="landing-hero-visual__overlay landing-hero-visual__overlay--top">
+                <span className="landing-hero-visual__overlay-label">Access model</span>
+                <div className="landing-hero-visual__overlay-value">Public, subscriber-only, PPV</div>
+              </div>
+              <div className="landing-hero-visual__overlay landing-hero-visual__overlay--bottom">
+                <div>
+                  <span className="landing-hero-visual__overlay-label">Stories and feed</span>
+                  <div className="landing-hero-visual__overlay-value">Video, images, text</div>
+                </div>
+                <PlayCircle className="h-8 w-8 text-primary" />
+              </div>
+            </div>
+          </motion.div>
+        </div>
       </div>
     </section>
   );
