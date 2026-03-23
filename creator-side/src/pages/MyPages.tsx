@@ -1064,7 +1064,8 @@ export function MyChats() {
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [errorText, setErrorText] = useState<string | null>(null);
+  const [threadsErrorText, setThreadsErrorText] = useState<string | null>(null);
+  const [messageErrorText, setMessageErrorText] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -1076,6 +1077,7 @@ export function MyChats() {
 
   const loadThreads = async (preserveSelection = true) => {
     try {
+      setThreadsErrorText(null);
       const [nextThreads, nextMembers] = await Promise.all([
         fetchChatThreads(),
         fetchChatableMembers(),
@@ -1099,19 +1101,24 @@ export function MyChats() {
       });
     } catch (error) {
       console.error(error);
-      setErrorText(error instanceof Error ? error.message : 'Could not load messages.');
+      setThreadsErrorText(
+        error instanceof Error ? error.message : 'Could not load conversations right now.'
+      );
     }
   };
 
   const loadMessages = async (threadId: string) => {
     setMessagesLoading(true);
     try {
+      setMessageErrorText(null);
       const nextMessages = await fetchChatMessages(threadId);
       setMessages(nextMessages);
       await markChatThreadRead(threadId);
     } catch (error) {
       console.error(error);
-      setErrorText(error instanceof Error ? error.message : 'Could not load this conversation.');
+      setMessageErrorText(
+        error instanceof Error ? error.message : 'Could not load this conversation.'
+      );
     } finally {
       setMessagesLoading(false);
     }
@@ -1133,7 +1140,9 @@ export function MyChats() {
       } catch (error) {
         if (!mounted) return;
         console.error(error);
-        setErrorText(error instanceof Error ? error.message : 'Could not load messages.');
+        setThreadsErrorText(
+          error instanceof Error ? error.message : 'Could not load conversations right now.'
+        );
       } finally {
         if (mounted) setLoading(false);
       }
@@ -1146,6 +1155,7 @@ export function MyChats() {
   useEffect(() => {
     if (!selectedThreadId) {
       setMessages([]);
+      setMessageErrorText(null);
       return;
     }
     loadMessages(selectedThreadId);
@@ -1214,7 +1224,7 @@ export function MyChats() {
     setSelectedThreadId(thread.thread_id);
     setSelectedMemberId(null);
     setComposerOpen(false);
-    setErrorText(null);
+    setMessageErrorText(null);
   };
 
   const handleSelectMember = (member: ChatableMember) => {
@@ -1228,13 +1238,13 @@ export function MyChats() {
     setMessages([]);
     setDraft('');
     setComposerOpen(false);
-    setErrorText(null);
+    setMessageErrorText(null);
   };
 
   const handleSend = async () => {
     if (!draft.trim() || sending) return;
     setSending(true);
-    setErrorText(null);
+    setMessageErrorText(null);
     try {
       const result = await sendChatMessage({
         body: draft,
@@ -1250,7 +1260,9 @@ export function MyChats() {
       }
     } catch (error) {
       console.error(error);
-      setErrorText(error instanceof Error ? error.message : 'Could not send your message.');
+      setMessageErrorText(
+        error instanceof Error ? error.message : 'Could not send your message.'
+      );
     } finally {
       setSending(false);
     }
@@ -1323,6 +1335,8 @@ export function MyChats() {
           <div className="msg-panel__hint">
             Direct messages are available with fans who currently have an active subscription.
           </div>
+
+          {threadsErrorText ? <div className="msg-thread__notice">{threadsErrorText}</div> : null}
 
           {composerOpen ? (
             <div className="msg-starter-list">
@@ -1468,7 +1482,9 @@ export function MyChats() {
           ) : (
             <div className="msg-detail__text">Select a fan from the list to start chatting.</div>
           )}
-          {errorText ? <div className="msg-thread__notice">{errorText}</div> : null}
+          {selectedThread || selectedMember ? (
+            messageErrorText ? <div className="msg-thread__notice">{messageErrorText}</div> : null
+          ) : null}
         </section>
 
         <section className="msg-insights">
