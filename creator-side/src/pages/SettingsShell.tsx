@@ -1,9 +1,9 @@
-﻿import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import './MyPages.css';
 import './SettingsProfile.css';
-import { useState } from 'react';
 import {
   fetchCurrentCreatorProfile,
+  fetchPayoutSummary,
   fetchUnreadNotificationCount,
   subscribeToNotifications,
 } from '../supabaseClient';
@@ -11,7 +11,6 @@ import {
 type SettingsItemKey =
   | 'profile'
   | 'account'
-  | 'privacy'
   | 'subscription'
   | 'notifications'
   | 'display';
@@ -22,13 +21,9 @@ type SettingsItem = {
   href: string;
 };
 
-const USE_SAMPLE_DATA =
-  !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true';
-
 const PRIMARY_SETTINGS: SettingsItem[] = [
   { key: 'profile', label: 'Profile', href: '/my/settings/profile' },
   { key: 'account', label: 'Account', href: '/my/settings/account' },
-  { key: 'privacy', label: 'Privacy and safety', href: '/my/settings/privacy' },
   {
     key: 'subscription',
     label: 'Subscription price',
@@ -41,19 +36,11 @@ const GENERAL_SETTINGS: SettingsItem[] = [
   { key: 'display', label: 'Display', href: '/my/settings/display' },
 ];
 
-const NAV_PROFILE = USE_SAMPLE_DATA
-  ? {
-      name: 'Aiko Mitsuri',
-      handle: '@aiko.mitsuri',
-      avatar: 'https://i.pravatar.cc/120?img=21',
-      meta: { fans: '1 fan', followers: '4 followers' },
-    }
-  : {
-      name: 'Creator',
-      handle: '',
-      avatar: '',
-      meta: null as null | { fans: string; followers: string },
-    };
+const NAV_PROFILE = {
+  name: 'Creator',
+  handle: '',
+  avatar: '',
+};
 
 type SettingsShellProps = {
   activeItem?: SettingsItemKey;
@@ -64,11 +51,12 @@ type SettingsShellProps = {
 export default function SettingsShell({
   activeItem,
   children,
-  userHandle = USE_SAMPLE_DATA ? NAV_PROFILE.handle : '',
+  userHandle = '',
 }: SettingsShellProps) {
   const [navProfile, setNavProfile] = useState(NAV_PROFILE);
   const [isNavPanelOpen, setIsNavPanelOpen] = useState(false);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [navBalanceLabel, setNavBalanceLabel] = useState('KSh 0');
 
   useEffect(() => {
     document.body.classList.add('react-page');
@@ -88,11 +76,6 @@ export default function SettingsShell({
   }, [activeItem]);
 
   useEffect(() => {
-    if (USE_SAMPLE_DATA) {
-      setNavProfile(NAV_PROFILE);
-      return;
-    }
-
     let cancelled = false;
 
     const loadNavProfile = async () => {
@@ -102,13 +85,11 @@ export default function SettingsShell({
           return;
         }
 
-        setNavProfile((prev) => ({
-          ...prev,
-          name: profile.name || prev.name,
+        setNavProfile({
+          name: profile.name || 'Creator',
           handle: profile.handle,
           avatar: profile.avatar_url ?? '',
-          meta: prev.meta,
-        }));
+        });
       } catch (error) {
         console.error('Could not load creator nav profile', error);
       }
@@ -127,11 +108,6 @@ export default function SettingsShell({
   }, []);
 
   useEffect(() => {
-    if (USE_SAMPLE_DATA) {
-      setNotificationUnreadCount(4);
-      return;
-    }
-
     let isMounted = true;
     let unsubscribe = () => {};
 
@@ -156,6 +132,28 @@ export default function SettingsShell({
     return () => {
       isMounted = false;
       unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadBalanceLabel = async () => {
+      try {
+        const summary = await fetchPayoutSummary();
+        if (!isMounted) return;
+        const available = summary?.available_amount_minor ?? 0;
+        const major = available / 100;
+        setNavBalanceLabel(`KSh ${major.toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
+      } catch (error) {
+        console.error('Could not load settings balance summary', error);
+      }
+    };
+
+    void loadBalanceLabel();
+
+    return () => {
+      isMounted = false;
     };
   }, []);
 
@@ -194,11 +192,6 @@ export default function SettingsShell({
           <div className="my-nav__identity">
             <div className="name">{navProfile.name}</div>
             {effectiveHandle ? <div className="handle">{effectiveHandle}</div> : null}
-            {navProfile.meta ? (
-              <div className="meta">
-                <span>{navProfile.meta.fans}</span> - <span>{navProfile.meta.followers}</span>
-              </div>
-            ) : null}
           </div>
         </div>
 
@@ -215,7 +208,7 @@ export default function SettingsShell({
           <NavItem
             href="/my/collections"
             label="Collections"
-            icon={<GearIcon />}
+            icon={<AudienceIcon />}
             onClick={closeNavPanel}
           />
           <NavItem
@@ -225,10 +218,10 @@ export default function SettingsShell({
             onClick={closeNavPanel}
           />
           <NavItem
-              href="/my/payments"
-            label="Wallet"
+            href="/my/payments"
+            label="Payments"
             icon={<CardIcon />}
-            trailing={<span className="wallet-pill">0.00</span>}
+            trailing={<span className="wallet-pill">{navBalanceLabel}</span>}
             onClick={closeNavPanel}
           />
         </nav>
@@ -242,12 +235,6 @@ export default function SettingsShell({
 
         <div className="my-nav__secondary">
           <NavItem href="/my/settings" label="Settings" icon={<GearIcon />} isActive onClick={closeNavPanel} />
-          {USE_SAMPLE_DATA ? (
-            <>
-              <NavItem href="/news" label="What's new" icon={<StarIcon />} badge="1" onClick={closeNavPanel} />
-              <NavItem href="/logout" label="Log out" icon={<LogOutIcon />} onClick={closeNavPanel} />
-            </>
-          ) : null}
         </div>
       </aside>
 
@@ -363,6 +350,17 @@ function ChatIcon() {
   );
 }
 
+function AudienceIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7.5 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+      <path d="M16.5 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+      <path d="M3.5 18c0-2.5 2-4.5 4.5-4.5S12.5 15.5 12.5 18" />
+      <path d="M13 18c.2-1.9 1.8-3.5 3.8-3.5 2.1 0 3.7 1.6 3.7 3.5" />
+    </svg>
+  );
+}
+
 function CardIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -441,31 +439,6 @@ function BagIcon() {
       <path d="M24 22v-4a8 8 0 0 1 16 0v4" />
       <circle cx="26" cy="30" r="2" />
       <circle cx="38" cy="30" r="2" />
-    </svg>
-  );
-}
-
-function StarIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M12 3l2.39 4.84 5.34.78-3.86 3.76.91 5.32L12 15.9l-4.78 2.8.91-5.32L4.27 8.62l5.34-.78L12 3z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function LogOutIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-      <path d="M10 17 5 12l5-5" />
-      <path d="M5 12h11" />
     </svg>
   );
 }

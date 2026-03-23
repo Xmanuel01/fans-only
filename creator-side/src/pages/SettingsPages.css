@@ -546,3 +546,11 @@
   stroke-width: 2;
 }
 
+.settings-account__row--static {
+  cursor: default;
+}
+
+.settings-account__meta--mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  overflow-wrap: anywhere;
+}

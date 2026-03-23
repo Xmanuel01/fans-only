@@ -6,6 +6,7 @@ import {
   fetchChatableMembers,
   fetchChatMessages,
   fetchChatThreads,
+  fetchCreatorSubscribers,
   fetchCurrentCreatorProfile,
   fetchCreatorFeedPosts,
   fetchPayoutAccount,
@@ -28,6 +29,7 @@ import {
   type ChatableMember,
   type ChatMessage,
   type ChatThreadSummary,
+  type CreatorSubscriber,
   type CreatorContentItem,
   type PayoutAccount,
   type PayoutSummary,
@@ -69,14 +71,6 @@ type NotificationTab =
   | 'payouts'
   | 'content';
 
-type SuggestionCard = {
-  id: string;
-  name: string;
-  handle: string;
-  gradient: string;
-  badge?: string;
-};
-
 type PersonItem = {
   id: string;
   name: string;
@@ -84,6 +78,7 @@ type PersonItem = {
   detail: string;
   status: string;
   order: number;
+  avatar: string | null;
 };
 
 type HomePost = {
@@ -114,8 +109,6 @@ type StoryItem = {
   isLive?: boolean;
 };
 
-const USE_SAMPLE_DATA =
-  !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true';
 const CREATOR_DRAFT_STORAGE_KEY = 'creator-post-draft-v1';
 
 const ensureHandle = (value: string | null | undefined) => {
@@ -166,6 +159,77 @@ const formatExpiryLabel = (expiresAt: string | null) => {
   if (diffHours < 24) return `Expires in ${diffHours}h`;
   const diffDays = Math.round(diffHours / 24);
   return `Expires in ${diffDays}d`;
+};
+
+const formatShortDate = (value: string | null) => {
+  if (!value) return 'No date';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No date';
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
+const isActiveSubscriber = (item: CreatorSubscriber) =>
+  item.status === 'active' &&
+  (!item.current_period_end || new Date(item.current_period_end).getTime() > Date.now());
+
+const mapSubscriberToPersonItem = (item: CreatorSubscriber): PersonItem => {
+  const name = item.display_name?.trim() || item.username?.trim() || 'Subscriber';
+  const handle = item.username ? ensureHandle(item.username) : '@member';
+  const amount =
+    typeof item.amount_cents === 'number'
+      ? formatMinorCurrency(item.amount_cents, item.currency ?? 'KES')
+      : null;
+
+  if (isActiveSubscriber(item)) {
+    return {
+      id: item.subscriber_id,
+      name,
+      handle,
+      detail: item.current_period_end
+        ? `Renews ${formatShortDate(item.current_period_end)}`
+        : `Subscribed ${formatShortDate(item.subscribed_at)}`,
+      status: amount ? amount : 'Active',
+      order: -new Date(item.subscribed_at).getTime(),
+      avatar: item.avatar_url,
+    };
+  }
+
+  return {
+    id: item.subscriber_id,
+    name,
+    handle,
+    detail: item.current_period_end
+      ? `Expired ${formatShortDate(item.current_period_end)}`
+      : `Ended ${formatShortDate(item.subscribed_at)}`,
+    status: amount ? amount : 'Expired',
+    order: -new Date(item.current_period_end ?? item.subscribed_at).getTime(),
+    avatar: item.avatar_url,
+  };
+};
+
+const normalizeHomePost = (post: CreatorContentItem): HomePost => {
+  const primaryMedia = post.media[0] ?? null;
+  const isVideo = Boolean(primaryMedia?.mime_type?.startsWith('video/'));
+  const author = post.creator?.display_name?.trim() || 'You';
+  const type: HomePost['type'] = primaryMedia ? (isVideo ? 'video' : 'photo') : 'text';
+
+  return {
+    id: String(post.id),
+    author,
+    handle: ensureHandle(post.creator?.handle),
+    avatar: post.creator?.avatar_url ?? '',
+    time: formatRelativeTime(post.created_at),
+    caption: post.body?.trim() || post.title || (post.post_type === 'story' ? 'Story' : 'Post'),
+    type,
+    media: !isVideo && primaryMedia?.url ? [primaryMedia.url] : undefined,
+    video: isVideo && primaryMedia?.url ? { src: primaryMedia.url, poster: '' } : undefined,
+    footerPrimary: describeVisibility(post).replace('Â·', '-'),
+    footerSecondary: `${post.content_rating.toUpperCase()} - ${formatRelativeTime(post.created_at)}`,
+  };
 };
 
 const parseMajorAmountToMinor = (value: string) => {
@@ -354,23 +418,7 @@ const describeVisibility = (post: CreatorContentItem) => {
 };
 
 const mapCreatorPostToHomePost = (post: CreatorContentItem): HomePost => {
-  const primaryMedia = post.media[0];
-  const isVideo = Boolean(primaryMedia?.mime_type?.startsWith('video/'));
-  const author = post.creator?.display_name?.trim() || 'You';
-
-  return {
-    id: String(post.id),
-    author,
-    handle: ensureHandle(post.creator?.handle),
-    avatar: post.creator?.avatar_url ?? '',
-    time: formatRelativeTime(post.created_at),
-    caption: post.body?.trim() || post.title || 'Untitled post',
-    type: primaryMedia ? (isVideo ? 'video' : 'photo') : 'text',
-    media: !isVideo && primaryMedia?.url ? [primaryMedia.url] : undefined,
-    video: isVideo && primaryMedia?.url ? { src: primaryMedia.url, poster: '' } : undefined,
-    footerPrimary: describeVisibility(post),
-    footerSecondary: `${post.content_rating.toUpperCase()} · ${formatRelativeTime(post.created_at)}`,
-  };
+  return normalizeHomePost(post);
 };
 
 const mapCreatorStoryToStoryItem = (story: CreatorContentItem): StoryItem => {
@@ -577,266 +625,16 @@ const NOTIFICATION_TABS: Array<{ key: NotificationTab; label: string }> = [
   { key: 'content', label: 'Content' },
 ];
 
-const SUGGESTIONS: SuggestionCard[] = USE_SAMPLE_DATA
-  ? [
-      {
-        id: 's-1',
-        name: 'Mia Nowak',
-        handle: '@liospark',
-        gradient:
-          'linear-gradient(120deg, rgba(4, 120, 166, 0.9), rgba(4, 74, 123, 0.6)), linear-gradient(120deg, #12a4d9, #0c4f7a)',
-        badge: 'Free',
-      },
-      {
-        id: 's-2',
-        name: 'Saya Moon',
-        handle: '@saya_moon',
-        gradient:
-          'linear-gradient(120deg, rgba(10, 10, 10, 0.5), rgba(116, 116, 116, 0.6)), linear-gradient(120deg, #1f1f1f, #a0a0a0)',
-        badge: 'Free',
-      },
-      {
-        id: 's-3',
-        name: 'Fitness Barbie',
-        handle: '@fitnessbarbiex',
-        gradient:
-          'linear-gradient(120deg, rgba(60, 60, 60, 0.55), rgba(18, 18, 18, 0.7)), linear-gradient(120deg, #4b4b4b, #1c1c1c)',
-        badge: 'Free',
-      },
-    ]
-  : [];
-
-const DEFAULT_LIST_ITEMS: Array<{ key: string; label: string }> = [
-  { key: 'fans', label: 'Fans' },
-  { key: 'following', label: 'Following' },
-  { key: 'restricted', label: 'Restricted' },
-  { key: 'blocked', label: 'Blocked' },
-];
-
-const SUBSCRIPTIONS_ACTIVE: PersonItem[] = USE_SAMPLE_DATA
-  ? [
-      {
-        id: 'sa-1',
-        name: 'Aria Rose',
-        handle: '@ariarose',
-        detail: '$12.99 / mo',
-        status: 'Auto-renew',
-        order: 1,
-      },
-      {
-        id: 'sa-2',
-        name: 'Skyline',
-        handle: '@skyline',
-        detail: '$9.99 / mo',
-        status: 'Renews in 5 days',
-        order: 2,
-      },
-      {
-        id: 'sa-3',
-        name: 'Maya Chen',
-        handle: '@mayachen',
-        detail: '$12.99 / mo',
-        status: 'Auto-renew',
-        order: 3,
-      },
-    ]
-  : [];
-
-const SUBSCRIPTIONS_EXPIRED: PersonItem[] = USE_SAMPLE_DATA
-  ? [
-      {
-        id: 'se-1',
-        name: 'Rowan',
-        handle: '@rowan',
-        detail: 'Expired 3 days ago',
-        status: 'Offer 10% back',
-        order: 1,
-      },
-      {
-        id: 'se-2',
-        name: 'Zara Hope',
-        handle: '@zarahope',
-        detail: 'Expired last week',
-        status: 'Send reminder',
-        order: 2,
-      },
-    ]
-  : [];
-
-const SUBSCRIBERS_ACTIVE: PersonItem[] = USE_SAMPLE_DATA
-  ? [
-      {
-        id: 'sb-1',
-        name: 'Kai Rivers',
-        handle: '@kairivers',
-        detail: 'Subscribed 6 months',
-        status: 'Top fan',
-        order: 1,
-      },
-      {
-        id: 'sb-2',
-        name: 'Nova Lane',
-        handle: '@novalane',
-        detail: 'Subscribed 3 months',
-        status: 'VIP',
-        order: 2,
-      },
-      {
-        id: 'sb-3',
-        name: 'Eli Stone',
-        handle: '@elistone',
-        detail: 'Subscribed 1 month',
-        status: 'New',
-        order: 3,
-      },
-    ]
-  : [];
-
-const HOME_POSTS: HomePost[] = USE_SAMPLE_DATA
-  ? [
-      {
-        id: 'hp-1',
-        author: 'SpicyX',
-        handle: '@SpicyX',
-        avatar: 'https://i.pravatar.cc/80?img=32',
-        time: '3 hours ago',
-        caption:
-          'Weekend trip diary from Puerto Vallarta. New sunset set just dropped for subscribers.',
-        type: 'photo',
-        media: ['https://dummyimage.com/1080x680/1a2b44/e8edf5&text=Puerto+Vallarta+Set'],
-        footerPrimary: '1,842 likes',
-        footerSecondary: '221 comments',
-      },
-      {
-        id: 'hp-2',
-        author: 'Emily Frame',
-        handle: '@emily_frame',
-        avatar: 'https://i.pravatar.cc/80?img=47',
-        time: '6 hours ago',
-        caption:
-          'Quick behind-the-scenes clip before tonight live stream. Full video is in my vault.',
-        type: 'video',
-        video: {
-          src: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-          poster: 'https://dummyimage.com/1080x680/2a1838/e8edf5&text=Behind+The+Scenes',
-        },
-        footerPrimary: '1,290 likes',
-        footerSecondary: '104 comments',
-      },
-      {
-        id: 'hp-3',
-        author: 'Cherry',
-        handle: '@urcherryx',
-        avatar: 'https://i.pravatar.cc/80?img=12',
-        time: 'yesterday',
-        caption:
-          'Late night thoughts: consistency beats motivation. Posting schedule is now Mon, Wed, Fri.',
-        type: 'text',
-        footerPrimary: '932 likes',
-        footerSecondary: '88 comments',
-      },
-      {
-        id: 'hp-4',
-        author: 'Mia Nowak',
-        handle: '@liospark',
-        avatar: 'https://i.pravatar.cc/80?img=20',
-        time: '2 days ago',
-        caption: 'Fresh photoset from the neon studio. Which look should I expand next?',
-        type: 'photo',
-        media: ['https://dummyimage.com/1080x680/22314a/e8edf5&text=Neon+Studio+Set'],
-        footerPrimary: '1,544 likes',
-        footerSecondary: '197 comments',
-      },
-    ]
-  : [];
-
-const HOME_STORIES: StoryItem[] = USE_SAMPLE_DATA
-  ? [
-      {
-        id: 'st-1',
-        name: 'Aiko',
-        image: 'https://i.pravatar.cc/96?img=21',
-        previewUrl: 'https://dummyimage.com/1080x1920/1d2430/e8edf5&text=Aiko+Story',
-        previewType: 'image',
-        caption: 'Quick story preview from the studio.',
-        expiresLabel: 'Expires in 24h',
-        isLive: true,
-      },
-      {
-        id: 'st-2',
-        name: 'Emily',
-        image: 'https://i.pravatar.cc/96?img=47',
-        previewUrl: 'https://dummyimage.com/1080x1920/202a3a/e8edf5&text=Emily+Story',
-        previewType: 'image',
-        caption: 'Morning update for subscribers.',
-        expiresLabel: 'Expires in 20h',
-      },
-      {
-        id: 'st-3',
-        name: 'Cherry',
-        image: 'https://i.pravatar.cc/96?img=12',
-        previewUrl: 'https://dummyimage.com/1080x1920/2e1d2a/e8edf5&text=Cherry+Story',
-        previewType: 'image',
-        caption: 'Cherry story drop.',
-        expiresLabel: 'Expires in 18h',
-      },
-      {
-        id: 'st-4',
-        name: 'Mia',
-        image: 'https://i.pravatar.cc/96?img=20',
-        previewUrl: 'https://dummyimage.com/1080x1920/243043/e8edf5&text=Mia+Story',
-        previewType: 'image',
-        caption: 'Mia backstage moment.',
-        expiresLabel: 'Expires in 16h',
-      },
-      {
-        id: 'st-5',
-        name: 'Saya',
-        image: 'https://i.pravatar.cc/96?img=14',
-        previewUrl: 'https://dummyimage.com/1080x1920/2b213c/e8edf5&text=Saya+Story',
-        previewType: 'image',
-        caption: 'Saya evening update.',
-        expiresLabel: 'Expires in 12h',
-      },
-      {
-        id: 'st-6',
-        name: 'Fitness',
-        image: 'https://i.pravatar.cc/96?img=26',
-        previewUrl: 'https://dummyimage.com/1080x1920/233629/e8edf5&text=Fitness+Story',
-        previewType: 'image',
-        caption: 'Workout recap.',
-        expiresLabel: 'Expires in 10h',
-      },
-      {
-        id: 'st-7',
-        name: 'Nora',
-        image: 'https://i.pravatar.cc/96?img=39',
-        previewUrl: 'https://dummyimage.com/1080x1920/372a24/e8edf5&text=Nora+Story',
-        previewType: 'image',
-        caption: 'Nora check-in.',
-        expiresLabel: 'Expires in 8h',
-      },
-      {
-        id: 'st-8',
-        name: 'Alex',
-        image: 'https://i.pravatar.cc/96?img=33',
-        previewUrl: 'https://dummyimage.com/1080x1920/202020/e8edf5&text=Alex+Story',
-        previewType: 'image',
-        caption: 'Alex preview story.',
-        expiresLabel: 'Expires in 6h',
-      },
-    ]
-  : [];
+const EMPTY_POSTS: HomePost[] = [];
+const EMPTY_STORIES: StoryItem[] = [];
 
 export function MyHome() {
   const [activeFilter, setActiveFilter] = useState<'all' | 'photos' | 'videos' | 'texts'>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [suggestionIndex, setSuggestionIndex] = useState(0);
-  const [suggestions, setSuggestions] = useState(SUGGESTIONS);
-  const [followedIds, setFollowedIds] = useState<string[]>([]);
-  const [feedPosts, setFeedPosts] = useState<HomePost[]>(HOME_POSTS);
-  const [stories, setStories] = useState<StoryItem[]>(HOME_STORIES);
-  const [loadingContent, setLoadingContent] = useState(!USE_SAMPLE_DATA);
+  const [feedPosts, setFeedPosts] = useState<HomePost[]>(EMPTY_POSTS);
+  const [stories, setStories] = useState<StoryItem[]>(EMPTY_STORIES);
+  const [audienceSummary, setAudienceSummary] = useState({ active: 0, expired: 0 });
+  const [loadingContent, setLoadingContent] = useState(true);
   const [contentError, setContentError] = useState('');
   const [activeStory, setActiveStory] = useState<StoryItem | null>(null);
   const storiesScrollerRef = useRef<HTMLDivElement | null>(null);
@@ -848,10 +646,6 @@ export function MyHome() {
   }, [stories]);
 
   useEffect(() => {
-    if (USE_SAMPLE_DATA) {
-      return;
-    }
-
     let cancelled = false;
 
     const loadCreatorContent = async () => {
@@ -859,23 +653,22 @@ export function MyHome() {
       setContentError('');
 
       try {
-        const [postsData, storiesData] = await Promise.all([
+        const [postsData, storiesData, subscribers] = await Promise.all([
           fetchCreatorFeedPosts(24),
           fetchCreatorStories(18),
+          fetchCreatorSubscribers('all'),
         ]);
 
         if (cancelled) {
           return;
         }
 
-        setFeedPosts(
-          postsData.map(mapCreatorPostToHomePost).map((post) => ({
-            ...post,
-            footerPrimary: post.footerPrimary.replace('Â·', '-'),
-            footerSecondary: post.footerSecondary.replace('Â·', '-'),
-          }))
-        );
+        setFeedPosts(postsData.map(mapCreatorPostToHomePost));
         setStories(storiesData.map(mapCreatorStoryToStoryItem));
+        setAudienceSummary({
+          active: subscribers.filter(isActiveSubscriber).length,
+          expired: subscribers.filter((entry) => !isActiveSubscriber(entry)).length,
+        });
       } catch (error) {
         console.error(error);
         if (cancelled) {
@@ -883,6 +676,7 @@ export function MyHome() {
         }
         setFeedPosts([]);
         setStories([]);
+        setAudienceSummary({ active: 0, expired: 0 });
         setContentError('Could not load your latest posts and stories.');
       } finally {
         if (!cancelled) {
@@ -909,11 +703,7 @@ export function MyHome() {
 
   const handleStoriesScroll = () => {
     const node = storiesScrollerRef.current;
-    if (!node) {
-      return;
-    }
-
-    if (storyRail.length <= 1) {
+    if (!node || storyRail.length <= 1) {
       return;
     }
 
@@ -951,73 +741,12 @@ export function MyHome() {
     });
   }, [activeFilter, searchTerm, feedPosts]);
 
-  const filteredSuggestions = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
-    if (!term) {
-      return suggestions;
-    }
-    return suggestions.filter(
-      (item) =>
-        item.name.toLowerCase().includes(term) || item.handle.toLowerCase().includes(term)
-    );
-  }, [searchTerm, suggestions]);
-
-  const dotCount = 12;
-
-  const shuffleSuggestions = () => {
-    setSuggestions((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i > 0; i -= 1) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [next[i], next[j]] = [next[j], next[i]];
-      }
-      return next;
-    });
-    setSuggestionIndex(0);
-  };
-
-  const resetSuggestions = () => {
-    setSearchTerm('');
-    setSuggestions(SUGGESTIONS);
-    setSuggestionIndex(0);
-  };
-
-  const cycleSuggestions = (direction: 'next' | 'prev') => {
-    setSuggestions((prev) => {
-      if (!prev.length) {
-        return prev;
-      }
-      const next = [...prev];
-      if (direction === 'next') {
-        const first = next.shift();
-        if (first) {
-          next.push(first);
-        }
-      } else {
-        const last = next.pop();
-        if (last) {
-          next.unshift(last);
-        }
-      }
-      return next;
-    });
-
-    setSuggestionIndex((prev) => {
-      if (direction === 'next') {
-        return (prev + 1) % dotCount;
-      }
-      return (prev - 1 + dotCount) % dotCount;
-    });
-  };
-
-  const toggleFollow = (id: string) => {
-    setFollowedIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
-  };
+  const photoCount = feedPosts.filter((post) => post.type === 'photo').length;
+  const videoCount = feedPosts.filter((post) => post.type === 'video').length;
+  const textCount = feedPosts.filter((post) => post.type === 'text').length;
 
   const aside = (
-    <div className="notif-sidebar">
+    <div className="creator-home-aside">
       <div className="notif-search-card">
         <div className="notif-search">
           <input
@@ -1033,87 +762,67 @@ export function MyHome() {
         </div>
       </div>
 
-      <div className="notif-suggestions">
-        <div className="notif-suggestions__header">
-          <span>Suggestions</span>
-          <div className="notif-suggestions__actions">
-            <button
-              className="notif-icon-button small"
-              type="button"
-              aria-label="Shuffle suggestions"
-              onClick={shuffleSuggestions}
-            >
-              <ShuffleIcon />
-            </button>
-            <button
-              className="notif-icon-button small"
-              type="button"
-              aria-label="Refresh suggestions"
-              onClick={resetSuggestions}
-            >
-              <RefreshIcon />
-            </button>
-            <button
-              className="notif-icon-button small"
-              type="button"
-              aria-label="Previous suggestions"
-              onClick={() => cycleSuggestions('prev')}
-            >
-              <ChevronLeftIcon />
-            </button>
-            <button
-              className="notif-icon-button small"
-              type="button"
-              aria-label="Next suggestions"
-              onClick={() => cycleSuggestions('next')}
-            >
-              <ChevronRightIcon />
-            </button>
+      <div className="creator-home-panel">
+        <div className="creator-home-panel__header">
+          <span>Workspace snapshot</span>
+        </div>
+        <div className="creator-home-stats">
+          <div className="creator-home-stat">
+            <span>Active subscribers</span>
+            <strong>{audienceSummary.active}</strong>
           </div>
-        </div>
-        <div className="notif-suggestions__list">
-          {filteredSuggestions.map((item) => {
-            const isFollowing = followedIds.includes(item.id);
-            return (
-              <button
-                key={item.id}
-                className={`suggestion-card${isFollowing ? ' is-following' : ''}`}
-                type="button"
-                style={{ backgroundImage: item.gradient }}
-                onClick={() => toggleFollow(item.id)}
-              >
-                {item.badge ? (
-                  <span className="suggestion-card__badge">{item.badge}</span>
-                ) : null}
-                <span className="suggestion-card__menu">
-                  <MoreVerticalIcon />
-                </span>
-                {isFollowing ? (
-                  <span className="suggestion-card__follow">Following</span>
-                ) : null}
-                <div className="suggestion-card__avatar" aria-hidden="true" />
-                <div className="suggestion-card__meta">
-                  <div className="suggestion-card__name">
-                    {item.name}
-                    <VerifiedIcon />
-                  </div>
-                  <div className="suggestion-card__handle">{item.handle}</div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-        <div className="suggestion-dots" aria-hidden="true">
-          {Array.from({ length: dotCount }).map((_, index) => (
-            <span
-              key={`home-dot-${index}`}
-              className={`suggestion-dot${index === suggestionIndex ? ' is-active' : ''}`}
-            />
-          ))}
+          <div className="creator-home-stat">
+            <span>Expired subscribers</span>
+            <strong>{audienceSummary.expired}</strong>
+          </div>
+          <div className="creator-home-stat">
+            <span>Live stories</span>
+            <strong>{stories.length}</strong>
+          </div>
+          <div className="creator-home-stat">
+            <span>Published posts</span>
+            <strong>{feedPosts.length}</strong>
+          </div>
         </div>
       </div>
 
-      <div className="notif-footer">
+      <div className="creator-home-panel">
+        <div className="creator-home-panel__header">
+          <span>Quick actions</span>
+        </div>
+        <div className="creator-home-links">
+          <a href="/posts/create">Create a new post</a>
+          <a href="/my/collections">View audience</a>
+          <a href="/my/payments">Review payouts</a>
+          <a href="/my/chats">Open chats</a>
+        </div>
+      </div>
+
+      <div className="creator-home-panel">
+        <div className="creator-home-panel__header">
+          <span>Content mix</span>
+        </div>
+        <div className="creator-home-metrics">
+          <div className="creator-home-metric">
+            <span>Photos</span>
+            <strong>{photoCount}</strong>
+          </div>
+          <div className="creator-home-metric">
+            <span>Videos</span>
+            <strong>{videoCount}</strong>
+          </div>
+          <div className="creator-home-metric">
+            <span>Texts</span>
+            <strong>{textCount}</strong>
+          </div>
+          <div className="creator-home-metric">
+            <span>Visible now</span>
+            <strong>{filteredPosts.length}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="notif-footer creator-home-footer">
         <a href="/privacy">Privacy</a>
         <span>|</span>
         <a href="/cookies">Cookie Notice</a>
@@ -1133,6 +842,24 @@ export function MyHome() {
       aside={aside}
     >
       <div className="home-feed">
+        <div className="home-feed__hero">
+          <div>
+            <div className="home-feed__eyebrow">Creator workspace</div>
+            <h2 className="home-feed__hero-title">Your published content and live stories in one place.</h2>
+            <p className="home-feed__hero-copy">
+              Use this dashboard to verify what fans can see, monitor active stories, and move quickly between content, audience, chats, and payouts.
+            </p>
+          </div>
+          <div className="home-feed__hero-actions">
+            <a className="create-post__primary home-feed__hero-button" href="/posts/create">
+              Create post
+            </a>
+            <a className="create-post__ghost home-feed__hero-button" href="/my/collections">
+              View audience
+            </a>
+          </div>
+        </div>
+
         <div className="home-feed__sticky">
           <section className="home-stories">
             <div className="home-stories__title">Home</div>
@@ -1209,7 +936,7 @@ export function MyHome() {
           {contentError ? <div className="home-feed__error">{contentError}</div> : null}
 
           {filteredPosts.map((post) => (
-            <article key={post.id} className="home-post">
+            <article key={post.id} className="home-post creator-home-post">
               <header className="home-post__header">
                 <div className="home-post__author">
                   {post.avatar ? (
@@ -1301,7 +1028,6 @@ export function MyHome() {
     </MyLayout>
   );
 }
-
 const formatMessageClock = (value: string | null) => {
   if (!value) return 'now';
   const date = new Date(value);
@@ -1963,465 +1689,329 @@ export function MyNotifications() {
   );
 }
 
-export function MyCollections() {
-  const [leftTab, setLeftTab] = useState<'lists' | 'bookmarks'>('lists');
-  const [rightTab, setRightTab] = useState<'users' | 'posts'>('users');
-  const [listItems, setListItems] = useState<Array<{ key: string; label: string }>>(
-    DEFAULT_LIST_ITEMS
-  );
-  const [activeList, setActiveList] = useState<string>('fans');
-  const [activeFilter, setActiveFilter] = useState<
-    'all' | 'active' | 'expired' | 'restricted' | 'blocked'
-  >('active');
-  const [postFilter, setPostFilter] = useState<
-    'all' | 'photos' | 'videos' | 'audio' | 'other' | 'locked'
-  >('all');
-  const [bookmarkFilter, setBookmarkFilter] = useState<
-    'all' | 'photos' | 'videos' | 'audio' | 'other' | 'locked'
-  >('all');
-  const [bookmarkSearchActive, setBookmarkSearchActive] = useState(false);
-  const [bookmarkLayoutActive, setBookmarkLayoutActive] = useState(false);
-  const [bookmarkFilterMenuOpen, setBookmarkFilterMenuOpen] = useState(false);
-  const [postLayoutActive, setPostLayoutActive] = useState(false);
-  const [postFilterMenuOpen, setPostFilterMenuOpen] = useState(false);
-  const [isCreateListOpen, setIsCreateListOpen] = useState(false);
-  const [newListName, setNewListName] = useState('');
-  const listInputRef = useRef<HTMLInputElement | null>(null);
+function useCreatorAudience(status: 'all' | 'active' | 'expired') {
+  const [subscribers, setSubscribers] = useState<CreatorSubscriber[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isCreateListOpen) {
-      return;
-    }
+    let isMounted = true;
 
-    listInputRef.current?.focus();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsCreateListOpen(false);
-        setNewListName('');
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const next = await fetchCreatorSubscribers(status);
+        if (!isMounted) return;
+        setSubscribers(next);
+      } catch (loadError) {
+        console.error(loadError);
+        if (isMounted) {
+          setError('Could not load your audience right now.');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-
+    void load();
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      isMounted = false;
     };
-  }, [isCreateListOpen]);
+  }, [status]);
 
-  const filters = [
-    { key: 'all', label: 'All 0' },
-    { key: 'active', label: 'Active 0' },
-    { key: 'expired', label: 'Expired 0' },
-    { key: 'restricted', label: 'Restricted 0' },
-    { key: 'blocked', label: 'Blocked 0' },
-  ] as const;
+  return { subscribers, loading, error };
+}
 
-  const bookmarkFilters = [
-    { key: 'all', label: 'All' },
-    { key: 'photos', label: 'Photos' },
-    { key: 'videos', label: 'Videos' },
-    { key: 'audio', label: 'Audio' },
-    { key: 'other', label: 'Other' },
-    { key: 'locked', label: 'Locked' },
-  ] as const;
+function AudienceListPage({
+  title,
+  subtitle,
+  activeNav,
+  status,
+}: {
+  title: string;
+  subtitle: string;
+  activeNav: NavKey;
+  status: 'active' | 'expired';
+}) {
+  const { subscribers, loading, error } = useCreatorAudience(status);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<'recent' | 'name'>('recent');
 
-  const postFilters = [
-    { key: 'all', label: 'All' },
-    { key: 'photos', label: 'Photos' },
-    { key: 'videos', label: 'Videos' },
-    { key: 'audio', label: 'Audio' },
-    { key: 'other', label: 'Other' },
-    { key: 'locked', label: 'Locked' },
-  ] as const;
+  const items = useMemo(() => subscribers.map(mapSubscriberToPersonItem), [subscribers]);
+  const totalLabel = status === 'active' ? 'Active supporters' : 'Expired supporters';
+  const visible = useMemo(() => {
+    const trimmed = query.trim().toLowerCase();
+    const filtered = items.filter((item) => {
+      if (!trimmed) return true;
+      return item.name.toLowerCase().includes(trimmed) || item.handle.toLowerCase().includes(trimmed);
+    });
+    const sorted = [...filtered].sort((a, b) => {
+      if (sort === 'name') {
+        return a.name.localeCompare(b.name);
+      }
+      return a.order - b.order;
+    });
+    return sorted;
+  }, [items, query, sort]);
 
-  const isBookmarks = leftTab === 'bookmarks';
-  const isPosts = rightTab === 'posts';
-  const activeListLabel =
-    listItems.find((item) => item.key === activeList)?.label ?? 'Fans';
-  const rightHeader = isBookmarks ? 'All bookmarks' : activeListLabel;
-  const saveDisabled = !newListName.trim();
+  return (
+    <MyLayout title={title} subtitle={subtitle} activeNav={activeNav}>
+      <section className="audience-hero">
+        <div>
+          <div className="home-feed__eyebrow">Audience</div>
+          <h2 className="audience-hero__title">{title}</h2>
+          <p className="audience-hero__copy">{subtitle}</p>
+        </div>
+        <div className="audience-hero__stats">
+          <div className="creator-home-stat">
+            <span>{totalLabel}</span>
+            <strong>{subscribers.length}</strong>
+          </div>
+          <div className="creator-home-stat">
+            <span>Showing now</span>
+            <strong>{visible.length}</strong>
+          </div>
+        </div>
+      </section>
 
-  const closeCreateList = () => {
-    setIsCreateListOpen(false);
-    setNewListName('');
-  };
+      <div className="my-card audience-toolbar audience-toolbar--elevated">
+        <div className="my-row audience-toolbar__row">
+          <div className="audience-search-shell">
+            <SearchIcon />
+            <input
+              className="my-input audience-search-input"
+              placeholder="Search subscribers"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          <select
+            className="my-input audience-select"
+            value={sort}
+            onChange={(event) => setSort(event.target.value as 'recent' | 'name')}
+          >
+            <option value="recent">Most recent</option>
+            <option value="name">Name</option>
+          </select>
+        </div>
+      </div>
 
-  const handleCreateListClick = () => {
-    if (leftTab !== 'lists') {
-      setLeftTab('lists');
-    }
-    setIsCreateListOpen(true);
-  };
+      {error ? <div className="my-alert">{error}</div> : null}
 
-  const handleSaveList = () => {
-    const trimmed = newListName.trim();
-    if (!trimmed) {
-      return;
-    }
+      <div className="my-list audience-list">
+        {loading ? (
+          <div className="my-empty audience-empty">Loading audience...</div>
+        ) : visible.length ? (
+          visible.map((item) => (
+            <div key={item.id} className="my-list-item audience-list-item audience-card">
+              <div className="audience-list-item__identity">
+                {item.avatar ? (
+                  <img className="audience-list-item__avatar" src={item.avatar} alt={item.name} />
+                ) : (
+                  <div className="audience-list-item__avatar audience-list-item__avatar--fallback" aria-hidden="true">
+                    {item.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <div className="audience-list-item__name">{item.name}</div>
+                  <div className="audience-list-item__handle">{item.handle}</div>
+                  <div className="audience-list-item__meta">{item.detail}</div>
+                </div>
+              </div>
+              <div className="my-row audience-card__right">
+                <span className="audience-list-item__status">{item.status}</span>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="my-empty audience-empty">
+            <strong>No subscribers match your current filters.</strong>
+            <span>Try changing the search term or sort order.</span>
+          </div>
+        )}
+      </div>
+    </MyLayout>
+  );
+}
 
-    const key = `list-${trimmed.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+export function MyCollections() {
+  const { subscribers, loading, error } = useCreatorAudience('all');
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<'all' | 'active' | 'expired'>('all');
 
-    setListItems((prev) => [...prev, { key, label: trimmed }]);
-    setActiveList(key);
-    closeCreateList();
-  };
+  const activeCount = subscribers.filter(isActiveSubscriber).length;
+  const expiredCount = subscribers.filter((item) => !isActiveSubscriber(item)).length;
+  const filtered = useMemo(() => {
+    const trimmed = query.trim().toLowerCase();
+    return subscribers.filter((item) => {
+      const statusMatch =
+        filter === 'all' ||
+        (filter === 'active' && isActiveSubscriber(item)) ||
+        (filter === 'expired' && !isActiveSubscriber(item));
+      const textMatch =
+        !trimmed ||
+        (item.display_name ?? '').toLowerCase().includes(trimmed) ||
+        (item.username ?? '').toLowerCase().includes(trimmed);
+      return statusMatch && textMatch;
+    });
+  }, [filter, query, subscribers]);
 
   return (
     <MyLayout
-      title="Collections"
+      title="Audience"
+      subtitle="Review active and expired subscribers using real subscription data."
       activeNav="collections"
-      header={null}
-      contentClassName="collections-content"
     >
-      <div className="collections-shell">
-        <section className="collections-panel collections-left">
-          <div className="collections-panel__header">
-            <div className="collections-panel__title">
-              <button
-                className="collections-icon-button"
-                type="button"
-                aria-label="Go back"
-                onClick={() => window.history.back()}
-              >
-                <ArrowLeftIcon />
-              </button>
-              <h2>Collections</h2>
-            </div>
-            <div className="collections-panel__actions">
-              <button className="collections-icon-button" type="button" aria-label="Search">
-                <SearchIcon />
-              </button>
-              <button
-                className="collections-icon-button"
-                type="button"
-                aria-label="Create list"
-                aria-haspopup="dialog"
-                onClick={handleCreateListClick}
-              >
-                <PlusIcon />
-              </button>
-            </div>
-          </div>
+      <section className="audience-hero">
+        <div>
+          <div className="home-feed__eyebrow">Audience workspace</div>
+          <h2 className="audience-hero__title">Collections and subscriber health in one place.</h2>
+          <p className="audience-hero__copy">
+            Track who is active, who has churned, and where your audience is trending right now.
+          </p>
+        </div>
+        <div className="audience-hero__actions">
+          <a className="create-post__primary home-feed__hero-button" href="/my/collections/user-lists/subscriptions/active">
+            View active
+          </a>
+          <a className="create-post__ghost home-feed__hero-button" href="/my/collections/user-lists/subscriptions/expired">
+            View expired
+          </a>
+        </div>
+      </section>
 
-          <div className="collections-tabs collections-tabs--split">
-            <button
-              className={`collections-tab${leftTab === 'lists' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => setLeftTab('lists')}
-            >
-              User lists
-            </button>
-            <button
-              className={`collections-tab${leftTab === 'bookmarks' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => setLeftTab('bookmarks')}
-            >
-              Bookmarks
-            </button>
-          </div>
-
-          {leftTab === 'lists' ? (
-            <>
-              <div className="collections-subheader">
-                <span>Custom order</span>
-                <button className="collections-icon-button small" type="button" aria-label="Sort">
-                  <FilterIcon />
-                </button>
-              </div>
-
-              <div className="collections-list">
-                {listItems.map((item) => (
-                  <button
-                    key={item.key}
-                    className={`collections-item${activeList === item.key ? ' is-active' : ''}`}
-                    type="button"
-                    onClick={() => setActiveList(item.key)}
-                  >
-                    <span className="collections-item__title">{item.label}</span>
-                    <span className="collections-item__meta">empty</span>
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="collections-subheader">
-                <span>Recent</span>
-                <button className="collections-icon-button small" type="button" aria-label="Sort">
-                  <FilterIcon />
-                </button>
-              </div>
-              <div className="collections-bookmarks">
-                <BookmarkEmptyIcon />
-                <div>No bookmarks yet</div>
-              </div>
-            </>
-          )}
-        </section>
-
-        <section className="collections-panel collections-right">
-          <div className="collections-panel__header">
-            <h2>{rightHeader}</h2>
-          </div>
-
-          {isBookmarks ? (
-            <>
-              <div className="collections-subheader">
-                <span>Recent</span>
-                <div className="collections-subheader__actions">
-                  <button
-                    className={`collections-icon-button small${
-                      bookmarkSearchActive ? ' is-active' : ''
-                    }`}
-                    type="button"
-                    aria-label="Search bookmarks"
-                    aria-pressed={bookmarkSearchActive}
-                    onClick={() => setBookmarkSearchActive((prev) => !prev)}
-                  >
-                    <SearchIcon />
-                  </button>
-                  <button
-                    className={`collections-icon-button small${
-                      bookmarkLayoutActive ? ' is-active' : ''
-                    }`}
-                    type="button"
-                    aria-label="Layout options"
-                    aria-pressed={bookmarkLayoutActive}
-                    onClick={() => setBookmarkLayoutActive((prev) => !prev)}
-                  >
-                    <LayoutIcon />
-                  </button>
-                  <button
-                    className={`collections-icon-button small${
-                      bookmarkFilterMenuOpen ? ' is-active' : ''
-                    }`}
-                    type="button"
-                    aria-label="Filter bookmarks"
-                    aria-pressed={bookmarkFilterMenuOpen}
-                    onClick={() => setBookmarkFilterMenuOpen((prev) => !prev)}
-                  >
-                    <FilterIcon />
-                  </button>
-                </div>
-              </div>
-
-              <div className="collections-filters">
-                {bookmarkFilters.map((item) => (
-                  <button
-                    key={item.key}
-                    className={`collections-pill${
-                      bookmarkFilter === item.key ? ' is-active' : ''
-                    }`}
-                    type="button"
-                    onClick={() => setBookmarkFilter(item.key)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="collections-empty collections-empty--bookmarks">
-                <BookmarkGalleryIcon />
-                <div>No bookmarks yet</div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="collections-tabs collections-tabs--split">
-                <button
-                  className={`collections-tab${rightTab === 'users' ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() => setRightTab('users')}
-                >
-                  Users
-                </button>
-                <button
-                  className={`collections-tab${rightTab === 'posts' ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() => setRightTab('posts')}
-                >
-                  Posts
-                </button>
-              </div>
-
-              <div className="collections-subheader">
-                <span>Recent</span>
-                <div className="collections-subheader__actions">
-                  {isPosts ? (
-                    <>
-                      <button
-                        className={`collections-icon-button small${
-                          postLayoutActive ? ' is-active' : ''
-                        }`}
-                        type="button"
-                        aria-label="Layout options"
-                        aria-pressed={postLayoutActive}
-                        onClick={() => setPostLayoutActive((prev) => !prev)}
-                      >
-                        <LayoutIcon />
-                      </button>
-                      <button
-                        className={`collections-icon-button small${
-                          postFilterMenuOpen ? ' is-active' : ''
-                        }`}
-                        type="button"
-                        aria-label="Filter posts"
-                        aria-pressed={postFilterMenuOpen}
-                        onClick={() => setPostFilterMenuOpen((prev) => !prev)}
-                      >
-                        <FilterIcon />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        className="collections-icon-button small"
-                        type="button"
-                        aria-label="Search"
-                      >
-                        <SearchIcon />
-                      </button>
-                      <button
-                        className="collections-icon-button small"
-                        type="button"
-                        aria-label="Filter"
-                      >
-                        <FilterIcon />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="collections-filters">
-                {isPosts
-                  ? postFilters.map((item) => (
-                      <button
-                        key={item.key}
-                        className={`collections-pill${
-                          postFilter === item.key ? ' is-active' : ''
-                        }`}
-                        type="button"
-                        onClick={() => setPostFilter(item.key)}
-                      >
-                        {item.label}
-                      </button>
-                    ))
-                  : filters.map((item) => (
-                      <button
-                        key={item.key}
-                        className={`collections-pill${
-                          activeFilter === item.key ? ' is-active' : ''
-                        }`}
-                        type="button"
-                        onClick={() => setActiveFilter(item.key)}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-              </div>
-
-              {isPosts ? (
-                <div className="collections-empty collections-empty--posts">
-                  <EmptyPostsIcon />
-                  <div>Nothing found</div>
-                </div>
-              ) : (
-                <div className="collections-empty">
-                  <EmptyUsersIcon />
-                  <div>No users yet</div>
-                </div>
-              )}
-            </>
-          )}
-        </section>
+      <div className="creator-home-stats audience-summary-grid">
+        <div className="creator-home-stat">
+          <span>All subscribers</span>
+          <strong>{subscribers.length}</strong>
+        </div>
+        <div className="creator-home-stat">
+          <span>Active</span>
+          <strong>{activeCount}</strong>
+        </div>
+        <div className="creator-home-stat">
+          <span>Expired</span>
+          <strong>{expiredCount}</strong>
+        </div>
+        <div className="creator-home-stat">
+          <span>Retention</span>
+          <strong>{subscribers.length ? `${Math.round((activeCount / subscribers.length) * 100)}%` : '0%'}</strong>
+        </div>
       </div>
 
-      {isCreateListOpen ? (
-        <div
-          className="collections-modal-backdrop"
-          role="presentation"
-          onClick={closeCreateList}
-        >
-          <div
-            className="collections-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-list-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h3 id="create-list-title">Create new list</h3>
-            <div className="collections-field">
-              <fieldset className="collections-fieldset">
-                <legend>List name</legend>
-                <input
-                  ref={listInputRef}
-                  type="text"
-                  maxLength={64}
-                  value={newListName}
-                  onChange={(event) => setNewListName(event.target.value)}
-                />
-              </fieldset>
-              <div className="collections-count">{newListName.length}/64</div>
-            </div>
-            <div className="collections-modal__actions">
-              <button
-                className="collections-modal__button cancel"
-                type="button"
-                onClick={closeCreateList}
-              >
-                Cancel
-              </button>
-              <button
-                className="collections-modal__button save"
-                type="button"
-                disabled={saveDisabled}
-                onClick={handleSaveList}
-              >
-                Save
-              </button>
-            </div>
+      <div className="my-card audience-toolbar audience-toolbar--elevated">
+        <div className="my-row audience-toolbar__row">
+          <div className="audience-search-shell">
+            <SearchIcon />
+            <input
+              className="my-input audience-search-input"
+              placeholder="Search subscribers"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          <div className="home-feed__filters audience-toolbar__filters">
+            <button
+              className={`home-feed__filter audience-filter-pill${filter === 'all' ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => setFilter('all')}
+            >
+              All {subscribers.length}
+            </button>
+            <button
+              className={`home-feed__filter audience-filter-pill${filter === 'active' ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => setFilter('active')}
+            >
+              Active {activeCount}
+            </button>
+            <button
+              className={`home-feed__filter audience-filter-pill${filter === 'expired' ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => setFilter('expired')}
+            >
+              Expired {expiredCount}
+            </button>
           </div>
         </div>
-      ) : null}
+      </div>
+
+      {error ? <div className="my-alert">{error}</div> : null}
+
+      <div className="my-list audience-list">
+        {loading ? (
+          <div className="my-empty audience-empty">Loading audience...</div>
+        ) : filtered.length ? (
+          filtered.map((item) => {
+            const mapped = mapSubscriberToPersonItem(item);
+            return (
+              <div key={item.subscriber_id} className="my-list-item audience-list-item audience-card">
+                <div className="audience-list-item__identity">
+                  {mapped.avatar ? (
+                    <img className="audience-list-item__avatar" src={mapped.avatar} alt={mapped.name} />
+                  ) : (
+                    <div className="audience-list-item__avatar audience-list-item__avatar--fallback" aria-hidden="true">
+                      {mapped.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <div className="audience-list-item__name">{mapped.name}</div>
+                    <div className="audience-list-item__handle">{mapped.handle}</div>
+                    <div className="audience-list-item__meta">{mapped.detail}</div>
+                  </div>
+                </div>
+                <div className="my-row audience-card__right">
+                  <span className="audience-list-item__status">{mapped.status}</span>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="my-empty audience-empty">
+            <strong>No audience members match your current filters.</strong>
+            <span>Clear the search or switch audience status to find more supporters.</span>
+          </div>
+        )}
+      </div>
     </MyLayout>
   );
 }
 
 export function MySubscriptionsActive() {
   return (
-    <PeopleListPage
-      title="Active subscriptions"
-      subtitle="Your current subscribers"
+    <AudienceListPage
+      title="Active subscribers"
+      subtitle="Fans with active access to subscriber-only content and chat."
       activeNav="subscriptions"
-      items={SUBSCRIPTIONS_ACTIVE}
+      status="active"
     />
   );
 }
 
 export function MySubscriptionsExpired() {
   return (
-    <PeopleListPage
-      title="Expired subscriptions"
-      subtitle="Follow up with previous subscribers"
+    <AudienceListPage
+      title="Expired subscribers"
+      subtitle="Previous supporters whose access period has ended."
       activeNav="subscriptions"
-      items={SUBSCRIPTIONS_EXPIRED}
+      status="expired"
     />
   );
 }
 
 export function MySubscribersActive() {
   return (
-    <PeopleListPage
-      title="Active subscribers"
-      subtitle="Your top supporters"
+    <AudienceListPage
+      title="Audience"
+      subtitle="Your currently active supporters."
       activeNav="collections"
-      items={SUBSCRIBERS_ACTIVE}
+      status="active"
     />
   );
 }
-
 function LegacyMyPayments() {
   const [filter, setFilter] = useState<'all' | 'in_flight' | 'completed' | 'failed'>('all');
   const [loading, setLoading] = useState(true);
@@ -3732,11 +3322,6 @@ export function PostsCreate() {
   }, []);
 
   useEffect(() => {
-    if (USE_SAMPLE_DATA) {
-      setComposerProfile(NAV_PROFILE);
-      return;
-    }
-
     let cancelled = false;
 
     const loadComposerProfile = async () => {
@@ -4552,6 +4137,19 @@ export function MyBanking() {
 void LegacyMyPayments;
 void LegacyMyPaymentsAddCard;
 void LegacyMyBanking;
+void PeopleListPage;
+void FilterIcon;
+void LayoutIcon;
+void ShuffleIcon;
+void RefreshIcon;
+void ChevronLeftIcon;
+void ChevronRightIcon;
+void EmptyUsersIcon;
+void BookmarkEmptyIcon;
+void BookmarkGalleryIcon;
+void EmptyPostsIcon;
+void StarIcon;
+void LogOutIcon;
 
 export function MyTicketsCreate() {
   const [form, setForm] = useState({
@@ -4702,19 +4300,12 @@ function PeopleListPage({
   );
 }
 
-const NAV_PROFILE = USE_SAMPLE_DATA
-  ? {
-      name: 'Aiko Mitsuri',
-      handle: '@aiko.mitsuri',
-      avatar: 'https://i.pravatar.cc/120?img=21',
-      meta: { fans: '1 fan', followers: '4 followers' },
-    }
-  : {
-      name: 'Creator',
-      handle: '',
-      avatar: '',
-      meta: null as null | { fans: string; followers: string },
-    };
+const NAV_PROFILE = {
+  name: 'Creator',
+  handle: '',
+  avatar: '',
+  meta: null as null | { fans: string; followers: string },
+};
 
 function MyLayout({
   title,
@@ -4730,6 +4321,7 @@ function MyLayout({
   const [navProfile, setNavProfile] = useState(NAV_PROFILE);
   const [isNavPanelOpen, setIsNavPanelOpen] = useState(false);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [navBalanceLabel, setNavBalanceLabel] = useState('KES 0');
 
   useEffect(() => {
     document.body.classList.add('react-page');
@@ -4743,11 +4335,6 @@ function MyLayout({
   }, [title]);
 
   useEffect(() => {
-    if (USE_SAMPLE_DATA) {
-      setNavProfile(NAV_PROFILE);
-      return;
-    }
-
     let cancelled = false;
 
     const loadNavProfile = async () => {
@@ -4782,11 +4369,6 @@ function MyLayout({
   }, []);
 
   useEffect(() => {
-    if (USE_SAMPLE_DATA) {
-      setNotificationUnreadCount(4);
-      return;
-    }
-
     let isMounted = true;
     let unsubscribe = () => {};
 
@@ -4811,6 +4393,25 @@ function MyLayout({
     return () => {
       isMounted = false;
       unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadBalanceLabel = async () => {
+      try {
+        const summary = await fetchPayoutSummary();
+        if (!isMounted) return;
+        setNavBalanceLabel(formatMinorCurrency(summary?.available_amount_minor ?? 0, summary?.currency ?? 'KES'));
+      } catch (error) {
+        console.error('Could not load navigation payout summary', error);
+      }
+    };
+
+    void loadBalanceLabel();
+    return () => {
+      isMounted = false;
     };
   }, []);
 
@@ -4899,7 +4500,7 @@ function MyLayout({
             href="/my/payments"
             label="Payments"
             icon={<CardIcon />}
-            trailing={<span className="wallet-pill">0.00</span>}
+            trailing={<span className="wallet-pill">{navBalanceLabel}</span>}
             isActive={activeNav === 'payments'}
             onClick={closeNavPanel}
           />
@@ -4920,25 +4521,6 @@ function MyLayout({
             isActive={activeNav === 'more'}
             onClick={closeNavPanel}
           />
-          {USE_SAMPLE_DATA ? (
-            <>
-              <NavItem
-                href="/news"
-                label="What's new"
-                icon={<StarIcon />}
-                badge="1"
-                isActive={false}
-                onClick={closeNavPanel}
-              />
-              <NavItem
-                href="/logout"
-                label="Log out"
-                icon={<LogOutIcon />}
-                isActive={false}
-                onClick={closeNavPanel}
-              />
-            </>
-          ) : null}
         </div>
       </aside>
 

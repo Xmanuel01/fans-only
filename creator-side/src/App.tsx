@@ -13,7 +13,6 @@ import {
   SettingsHome,
   SettingsLanguage,
   SettingsNotifications,
-  SettingsPrivacy,
   SettingsSubscription,
 } from './pages/SettingsPages';
 import {
@@ -36,7 +35,6 @@ const REACT_ROUTES: Record<string, ComponentType> = {
   '/my/settings': SettingsHome,
   '/my/settings/account': SettingsAccount,
   '/my/settings/notifications': SettingsNotifications,
-  '/my/settings/privacy': SettingsPrivacy,
   '/my/settings/subscription': SettingsSubscription,
   '/my/settings/display': SettingsDisplay,
   '/my/settings/language': SettingsLanguage,

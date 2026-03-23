@@ -13,21 +13,6 @@ type ProfileForm = {
   bio: string;
 };
 
-const USE_SAMPLE_DATA = !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true';
-
-const SAMPLE_PROFILE: CreatorProfileSettings = {
-  username: '@aiko.mitsuri',
-  displayName: 'Aiko Mitsuri',
-  bio:
-    'Osu!, Welcome to my Fanvue\n' +
-    '* I am Aiko, *\n' +
-    'I move with quiet confidence, soft curves, and a gaze that lingers longer than expected. ' +
-    'My world is built on beauty, lifestyle, fashion, fitness, and sensual aesthetics.',
-  avatarUrl: 'https://i.pravatar.cc/240?img=21',
-  bannerUrl: null,
-  bannerMediaType: null,
-};
-
 const EMPTY_PROFILE: CreatorProfileSettings = {
   username: '',
   displayName: '',
@@ -61,20 +46,18 @@ function readFilePreview(file: File) {
 }
 
 export default function SettingsProfile() {
-  const [form, setForm] = useState<ProfileForm>(toForm(USE_SAMPLE_DATA ? SAMPLE_PROFILE : EMPTY_PROFILE));
-  const [saved, setSaved] = useState<ProfileForm>(toForm(USE_SAMPLE_DATA ? SAMPLE_PROFILE : EMPTY_PROFILE));
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(USE_SAMPLE_DATA ? SAMPLE_PROFILE.avatarUrl : null);
-  const [bannerUrl, setBannerUrl] = useState<string | null>(USE_SAMPLE_DATA ? SAMPLE_PROFILE.bannerUrl : null);
-  const [bannerMediaType, setBannerMediaType] = useState<'image' | 'video' | null>(
-    USE_SAMPLE_DATA ? SAMPLE_PROFILE.bannerMediaType : null,
-  );
+  const [form, setForm] = useState<ProfileForm>(toForm(EMPTY_PROFILE));
+  const [saved, setSaved] = useState<ProfileForm>(toForm(EMPTY_PROFILE));
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const [bannerMediaType, setBannerMediaType] = useState<'image' | 'video' | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [bannerPreviewUrl, setBannerPreviewUrl] = useState<string | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [removeBanner, setRemoveBanner] = useState(false);
-  const [loading, setLoading] = useState(!USE_SAMPLE_DATA);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -82,10 +65,6 @@ export default function SettingsProfile() {
   const bannerInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (USE_SAMPLE_DATA) {
-      return;
-    }
-
     let cancelled = false;
 
     const loadProfile = async () => {
@@ -285,7 +264,7 @@ export default function SettingsProfile() {
             )
           ) : (
             <div className="cover-placeholder">
-              <span>Click to upload banner</span>
+              <span>Upload banner</span>
               <small>Images or short videos</small>
             </div>
           )}
@@ -390,12 +369,6 @@ export default function SettingsProfile() {
               <div className="textarea-icon">Aa</div>
             </div>
           </label>
-
-          <div className="field field--disabled">
-            <span>Location</span>
-            <input type="text" value="Coming soon" disabled readOnly />
-            <small>Location is not wired to the current backend yet.</small>
-          </div>
         </form>
       </div>
     </SettingsShell>

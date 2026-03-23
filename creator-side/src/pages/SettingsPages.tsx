@@ -1,25 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   fetchCreatorPricing,
+  fetchCurrentCreatorProfile,
   fetchNotificationPreferences,
+  supabase,
   updateCreatorPricing,
   updateNotificationPreferences,
   type NotificationPreferences,
 } from '../supabaseClient';
 import SettingsShell from './SettingsShell';
 import './SettingsPages.css';
-
-const USE_SAMPLE_DATA =
-  !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true';
-const SAMPLE_HANDLE = '@aiko.mitsuri';
-const SAMPLE_EMAIL = 'creator@example.com';
-const SAMPLE_DISPLAY_NAME = 'Aiko Mitsuri';
-const SAMPLE_SUBSCRIPTION_PRICE = 'KSh 1299 / month';
-
-const USER_HANDLE = USE_SAMPLE_DATA ? SAMPLE_HANDLE : '';
-const ACCOUNT_EMAIL = USE_SAMPLE_DATA ? SAMPLE_EMAIL : '';
-const DISPLAY_NAME = USE_SAMPLE_DATA ? SAMPLE_DISPLAY_NAME : 'Creator';
-const SUBSCRIPTION_PRICE = USE_SAMPLE_DATA ? SAMPLE_SUBSCRIPTION_PRICE : 'Not set';
 
 const LANGUAGE_OPTIONS = [
   'English',
@@ -44,6 +34,13 @@ const LANGUAGE_STORAGE_KEY = 'of_language';
 const LANGUAGE_CHANGE_EVENT = 'of-language-change';
 
 type LanguageValue = (typeof LANGUAGE_OPTIONS)[number];
+
+type CreatorAccountIdentity = {
+  displayName: string;
+  handle: string;
+  email: string;
+  userId: string;
+};
 
 const getStoredLanguage = () => {
   const win = window as typeof window & { __ofLanguage?: string };
@@ -71,13 +68,77 @@ const setStoredLanguage = (value: LanguageValue) => {
   window.dispatchEvent(new CustomEvent(LANGUAGE_CHANGE_EVENT, { detail: value }));
 };
 
+function useCreatorAccountIdentity() {
+  const [identity, setIdentity] = useState<CreatorAccountIdentity | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadIdentity = async () => {
+      try {
+        const [profile, auth] = await Promise.all([
+          fetchCurrentCreatorProfile(),
+          supabase?.auth.getUser(),
+        ]);
+        if (!isMounted) return;
+        const user = auth?.data?.user;
+        if (!user) return;
+
+        setIdentity({
+          displayName:
+            profile?.name ||
+            (typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : '') ||
+            (typeof user.user_metadata?.name === 'string' ? user.user_metadata.name : '') ||
+            'Creator',
+          handle: profile?.handle ?? '',
+          email: user.email ?? '',
+          userId: user.id,
+        });
+      } catch (error) {
+        console.error('Could not load creator account identity', error);
+      }
+    };
+
+    void loadIdentity();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  return identity;
+}
+
 export function SettingsHome() {
-  const [onlineStatus, setOnlineStatus] = useState(true);
-  const [autoSaveDrafts, setAutoSaveDrafts] = useState(true);
-  const [contentProtection, setContentProtection] = useState(false);
+  const identity = useCreatorAccountIdentity();
+  const [pricingLabel, setPricingLabel] = useState('Loading...');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPricing = async () => {
+      try {
+        const pricing = await fetchCreatorPricing();
+        if (!isMounted) return;
+        const cents = pricing?.subscription_price_cents ?? 0;
+        setPricingLabel(cents > 0 ? `KSh ${(cents / 100).toLocaleString()}/month` : 'Free');
+      } catch (error) {
+        console.error('Could not load creator pricing summary', error);
+        if (isMounted) {
+          setPricingLabel('Unavailable');
+        }
+      }
+    };
+
+    void loadPricing();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
-    <SettingsShell userHandle={USER_HANDLE}>
+    <SettingsShell userHandle={identity?.handle ?? ''}>
       <div className="settings-content__header">
         <h2>Settings</h2>
         <a className="save-button" href="/my/settings/profile">
@@ -86,48 +147,58 @@ export function SettingsHome() {
       </div>
       <div className="settings-panels">
         <div className="settings-panel">
-          <div className="settings-panel__title">Quick controls</div>
-          <ToggleRow
-            label="Show online status"
-            description="Let fans see when you are active"
-            value={onlineStatus}
-            onToggle={() => setOnlineStatus((prev) => !prev)}
-          />
-          <ToggleRow
-            label="Auto-save drafts"
-            description="Keep new posts safe while you write"
-            value={autoSaveDrafts}
-            onToggle={() => setAutoSaveDrafts((prev) => !prev)}
-          />
-          <ToggleRow
-            label="Content protection"
-            description="Discourage reuploads with watermark"
-            value={contentProtection}
-            onToggle={() => setContentProtection((prev) => !prev)}
-          />
-        </div>
-
-        <div className="settings-panel">
-          <div className="settings-panel__title">Account overview</div>
+          <div className="settings-panel__title">Creator workspace</div>
           <div className="settings-row">
             <div>
-              <div className="settings-row__label">Display name</div>
-              <div className="settings-row__meta">{DISPLAY_NAME}</div>
+              <div className="settings-row__label">Profile</div>
+              <div className="settings-row__meta">Update your public name, bio, avatar, and banner.</div>
             </div>
-            <span className="settings-chip">Verified</span>
+            <a className="save-button" href="/my/settings/profile">
+              Open
+            </a>
           </div>
           <div className="settings-row">
             <div>
               <div className="settings-row__label">Subscription price</div>
-              <div className="settings-row__meta">{SUBSCRIPTION_PRICE}</div>
+              <div className="settings-row__meta">Current price: {pricingLabel}</div>
             </div>
             <a className="save-button" href="/my/settings/subscription">
               Manage
             </a>
           </div>
-          <div className="settings-banner">
-            Tip: Keep your bio updated to improve conversions.
+          <div className="settings-row">
+            <div>
+              <div className="settings-row__label">Notifications</div>
+              <div className="settings-row__meta">Choose where creator alerts are delivered.</div>
+            </div>
+            <a className="save-button" href="/my/settings/notifications">
+              Review
+            </a>
           </div>
+        </div>
+
+        <div className="settings-panel">
+          <div className="settings-panel__title">Account overview</div>
+          {identity?.displayName ? (
+            <div className="settings-row">
+              <div>
+                <div className="settings-row__label">Display name</div>
+                <div className="settings-row__meta">{identity.displayName}</div>
+              </div>
+              <span className="settings-chip">Live</span>
+            </div>
+          ) : null}
+          {identity?.handle ? (
+            <div className="settings-row">
+              <div>
+                <div className="settings-row__label">Creator handle</div>
+                <div className="settings-row__meta">{identity.handle}</div>
+              </div>
+            </div>
+          ) : null}
+          {identity?.email ? (
+            <div className="settings-banner">Primary account email: {identity.email}</div>
+          ) : null}
         </div>
       </div>
     </SettingsShell>
@@ -135,41 +206,27 @@ export function SettingsHome() {
 }
 
 export function SettingsAccount() {
+  const identity = useCreatorAccountIdentity();
+
   return (
-    <SettingsShell activeItem="account" userHandle={USER_HANDLE}>
+    <SettingsShell activeItem="account" userHandle={identity?.handle ?? ''}>
       <div className="settings-content__header">
         <h2>Account</h2>
       </div>
       <div className="settings-account">
         <div className="settings-account__group">
           <div className="settings-account__section-title">Account info</div>
-          <AccountRow label="Username" meta={USER_HANDLE || undefined} />
-          <AccountRow label="Email" meta={ACCOUNT_EMAIL || undefined} />
-          <AccountRow label="Phone number" />
-        </div>
-
-        <div className="settings-account__group">
-          <div className="settings-account__section-title">Linked accounts</div>
-          <AccountRow label="X account" />
-          <AccountRow label="Google account" meta={ACCOUNT_EMAIL || undefined} />
-        </div>
-
-        <div className="settings-account__group">
-          <div className="settings-account__section-title">Connected accounts</div>
-          <AccountRow label="Connect another SpicyX account" />
+          {identity?.displayName ? <AccountRow label="Display name" meta={identity.displayName} /> : null}
+          {identity?.handle ? <AccountRow label="Username" meta={identity.handle} /> : null}
+          {identity?.email ? <AccountRow label="Email" meta={identity.email} /> : null}
+          {identity?.userId ? <AccountRow label="Creator ID" meta={identity.userId} mono /> : null}
         </div>
 
         <div className="settings-account__group">
           <div className="settings-account__section-title">Security</div>
-          <AccountRow label="Password" />
-          <AccountRow label="Login sessions" />
-          <AccountRow label="Two Step Authentication" />
-          <AccountRow label="Passwordless sign in" />
-        </div>
-
-        <div className="settings-account__group">
-          <div className="settings-account__section-title">Account management</div>
-          <AccountRow label="Delete account" />
+          <div className="settings-banner">
+            Authentication security is managed through your signed-in auth provider and Supabase session controls.
+          </div>
         </div>
       </div>
     </SettingsShell>
@@ -177,6 +234,7 @@ export function SettingsAccount() {
 }
 
 export function SettingsNotifications() {
+  const identity = useCreatorAccountIdentity();
   const [form, setForm] = useState<NotificationPreferences>({
     push: true,
     email: true,
@@ -241,7 +299,7 @@ export function SettingsNotifications() {
   };
 
   return (
-    <SettingsShell activeItem="notifications" userHandle={USER_HANDLE}>
+    <SettingsShell activeItem="notifications" userHandle={identity?.handle ?? ''}>
       <div className="settings-content__header">
         <h2>Notifications</h2>
         <button
@@ -311,104 +369,23 @@ export function SettingsNotifications() {
   );
 }
 
-export function SettingsPrivacy() {
-  const [form, setForm] = useState({
-    showStatus: true,
-    allowDm: true,
-    allowTips: true,
-    hideLikes: false,
-  });
-  const [saved, setSaved] = useState(form);
-
-  const hasChanges = useMemo(() => {
-    return Object.keys(form).some(
-      (key) => form[key as keyof typeof form] !== saved[key as keyof typeof saved]
-    );
-  }, [form, saved]);
-
-  return (
-    <SettingsShell activeItem="privacy" userHandle={USER_HANDLE}>
-      <div className="settings-content__header">
-        <h2>Privacy and safety</h2>
-        <button
-          className="save-button"
-          type="button"
-          disabled={!hasChanges}
-          onClick={() => setSaved(form)}
-        >
-          Save
-        </button>
-      </div>
-      <div className="settings-panels">
-        <div className="settings-panel">
-          <div className="settings-panel__title">Visibility</div>
-          <ToggleRow
-            label="Show online status"
-            description="Display your availability"
-            value={form.showStatus}
-            onToggle={() =>
-              setForm((prev) => ({ ...prev, showStatus: !prev.showStatus }))
-            }
-          />
-          <ToggleRow
-            label="Allow direct messages"
-            description="Let fans message you"
-            value={form.allowDm}
-            onToggle={() =>
-              setForm((prev) => ({ ...prev, allowDm: !prev.allowDm }))
-            }
-          />
-          <ToggleRow
-            label="Allow tips"
-            description="Enable tipping on content"
-            value={form.allowTips}
-            onToggle={() =>
-              setForm((prev) => ({ ...prev, allowTips: !prev.allowTips }))
-            }
-          />
-        </div>
-
-        <div className="settings-panel">
-          <div className="settings-panel__title">Engagement</div>
-          <ToggleRow
-            label="Hide like counts"
-            description="Keep engagement private"
-            value={form.hideLikes}
-            onToggle={() =>
-              setForm((prev) => ({ ...prev, hideLikes: !prev.hideLikes }))
-            }
-          />
-          <div className="settings-banner">
-            You can always mute or block individual users from their profile.
-          </div>
-        </div>
-      </div>
-    </SettingsShell>
-  );
-}
-
 export function SettingsSubscription() {
+  const identity = useCreatorAccountIdentity();
   const [price, setPrice] = useState('');
   const [savedPrice, setSavedPrice] = useState('');
   const [loading, setLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'profile' | 'trial' | 'tracking'>(
-    'profile'
-  );
-  const [trialView, setTrialView] = useState<'yours' | 'shared'>('yours');
 
   const hasChanges = price !== savedPrice;
 
   useEffect(() => {
-    if (USE_SAMPLE_DATA) {
-      setPrice('12.99');
-      setSavedPrice('12.99');
-      return;
-    }
-    setLoading(true);
-    (async () => {
+    let isMounted = true;
+
+    const loadPricing = async () => {
+      setLoading(true);
       try {
         const pricing = await fetchCreatorPricing();
+        if (!isMounted) return;
         const cents = pricing?.subscription_price_cents ?? 0;
         const major = cents > 0 ? (cents / 100).toFixed(2) : '';
         setPrice(major);
@@ -416,16 +393,48 @@ export function SettingsSubscription() {
       } catch (err) {
         console.error(err);
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
-    })();
+    };
+
+    void loadPricing();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
+  const handleSave = async () => {
+    const raw = price.trim();
+    const numeric = raw ? Number(raw) : 0;
+    if (!Number.isFinite(numeric) || numeric < 0) {
+      setSaveError('Enter a valid price.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setSaveError(null);
+      await updateCreatorPricing({
+        subscription_price_cents: Math.round(numeric * 100),
+        subscription_currency: 'KES',
+      });
+      setSavedPrice(raw);
+    } catch (err) {
+      console.error(err);
+      setSaveError('Could not save price.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <SettingsShell activeItem="subscription" userHandle={USER_HANDLE}>
+    <SettingsShell activeItem="subscription" userHandle={identity?.handle ?? ''}>
       <div className="settings-content__header settings-content__header--subscription">
-        <h2>Subscription and promotions</h2>
-        <button className="subscription-header__icon" type="button" aria-label="Media">
+        <h2>Subscription price</h2>
+        <button className="subscription-header__icon" type="button" aria-label="Pricing">
           <SubscriptionImageIcon />
         </button>
       </div>
@@ -446,13 +455,9 @@ export function SettingsSubscription() {
               />
             </div>
           </label>
-          <div className="subscription-hint">Minimum KSh 500 or free</div>
+          <div className="subscription-hint">Set a monthly price for fan subscriptions. Use 0 for free subscriptions.</div>
           <div className="subscription-hint">
-            You must{' '}
-            <a href="/my/payments" className="subscription-link">
-              Add a Bank Account or Payment Information
-            </a>{' '}
-            before you can set your price or accept tips.
+            Fans with an active subscription can access subscriber-only posts and stories. PPV posts are charged separately from wallet balance.
           </div>
         </div>
 
@@ -460,7 +465,7 @@ export function SettingsSubscription() {
           <button
             className="subscription-button ghost"
             type="button"
-            disabled={!hasChanges}
+            disabled={!hasChanges || loading}
             onClick={() => setPrice(savedPrice)}
           >
             Cancel
@@ -468,171 +473,28 @@ export function SettingsSubscription() {
           <button
             className="subscription-button primary"
             type="button"
-            disabled={!hasChanges}
-            onClick={async () => {
-              const raw = price.trim();
-              const numeric = raw ? Number(raw) : 0;
-              if (!Number.isFinite(numeric) || numeric < 0) {
-                setSaveError('Enter a valid price.');
-                return;
-              }
-              try {
-                setLoading(true);
-                setSaveError(null);
-                await updateCreatorPricing({
-                  subscription_price_cents: Math.round(numeric * 100),
-                  subscription_currency: 'KES',
-                });
-                setSavedPrice(raw);
-              } catch (err) {
-                console.error(err);
-                setSaveError('Could not save price.');
-              } finally {
-                setLoading(false);
-              }
-            }}
+            disabled={!hasChanges || loading}
+            onClick={() => void handleSave()}
           >
             {loading ? 'Saving...' : 'Save'}
           </button>
         </div>
         {saveError ? <div className="subscription-hint">{saveError}</div> : null}
 
-        <div className="subscription-tabs">
-          <button
-            className={`subscription-tab${activeTab === 'profile' ? ' is-active' : ''}`}
-            type="button"
-            onClick={() => setActiveTab('profile')}
-          >
-            Profile promotions
-          </button>
-          <button
-            className={`subscription-tab${activeTab === 'trial' ? ' is-active' : ''}`}
-            type="button"
-            onClick={() => setActiveTab('trial')}
-          >
-            Free trial links
-          </button>
-          <button
-            className={`subscription-tab${activeTab === 'tracking' ? ' is-active' : ''}`}
-            type="button"
-            onClick={() => setActiveTab('tracking')}
-          >
-            Tracking links
-          </button>
+        <div className="subscription-section">
+          <div className="subscription-section__title">Access contract</div>
+          <div className="subscription-section__meta">
+            Public content is visible to everyone. Subscriber-only content requires an active subscription. PPV content is unlocked per post from the fan wallet.
+          </div>
         </div>
-
-        {activeTab === 'profile' ? (
-          <>
-            <div className="subscription-section">
-              <div className="subscription-section__title">Profile promotion campaign</div>
-              <div className="subscription-section__meta">
-                Offer a free trial or a discounted subscription on your profile for a limited
-                number of new or already expired subscribers.
-              </div>
-              <button className="subscription-outline" type="button" disabled>
-                Start promotion campaign
-              </button>
-            </div>
-
-            <div className="subscription-section">
-              <div className="subscription-section__title">Subscription bundles</div>
-              <div className="subscription-section__meta">
-                Offer several months of subscription as a discounted bundle.
-              </div>
-              <button className="subscription-outline" type="button" disabled>
-                Add bundle
-              </button>
-            </div>
-          </>
-        ) : activeTab === 'trial' ? (
-          <>
-            <div className="subscription-trial">
-              <div className="subscription-trial__intro">
-                Set subscription price to create and share separate links with free trial
-                subscription.
-              </div>
-              <button className="subscription-outline" type="button" disabled>
-                Create new free trial link
-              </button>
-            </div>
-
-            <div className="subscription-trial__recent">
-              <span>Recent</span>
-              <button className="subscription-icon-button" type="button" aria-label="Filter">
-                <SubscriptionFilterIcon />
-              </button>
-            </div>
-
-            <div className="subscription-pills">
-              <button
-                className={`subscription-pill${trialView === 'yours' ? ' is-active' : ''}`}
-                type="button"
-                onClick={() => setTrialView('yours')}
-              >
-                Your links
-              </button>
-              <button
-                className={`subscription-pill${trialView === 'shared' ? ' is-active' : ''}`}
-                type="button"
-                onClick={() => setTrialView('shared')}
-              >
-                Shared with you
-              </button>
-            </div>
-
-            <div className="subscription-empty">
-              <FreeTrialEmptyIcon />
-              <div>No free trial links yet</div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="subscription-trial">
-              <div className="subscription-trial__intro">
-                Create and share separate Tracking links for your profile.
-              </div>
-              <button className="subscription-outline" type="button" disabled>
-                Create new tracking link
-              </button>
-            </div>
-
-            <div className="subscription-trial__recent">
-              <span>Recent</span>
-              <button className="subscription-icon-button" type="button" aria-label="Filter">
-                <SubscriptionFilterIcon />
-              </button>
-            </div>
-
-            <div className="subscription-pills">
-              <button
-                className={`subscription-pill${trialView === 'yours' ? ' is-active' : ''}`}
-                type="button"
-                onClick={() => setTrialView('yours')}
-              >
-                Your links
-              </button>
-              <button
-                className={`subscription-pill${trialView === 'shared' ? ' is-active' : ''}`}
-                type="button"
-                onClick={() => setTrialView('shared')}
-              >
-                Shared with you
-              </button>
-            </div>
-
-            <div className="subscription-empty">
-              <FreeTrialEmptyIcon />
-              <div>No tracking links yet</div>
-            </div>
-          </>
-        )}
       </div>
     </SettingsShell>
   );
 }
 
 export function SettingsDisplay() {
-  const [theme, setTheme] = useState<'light' | 'dim' | 'dark'>('light');
+  const identity = useCreatorAccountIdentity();
+  const [theme, setTheme] = useState<'light' | 'dim' | 'dark'>('dark');
   const [compactMode, setCompactMode] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [language, setLanguage] = useState('English');
@@ -665,7 +527,7 @@ export function SettingsDisplay() {
   }, []);
 
   return (
-    <SettingsShell activeItem="display" userHandle={USER_HANDLE}>
+    <SettingsShell activeItem="display" userHandle={identity?.handle ?? ''}>
       <div className="settings-content__header">
         <h2>Display</h2>
         <div className="settings-chip">Auto-saved</div>
@@ -730,6 +592,7 @@ export function SettingsDisplay() {
 }
 
 export function SettingsLanguage() {
+  const identity = useCreatorAccountIdentity();
   const [selected, setSelected] = useState('English');
 
   useEffect(() => {
@@ -746,7 +609,7 @@ export function SettingsLanguage() {
   };
 
   return (
-    <SettingsShell activeItem="display" userHandle={USER_HANDLE}>
+    <SettingsShell activeItem="display" userHandle={identity?.handle ?? ''}>
       <div className="settings-content__header settings-content__header--language">
         <button
           className="settings-language-back"
@@ -801,15 +664,14 @@ function ToggleRow({ label, description, value, onToggle }: ToggleRowProps) {
   );
 }
 
-function AccountRow({ label, meta }: { label: string; meta?: string }) {
+function AccountRow({ label, meta, mono }: { label: string; meta?: string; mono?: boolean }) {
   return (
-    <button className="settings-account__row" type="button">
+    <div className="settings-account__row settings-account__row--static">
       <span className="settings-account__info">
         <span className="settings-account__label">{label}</span>
-        {meta ? <span className="settings-account__meta">{meta}</span> : null}
+        {meta ? <span className={`settings-account__meta${mono ? ' settings-account__meta--mono' : ''}`}>{meta}</span> : null}
       </span>
-      <ChevronRightIcon />
-    </button>
+    </div>
   );
 }
 
@@ -838,35 +700,3 @@ function ArrowLeftIcon() {
     </svg>
   );
 }
-
-function SubscriptionFilterIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 6h16" />
-      <path d="M7 12h10" />
-      <path d="M10 18h4" />
-    </svg>
-  );
-}
-
-function FreeTrialEmptyIcon() {
-  return (
-    <svg viewBox="0 0 200 140" aria-hidden="true">
-      <rect x="24" y="38" width="96" height="64" rx="8" />
-      <rect x="24" y="38" width="96" height="12" rx="6" />
-      <circle cx="40" cy="44" r="2" />
-      <circle cx="48" cy="44" r="2" />
-      <circle cx="56" cy="44" r="2" />
-      <circle cx="140" cy="72" r="26" />
-      <path d="M132 72h16" />
-      <path d="M140 64v16" />
-      <path d="M124 100l-10 10" />
-      <path d="M114 100l10 10" />
-      <path d="M166 100l8 8" />
-    </svg>
-  );
-}
-
-
-
-

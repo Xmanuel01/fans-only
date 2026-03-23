@@ -145,6 +145,18 @@ export type ChatableMember = {
   avatar_url: string | null;
 };
 
+export type CreatorSubscriber = {
+  subscriber_id: string;
+  display_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+  status: 'active' | 'canceled' | 'expired';
+  current_period_end: string | null;
+  subscribed_at: string;
+  amount_cents: number | null;
+  currency: string | null;
+};
+
 export type AppNotification = {
   id: number;
   type: string;
@@ -394,6 +406,17 @@ export async function fetchChatableMembers(): Promise<ChatableMember[]> {
   const { data, error } = await supabase.rpc('get_chatable_members');
   if (error) throw error;
   return (data ?? []) as ChatableMember[];
+}
+
+export async function fetchCreatorSubscribers(
+  status: 'active' | 'expired' | 'all' = 'active'
+): Promise<CreatorSubscriber[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc('get_creator_subscribers', {
+    p_status: status,
+  });
+  if (error) throw error;
+  return (data ?? []) as CreatorSubscriber[];
 }
 
 export async function markChatThreadRead(threadId: string) {

@@ -405,20 +405,28 @@ export async function fetchAgeConfirmation(): Promise<boolean | null> {
   return Boolean(data?.age_confirmed_at)
 }
 
-export async function markAgeConfirmed() {
-  if (!supabase) return
+export async function markAgeConfirmed(): Promise<boolean> {
+  if (!supabase) return false
   const session = await getCurrentSession()
   const userId = session?.user?.id
-  if (!userId) return
+  if (!userId) return false
 
   const { error } = await supabase
     .from('profiles')
-    .update({ age_confirmed_at: new Date().toISOString() })
-    .eq('id', userId)
+    .upsert(
+      {
+        id: userId,
+        age_confirmed_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    )
 
   if (error) {
     console.warn('Supabase age confirm update failed', error)
+    return false
   }
+
+  return true
 }
 
 export async function logAgeEvent(action: 'enter' | 'exit') {

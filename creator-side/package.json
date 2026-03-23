@@ -8,8 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
+    "no-mock-runtime": "node scripts/no-mock-runtime.cjs",
     "format": "prettier --check \"src/**/*.{ts,tsx,css,html}\"",
-    "test": "npm run lint"
+    "test": "npm run no-mock-runtime && npm run lint"
   },
   "devDependencies": {
     "@types/react": "^19.2.7",

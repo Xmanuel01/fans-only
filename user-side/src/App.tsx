@@ -84,7 +84,30 @@ const MPESA_STK_ENABLED = env.mpesaStkEnabled
 const BASE_URL = import.meta.env.BASE_URL ?? '/'
 const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`
 const RECENT_CREATORS_STORAGE_KEY = 'fans-only:recent-creators'
+const hasGiftCreatorCheckout = Boolean(FEATURED_CREATOR_ID && DEFAULT_GIFT_AMOUNT_MAJOR > 0)
 type PaymentReturnKind = 'wallet_topup' | 'tip' | 'gift'
+type SubscriptionTarget = {
+  id: string
+  handle?: string | null
+  display_name?: string | null
+  subscription_price_cents?: number | null
+  subscription_currency?: string | null
+}
+type PurchasePromptAction =
+  | {
+      kind: 'subscribe'
+      creator: SubscriptionTarget
+      priceCents: number
+      walletBalanceMinor: number
+      insufficientBalance: boolean
+    }
+  | {
+      kind: 'unlock'
+      post: FeedPost
+      priceCents: number
+      walletBalanceMinor: number
+      insufficientBalance: boolean
+    }
 
 const readPaymentReturnFromUrl = (): { kind: PaymentReturnKind | null; hasReference: boolean } => {
   if (typeof window === 'undefined') {
@@ -169,6 +192,27 @@ const formatWalletDate = (value: string) => {
     hour: 'numeric',
     minute: '2-digit',
   })
+}
+
+const getSessionIdentity = (session: any, userProfile?: UserProfile | null) => {
+  const userId = typeof session?.user?.id === 'string' ? session.user.id : ''
+  const email =
+    typeof session?.user?.email === 'string' && session.user.email.trim()
+      ? session.user.email.trim()
+      : null
+  const displayName =
+    userProfile?.display_name?.trim() ||
+    session?.user?.user_metadata?.full_name?.trim?.() ||
+    session?.user?.user_metadata?.name?.trim?.() ||
+    (email ? email.split('@')[0] : '') ||
+    (userId ? userId.slice(0, 8) : '')
+
+  return {
+    userId,
+    email,
+    displayName,
+    shortId: userId ? userId.slice(0, 8) : null,
+  }
 }
 
 const getWalletEntryLabel = (entry: WalletHistoryItem) => {
@@ -340,11 +384,13 @@ function ConsentBanner({ onAccept }: { onAccept: () => void }) {
 function AgeGate({
   open,
   sessionPresent,
+  submitting,
   onEnter,
   onExit,
 }: {
   open: boolean
   sessionPresent: boolean
+  submitting: boolean
   onEnter: () => void
   onExit: () => void
 }) {
@@ -352,20 +398,23 @@ function AgeGate({
   return (
     <div className="age-overlay">
       <div className="age-backdrop" />
-      <div className="age-modal">
-        <h2>
+      <div className="age-modal" role="dialog" aria-modal="true" aria-labelledby="age-gate-title">
+        <div className="age-kicker">18+ Verification</div>
+        <h2 id="age-gate-title">
           This is an <span className="strong">adults only</span> platform
         </h2>
-        <p>The content on this site may include explicit material.</p>
-        <p>
-          Access is strictly limited to those who are 18 years of age or older, or the age of
-          majority in your jurisdiction (whichever is greater).
-        </p>
-        <p>
-          Please use parental controls and filtering tools to prevent minors from accessing
-          age-restricted content. If you are under 18, or if such content is illegal in your
-          location, please leave now.
-        </p>
+        <div className="age-copy">
+          <p>The content on this site may include explicit material.</p>
+          <p>
+            Access is strictly limited to those who are 18 years of age or older, or the age of
+            majority in your jurisdiction, whichever is greater.
+          </p>
+          <p>
+            Please use parental controls and filtering tools to prevent minors from accessing
+            age-restricted content. If you are under 18, or if such content is illegal in your
+            location, please leave now.
+          </p>
+        </div>
         <p className="age-links">
           <a href={assetUrl('pages/terms.html')}>Terms</a> -{' '}
           <a href={assetUrl('pages/privacy.html')}>Privacy</a> -{' '}
@@ -373,16 +422,126 @@ function AgeGate({
           <a href={assetUrl('pages/acceptable-use-policy.html')}>Acceptable Use</a>
         </p>
         <div className="age-actions">
-          <button className="pill light full" onClick={onEnter} disabled={!sessionPresent}>
-            {sessionPresent ? "I'm 18 or older - enter" : 'Sign in to continue'}
+          <button
+            className="age-btn age-btn-primary"
+            type="button"
+            onClick={onEnter}
+            disabled={!sessionPresent || submitting}
+          >
+            {submitting
+              ? 'Confirming age...'
+              : sessionPresent
+                ? "I'm 18 or older - enter"
+                : 'Sign in to continue'}
           </button>
-          <button className="pill ghost full" onClick={onExit}>
+          <button
+            className="age-btn age-btn-secondary"
+            type="button"
+            onClick={onExit}
+            disabled={submitting}
+          >
             I'm under 18 - exit
           </button>
         </div>
-        <p className="muted small">
+        <p className="age-footnote">
           You must be signed in so we can keep an auditable record of age confirmation.
         </p>
+      </div>
+    </div>
+  )
+}
+
+function PurchasePrompt({
+  action,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  action: PurchasePromptAction | null
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  if (!action) return null
+
+  const isSubscribe = action.kind === 'subscribe'
+  const creatorName =
+    action.kind === 'subscribe'
+      ? action.creator.display_name ?? action.creator.handle ?? 'this creator'
+      : action.post.creator.display_name ?? action.post.creator.handle ?? 'this creator'
+  const title = isSubscribe
+    ? action.insufficientBalance
+      ? 'Top up wallet to subscribe'
+      : action.priceCents > 0
+        ? 'Confirm subscription'
+        : 'Confirm free subscription'
+    : action.insufficientBalance
+      ? 'Top up wallet to unlock'
+      : 'Confirm unlock'
+  const body = isSubscribe
+    ? action.insufficientBalance
+      ? `You need ${formatKsh(action.priceCents)} to subscribe to ${creatorName}. Your wallet balance is ${formatKsh(action.walletBalanceMinor)}.`
+      : action.priceCents > 0
+        ? `Subscribe to ${creatorName} for ${formatKsh(action.priceCents)}. This amount will be deducted from your wallet balance.`
+        : `Subscribe to ${creatorName}. This creator offers a free membership tier.`
+    : action.insufficientBalance
+      ? `You need ${formatKsh(action.priceCents)} to unlock this post. Your wallet balance is ${formatKsh(action.walletBalanceMinor)}.`
+      : `Unlock this post for ${formatKsh(action.priceCents)}. The amount will be deducted from your wallet balance.`
+  const confirmLabel = action.insufficientBalance
+    ? 'Top up wallet'
+    : isSubscribe
+      ? action.priceCents > 0
+        ? `Pay ${formatKsh(action.priceCents)}`
+        : 'Subscribe'
+      : `Unlock for ${formatKsh(action.priceCents)}`
+
+  return (
+    <div className="purchase-modal-overlay" role="presentation">
+      <button
+        className="purchase-modal-backdrop"
+        type="button"
+        aria-label="Close purchase prompt"
+        onClick={busy ? undefined : onCancel}
+      />
+      <div
+        className="purchase-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="purchase-modal-title"
+      >
+        <div className="purchase-modal__eyebrow">
+          {isSubscribe ? 'Membership checkout' : 'Pay-per-view unlock'}
+        </div>
+        <h3 id="purchase-modal-title">{title}</h3>
+        <p>{body}</p>
+        <div className="purchase-modal__summary">
+          <div className="purchase-modal__metric">
+            <span>Wallet balance</span>
+            <strong>{formatKsh(action.walletBalanceMinor)}</strong>
+          </div>
+          <div className="purchase-modal__metric">
+            <span>{isSubscribe ? 'Membership price' : 'Unlock price'}</span>
+            <strong>{formatKsh(action.priceCents)}</strong>
+          </div>
+        </div>
+        <div className="purchase-modal__actions">
+          <button
+            className="purchase-modal__button purchase-modal__button--ghost"
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            No
+          </button>
+          <button
+            className="purchase-modal__button purchase-modal__button--primary"
+            type="button"
+            disabled={busy}
+            onClick={onConfirm}
+          >
+            {busy ? 'Processing...' : confirmLabel}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -1529,19 +1688,16 @@ function BasicsCard({ session, userProfile }: { session: any; userProfile: UserP
     )
   }
 
-  const displayName =
-    userProfile?.display_name ??
-    session.user.user_metadata?.full_name ??
-    session.user.user_metadata?.name ??
-    session.user.email?.split('@')[0] ??
-    'Fan'
-  const email = session.user.email ?? ''
+  const identity = getSessionIdentity(session, userProfile)
+  const displayName = identity.displayName || 'Account'
+  const email = identity.email
+  const username = userProfile?.username?.trim() || null
   const avatar = session.user.user_metadata?.avatar_url ?? assetUrl('logo.png')
   const joinDate = session.user.created_at
     ? new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric' }).format(
         new Date(session.user.created_at)
       )
-    : 'Recently'
+    : null
 
   return (
     <div className="settings-card">
@@ -1556,33 +1712,32 @@ function BasicsCard({ session, userProfile }: { session: any; userProfile: UserP
           <div className="settings-card-kicker">Profile overview</div>
           <div className="settings-profile-name">{displayName}</div>
           <div className="settings-profile-meta">
-            <span>@{userProfile?.username || 'username pending'}</span>
-            <span>{email}</span>
+            {username ? <span>@{username}</span> : null}
+            {email ? <span>{email}</span> : null}
           </div>
           <div className="settings-profile-pills">
             <span className="pill ghost">Private account controls</span>
-            <span className="pill ghost">Member since {joinDate}</span>
+            {joinDate ? <span className="pill ghost">Member since {joinDate}</span> : null}
           </div>
         </div>
       </div>
       <div className="settings-form-grid">
         <div className="settings-field">
           <label className="input-label">Display name</label>
-          <input className="text-input" value={displayName} placeholder="Your name" readOnly />
+          <input className="text-input" value={displayName} readOnly />
         </div>
-        <div className="settings-field">
-          <label className="input-label">Username</label>
-          <input
-            className="text-input"
-            value={userProfile?.username ?? ''}
-            placeholder="Not set"
-            readOnly
-          />
-        </div>
-        <div className="settings-field settings-field--full">
-          <label className="input-label">Email</label>
-          <input className="text-input" value={email} placeholder="you@example.com" readOnly />
-        </div>
+        {username ? (
+          <div className="settings-field">
+            <label className="input-label">Username</label>
+            <input className="text-input" value={username} readOnly />
+          </div>
+        ) : null}
+        {email ? (
+          <div className="settings-field settings-field--full">
+            <label className="input-label">Email</label>
+            <input className="text-input" value={email} readOnly />
+          </div>
+        ) : null}
       </div>
       <div className="settings-card-footer">
         <div className="muted small">
@@ -1603,10 +1758,11 @@ function AccountCard({ session }: { session: any }) {
   }
 
   const provider = session.user.app_metadata?.provider ?? ''
-  const providerLabel = provider ? `Signed in with ${provider}` : 'Sign-in provider'
-  const providerMark = provider ? provider.slice(0, 1).toUpperCase() : '?'
-  const email = session.user.email ?? 'Email unavailable'
-  const userId = session.user.id ?? 'Unavailable'
+  const providerLabel = provider ? `Signed in with ${provider}` : 'Authenticated session'
+  const providerMark = provider ? provider.slice(0, 1).toUpperCase() : null
+  const identity = getSessionIdentity(session)
+  const email = identity.email
+  const userId = identity.userId
 
   return (
     <div className="settings-stack">
@@ -1618,62 +1774,69 @@ function AccountCard({ session }: { session: any }) {
         </div>
         <div className="login-row">
           <div className="login-provider">
-            <span role="img" aria-label="provider">
-              {providerMark}
-            </span>
+            {providerMark ? (
+              <span role="img" aria-label="provider">
+                {providerMark}
+              </span>
+            ) : null}
             <div>
               <div className="name">{providerLabel}</div>
-              <div className="muted">{email}</div>
+              {email ? <div className="muted">{email}</div> : null}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="settings-card">
-        <div className="card-title">Account identity</div>
-        <div className="field-grid two">
-          <div>
-            <label className="input-label">Current email</label>
-            <input className="text-input" value={email} readOnly />
-          </div>
-          <div>
-            <label className="input-label">User ID</label>
-            <input className="text-input" value={userId} readOnly />
+      {(email || userId) && (
+        <div className="settings-card">
+          <div className="card-title">Account identity</div>
+          <div className="field-grid two">
+            {email ? (
+              <div>
+                <label className="input-label">Current email</label>
+                <input className="text-input" value={email} readOnly />
+              </div>
+            ) : null}
+            {userId ? (
+              <div>
+                <label className="input-label">User ID</label>
+                <input className="text-input" value={userId} readOnly />
+              </div>
+            ) : null}
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="settings-card">
-        <div className="card-title">Support</div>
-        <div className="muted">
-          Use official support channels for billing, access, and account recovery questions.
+      {HELP_CENTER_URL || SUPPORT_EMAIL ? (
+        <div className="settings-card">
+          <div className="card-title">Support</div>
+          <div className="muted">
+            Use official support channels for billing, access, and account recovery questions.
+          </div>
+          <div className="button-row">
+            {HELP_CENTER_URL ? (
+              <button
+                className="pill ghost"
+                type="button"
+                onClick={() => window.open(HELP_CENTER_URL, '_blank', 'noopener,noreferrer')}
+              >
+                Help Center
+              </button>
+            ) : null}
+            {SUPPORT_EMAIL ? (
+              <button
+                className="pill ghost"
+                type="button"
+                onClick={() => {
+                  window.location.href = `mailto:${SUPPORT_EMAIL}`
+                }}
+              >
+                Email support
+              </button>
+            ) : null}
+          </div>
         </div>
-        <div className="button-row">
-          {HELP_CENTER_URL ? (
-            <button
-              className="pill ghost"
-              type="button"
-              onClick={() => window.open(HELP_CENTER_URL, '_blank', 'noopener,noreferrer')}
-            >
-              Help Center
-            </button>
-          ) : null}
-          {SUPPORT_EMAIL ? (
-            <button
-              className="pill ghost"
-              type="button"
-              onClick={() => {
-                window.location.href = `mailto:${SUPPORT_EMAIL}`
-              }}
-            >
-              Email support
-            </button>
-          ) : null}
-          {!HELP_CENTER_URL && !SUPPORT_EMAIL ? (
-            <div className="muted small">Support details are not configured for this environment.</div>
-          ) : null}
-        </div>
-      </div>
+      ) : null}
     </div>
   )
 }
@@ -2074,6 +2237,7 @@ function MembershipPage({
   giftRef,
   onGoPayment,
   paymentPending,
+  showGiftCreator,
   history,
   onOpenCreator,
 }: {
@@ -2082,6 +2246,7 @@ function MembershipPage({
   giftRef: React.RefObject<HTMLDivElement | null>
   onGoPayment: () => void
   paymentPending: boolean
+  showGiftCreator: boolean
   history: SubscriptionHistoryItem[]
   onOpenCreator: (creator: CreatorCard) => void
 }) {
@@ -2100,17 +2265,19 @@ function MembershipPage({
           >
             Subscription history
           </button>
-          <button
-            className={`chip ${tab === 'Gift Creator' ? 'active' : ''}`}
-            type="button"
-            onClick={() => onTabChange('Gift Creator')}
-          >
-            Gift creator
-          </button>
+          {showGiftCreator ? (
+            <button
+              className={`chip ${tab === 'Gift Creator' ? 'active' : ''}`}
+              type="button"
+              onClick={() => onTabChange('Gift Creator')}
+            >
+              Gift creator
+            </button>
+          ) : null}
         </div>
       </div>
 
-      {tab === 'Membership' ? (
+      {tab === 'Membership' || !showGiftCreator ? (
         <section className="membership-history-card">
           <div className="membership-history-card__head">
             <div>
@@ -2288,6 +2455,8 @@ function WalletPage({
   const pendingAmount = walletBalance?.pending_amount_minor ?? 0
   const walletCurrency = walletBalance?.currency ?? 'KES'
   const creatorOptions = search.trim() ? searchResults : quickCreators
+  const identity = getSessionIdentity(session)
+  const walletAccountLabel = identity.email ?? identity.shortId ?? 'Authenticated account'
 
   const handleSend = async () => {
     if (!selectedCreator) return
@@ -2358,8 +2527,8 @@ function WalletPage({
               </div>
             </div>
             <div className="wallet-receive-note">
-              <strong>Wallet holder</strong>
-              <span>{session?.user?.email ?? 'Signed-in fan'}</span>
+              <strong>Account</strong>
+              <span>{walletAccountLabel}</span>
             </div>
             <div className="wallet-receive-note">
               <strong>Currency</strong>
@@ -2552,8 +2721,8 @@ function WalletPage({
                 <span>3. Your balance moves into Available after confirmation.</span>
               </div>
               <div className="wallet-receive-note">
-                <strong>Wallet address</strong>
-                <span>{session?.user?.email ?? 'Signed-in fan'}</span>
+                <strong>Receipts sent to</strong>
+                <span>{walletAccountLabel}</span>
               </div>
             </div>
           </div>
@@ -2713,13 +2882,11 @@ function CreatorPage({
                 (post.visibility === 'ppv' && !ppvPurchaseSet.has(post.id))
               return (
                 <article key={post.id} className="creator-page__post-card">
-                  <div className="creator-page__post-media">
-                    {post.media[0]?.url ? (
+                  {post.media[0]?.url ? (
+                    <div className="creator-page__post-media">
                       <img src={post.media[0].url} alt={post.title} />
-                    ) : (
-                      <div className="media-placeholder">No media</div>
-                    )}
-                  </div>
+                    </div>
+                  ) : null}
                   <div className="creator-page__post-copy">
                     <div className="creator-page__post-top">
                       <h4>{post.title}</h4>
@@ -3090,9 +3257,7 @@ function HomePage({
                       ) : (
                         <img src={media.url} alt={post.title} />
                       )
-                    ) : (
-                      <div className="media-placeholder">Preview unavailable</div>
-                    )}
+                    ) : null}
                     {mediaCount > 1 ? (
                       <>
                         <button
@@ -3246,12 +3411,8 @@ function HomePage({
                       ) : (
                         <img src={media.url} alt={activeStory.title || 'Story'} />
                       )
-                    ) : (
-                      <div className="media-placeholder">Story unavailable</div>
-                    )
-                  ) : (
-                    <div className="media-placeholder">No story media</div>
-                  )}
+                  ) : null
+                ) : null}
                   {mediaCount > 1 ? (
                     <>
                       <button
@@ -3391,12 +3552,8 @@ function HomePage({
                       ) : (
                         <img src={media.url} alt={activePost.title || 'Post'} />
                       )
-                    ) : (
-                      <div className="media-placeholder">Post unavailable</div>
-                    )
-                  ) : (
-                    <div className="media-placeholder">No post media</div>
-                  )}
+                    ) : null
+                  ) : null}
                   {mediaCount > 1 ? (
                     <>
                       <button
@@ -3481,6 +3638,8 @@ export default function App() {
     | 'features'
   >('home')
   const [ageConfirmed, setAgeConfirmed] = useState(false)
+  const [ageCheckComplete, setAgeCheckComplete] = useState(false)
+  const [ageConfirming, setAgeConfirming] = useState(false)
   const [sessionChecked, setSessionChecked] = useState(false)
   const [session, setSession] = useState<any>(null)
   const [filter, setFilter] = useState(filters[0])
@@ -3513,6 +3672,8 @@ export default function App() {
   const [ppvPurchases, setPpvPurchases] = useState<number[]>([])
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
   const [subscribingCreatorId, setSubscribingCreatorId] = useState<string | null>(null)
+  const [purchasePrompt, setPurchasePrompt] = useState<PurchasePromptAction | null>(null)
+  const [purchasePromptBusy, setPurchasePromptBusy] = useState(false)
   const [recentCreators, setRecentCreators] = useState<CreatorCard[]>([])
   const [walletTopupInFlight, setWalletTopupInFlight] = useState(false)
   const [giftCheckoutInFlight, setGiftCheckoutInFlight] = useState(false)
@@ -3560,6 +3721,26 @@ export default function App() {
     setWalletHistory(walletEntries)
   }
 
+  const refreshAccessState = async () => {
+    const [subs, history, balance, walletEntries, purchases, posts, stories] = await Promise.all([
+      fetchActiveSubscriptions(),
+      fetchSubscriptionHistory(),
+      fetchWalletBalance(),
+      fetchWalletHistory(),
+      fetchPpvPurchases(),
+      fetchFeedPosts(),
+      fetchStories(),
+    ])
+
+    setActiveSubscriptions(subs)
+    setSubscriptionHistory(history)
+    setWalletBalance(balance)
+    setWalletHistory(walletEntries)
+    setPpvPurchases(purchases)
+    setFeedPosts(posts)
+    setStoryPosts(stories)
+  }
+
   useEffect(() => {
     if (!paymentReturn.kind && !paymentReturn.hasReference) return
 
@@ -3577,6 +3758,12 @@ export default function App() {
 
     clearPaymentReturnParams()
   }, [paymentReturn.hasReference, paymentReturn.kind])
+
+  useEffect(() => {
+    if (!hasGiftCreatorCheckout && membershipTab === 'Gift Creator') {
+      setMembershipTab('Membership')
+    }
+  }, [hasGiftCreatorCheckout, membershipTab])
 
   useEffect(() => {
     if (envStatus.hasIssues) {
@@ -3767,14 +3954,31 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (envStatus.hasIssues || ageConfirmed || !session) return
+    if (envStatus.hasIssues) {
+      setAgeCheckComplete(true)
+      return
+    }
+    if (!session?.user?.id) {
+      setAgeConfirmed(false)
+      setAgeCheckComplete(true)
+      return
+    }
+
+    let isMounted = true
+    setAgeCheckComplete(false)
+    setAgeConfirming(false)
+
     ;(async () => {
       const remote = await fetchAgeConfirmation()
-      if (remote) {
-        setAgeConfirmed(true)
-      }
+      if (!isMounted) return
+      setAgeConfirmed(Boolean(remote))
+      setAgeCheckComplete(true)
     })()
-  }, [ageConfirmed, session])
+
+    return () => {
+      isMounted = false
+    }
+  }, [envStatus.hasIssues, session?.user?.id])
 
   useEffect(() => {
     if (!toast) return
@@ -3811,7 +4015,7 @@ export default function App() {
 
   const openExternal = (url: string | null, label: string) => {
     if (!url) {
-      setToast(`${label} is not configured`)
+      setToast(`${label} is unavailable right now.`)
       return
     }
     window.open(url, '_blank', 'noopener,noreferrer')
@@ -3819,7 +4023,7 @@ export default function App() {
 
   const openSupportEmail = () => {
     if (!SUPPORT_EMAIL) {
-      setToast('Support email is not configured')
+      setToast('Support email is unavailable right now.')
       return
     }
     window.location.href = `mailto:${SUPPORT_EMAIL}`
@@ -3838,12 +4042,8 @@ export default function App() {
       return
     }
     if (giftCheckoutInFlight) return
-    if (!FEATURED_CREATOR_ID) {
-      setToast('Payment is not configured: missing creator id')
-      return
-    }
-    if (!DEFAULT_GIFT_AMOUNT_MAJOR || DEFAULT_GIFT_AMOUNT_MAJOR <= 0) {
-      setToast('Payment is not configured: missing amount')
+    if (!hasGiftCreatorCheckout) {
+      setToast('This checkout is unavailable right now.')
       return
     }
 
@@ -3957,7 +4157,7 @@ export default function App() {
     }
   }
 
-  const handleSubscribe = async (creator: {
+  const executeSubscribe = async (creator: {
     id: string
     handle?: string | null
     display_name?: string | null
@@ -3984,37 +4184,14 @@ export default function App() {
       return
     }
     const priceCents = creator.subscription_price_cents ?? 0
-    const walletBalanceMinor = walletBalance?.available_amount_minor ?? 0
     const creatorName = creator.display_name ?? creator.handle ?? 'this creator'
-    const canAfford = priceCents <= 0 || walletBalanceMinor >= priceCents
-
-    if (typeof window !== 'undefined') {
-      const confirmed = window.confirm(
-        priceCents <= 0
-          ? `Subscribe to ${creatorName} for free?`
-          : canAfford
-            ? `Subscribe to ${creatorName} for ${formatKsh(priceCents)}?\n\nThis amount will be deducted from your wallet.\nCurrent wallet balance: ${formatKsh(walletBalanceMinor)}`
-            : `You need ${formatKsh(priceCents)} to subscribe to ${creatorName}, but your wallet only has ${formatKsh(walletBalanceMinor)}.\n\nOpen wallet top-up now?`
-      )
-
-      if (!confirmed) {
-        return
-      }
-    }
-
-    if (!canAfford) {
-      setPage('wallet')
-      setWalletTab('receive')
-      setToast(`Top up your wallet to subscribe to ${creatorName}.`)
-      return
-    }
 
     try {
       setSubscribingCreatorId(creator.id)
       const result = await purchaseSubscription(creator.id)
       if (result) {
         setActiveSubscriptions((prev) => Array.from(new Set([...prev, creator.id])))
-        await refreshPaymentState()
+        await refreshAccessState()
       }
       setToast(
         priceCents > 0
@@ -4039,6 +4216,70 @@ export default function App() {
     }
   }
 
+  const handleSubscribe = async (creator: {
+    id: string
+    handle?: string | null
+    display_name?: string | null
+    subscription_price_cents?: number | null
+    subscription_currency?: string | null
+  }) => {
+    if (!session?.user?.id) {
+      setToast('Sign in to subscribe')
+      return
+    }
+    if (!creator.id) {
+      setToast('This creator is not available for subscription right now.')
+      return
+    }
+    if (session?.user?.id && creator.id === session.user.id) {
+      setToast('You cannot subscribe to your own creator account.')
+      return
+    }
+    if (activeSubscriptions.includes(creator.id)) {
+      setToast('You are already subscribed to this creator.')
+      return
+    }
+    if (subscribingCreatorId === creator.id || purchasePromptBusy) {
+      return
+    }
+
+    const priceCents = creator.subscription_price_cents ?? 0
+    const walletBalanceMinor = walletBalance?.available_amount_minor ?? 0
+    setPurchasePrompt({
+      kind: 'subscribe',
+      creator,
+      priceCents,
+      walletBalanceMinor,
+      insufficientBalance: priceCents > 0 && walletBalanceMinor < priceCents,
+    })
+  }
+
+  const executeUnlockPost = async (post: FeedPost) => {
+    if (!session?.user?.id) {
+      setToast('Sign in to unlock this post')
+      return
+    }
+    const priceCents = post.price_cents ?? 0
+    if (priceCents <= 0) {
+      setToast('This post is not priced')
+      return
+    }
+    try {
+      const result = await purchasePpv(post.id)
+      if (result?.purchase_id) {
+        setPpvPurchases((prev) => Array.from(new Set([...prev, post.id])))
+        await refreshAccessState()
+        setToast('Post unlocked')
+      }
+    } catch (err: any) {
+      console.error(err)
+      const message = err?.message?.includes('insufficient')
+        ? 'Insufficient wallet balance. Top up to continue.'
+        : 'Could not unlock post.'
+      setToast(message)
+    }
+  }
+
   const handleUnlockPost = async (post: FeedPost) => {
     if (!session?.user?.id) {
       setToast('Sign in to unlock this post')
@@ -4049,32 +4290,47 @@ export default function App() {
       setToast('This post is not priced')
       return
     }
-    const currentBalance = walletBalance?.available_amount_minor ?? 0
-    if (currentBalance < priceCents) {
-      setToast('Insufficient wallet balance. Top up to continue.')
+    if (purchasePromptBusy) {
       return
     }
+
+    const walletBalanceMinor = walletBalance?.available_amount_minor ?? 0
+    setPurchasePrompt({
+      kind: 'unlock',
+      post,
+      priceCents,
+      walletBalanceMinor,
+      insufficientBalance: walletBalanceMinor < priceCents,
+    })
+  }
+
+  const handlePurchasePromptConfirm = async () => {
+    if (!purchasePrompt || purchasePromptBusy) {
+      return
+    }
+
+    if (purchasePrompt.insufficientBalance) {
+      setPurchasePrompt(null)
+      setPage('wallet')
+      setWalletTab('receive')
+      setToast(
+        purchasePrompt.kind === 'subscribe'
+          ? `Top up your wallet to subscribe to ${purchasePrompt.creator.display_name ?? purchasePrompt.creator.handle ?? 'this creator'}.`
+          : 'Top up your wallet to unlock this post.'
+      )
+      return
+    }
+
     try {
-      const result = await purchasePpv(post.id)
-      if (result?.purchase_id) {
-        setPpvPurchases((prev) => Array.from(new Set([...prev, post.id])))
-        if (typeof result.new_balance_minor === 'number') {
-          setWalletBalance((prev) =>
-            prev
-              ? { ...prev, available_amount_minor: result.new_balance_minor }
-              : { available_amount_minor: result.new_balance_minor, pending_amount_minor: 0, currency: 'KES' }
-          )
-        }
-        const history = await fetchWalletHistory()
-        setWalletHistory(history)
-        setToast('Post unlocked')
+      setPurchasePromptBusy(true)
+      if (purchasePrompt.kind === 'subscribe') {
+        await executeSubscribe(purchasePrompt.creator)
+      } else {
+        await executeUnlockPost(purchasePrompt.post)
       }
-    } catch (err: any) {
-      console.error(err)
-      const message = err?.message?.includes('insufficient')
-        ? 'Insufficient wallet balance. Top up to continue.'
-        : 'Could not unlock post.'
-      setToast(message)
+      setPurchasePrompt(null)
+    } finally {
+      setPurchasePromptBusy(false)
     }
   }
 
@@ -4163,23 +4419,60 @@ export default function App() {
     )
   }
 
+  if (!ageCheckComplete) {
+    return (
+      <div className="age-check-shell">
+        <div className="age-check-card" role="status" aria-live="polite">
+          <div className="age-kicker">18+ Verification</div>
+          <h2>Checking your access</h2>
+          <p>We are verifying your age-confirmation record before loading the app.</p>
+          <div className="age-check-bar" aria-hidden="true">
+            <span />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <AgeGate
         open={!ageConfirmed}
         sessionPresent={Boolean(session)}
-        onEnter={() => {
+        submitting={ageConfirming}
+        onEnter={async () => {
           if (!session) {
             setToast('Sign in to confirm age')
             return
           }
+          if (ageConfirming) return
+
+          setAgeConfirming(true)
+          const didConfirm = await markAgeConfirmed()
+          if (!didConfirm) {
+            setAgeConfirming(false)
+            setToast('Could not confirm age right now. Try again.')
+            return
+          }
+
           setAgeConfirmed(true)
-          markAgeConfirmed()
-          logAgeEvent('enter')
+          setAgeConfirming(false)
+          void logAgeEvent('enter')
         }}
         onExit={() => {
-          logAgeExit()
+          void logAgeExit()
           window.location.replace(EXIT_URL)
+        }}
+      />
+      <PurchasePrompt
+        action={purchasePrompt}
+        busy={purchasePromptBusy}
+        onCancel={() => {
+          if (purchasePromptBusy) return
+          setPurchasePrompt(null)
+        }}
+        onConfirm={() => {
+          void handlePurchasePromptConfirm()
         }}
       />
       <aside className="sidebar">
@@ -4438,7 +4731,7 @@ export default function App() {
               className="pill"
               onClick={async () => {
                 if (!featureText.trim()) return setToast('Enter a feature idea first')
-                if (!isSupabaseConfigured) return setToast('Feature requests are not configured')
+                if (!isSupabaseConfigured) return setToast('Feature requests are unavailable right now.')
                 try {
                   await submitFeatureRequest(featureText.trim())
                   setFeatureText('')
@@ -4480,6 +4773,7 @@ export default function App() {
             giftRef={giftRef}
             onGoPayment={handleGiftCheckout}
             paymentPending={giftCheckoutInFlight}
+            showGiftCreator={hasGiftCreatorCheckout}
             history={subscriptionHistory}
             onOpenCreator={handleOpenCreatorPage}
           />

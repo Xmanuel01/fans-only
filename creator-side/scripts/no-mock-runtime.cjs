@@ -4,26 +4,14 @@ const path = require('path')
 const rootDir = path.resolve(__dirname, '..', 'src')
 const bannedPatterns = [
   'VITE_ENABLE_SAMPLE_DATA',
-  'VITE_ENABLE_DEMO_MODE',
+  'USE_SAMPLE_DATA',
   'dummyimage.com',
   'i.pravatar.cc',
   'unsplash.com',
-  'demoMode',
-  'USE_SAMPLE_DATA',
+  'What\'s new',
+  'What’s new',
   'Continue as demo',
-  'username pending',
-  'Signed-in fan',
-  'Sign-in provider',
-  'Email unavailable',
-  'Support details are not configured for this environment.',
-  'Payment is not configured: missing creator id',
-  'Payment is not configured: missing amount',
-  'Preview unavailable',
-  'Story unavailable',
-  'No story media',
-  'Post unavailable',
-  'No post media',
-  '>No media<',
+  'SAMPLE_',
 ]
 
 const offenders = []
@@ -51,11 +39,11 @@ const walk = (dir) => {
 walk(rootDir)
 
 if (offenders.length) {
-  console.error('Runtime mock/demo patterns detected in user-side:')
+  console.error('Runtime mock/demo patterns detected in creator-side:')
   for (const offender of offenders) {
     console.error(`- ${offender.file}: ${offender.pattern}`)
   }
   process.exit(1)
 }
 
-console.log('No banned runtime mock/demo patterns found in user-side/src.')
+console.log('No banned runtime mock/demo patterns found in creator-side/src.')
