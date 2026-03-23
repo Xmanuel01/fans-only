@@ -2856,7 +2856,7 @@ export function MyPayments() {
 
   return (
     <MyLayout
-      title="Payments"
+      title=""
       activeNav="payments"
       header={null}
     >
@@ -2866,9 +2866,6 @@ export function MyPayments() {
 
         <section className="wallet-panel wallet-panel--compact payments-summary-strip">
           <div className="wallet-panel__title-row">
-            <div>
-              <h2 className="wallet-panel__title">Payout workspace</h2>
-            </div>
             <div className="payments-summary-strip__actions">
               {loading ? <span className="wallet-status">Loading...</span> : null}
               <div className="payments-feature-switch__buttons">
