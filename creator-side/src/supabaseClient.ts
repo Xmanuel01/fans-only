@@ -10,6 +10,16 @@ export const supabase =
     : null;
 const CREATOR_PROFILE_BUCKET = 'creator-profiles';
 
+const isMissingRpcError = (error: unknown, functionName: string) => {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { code?: string; message?: string };
+  return (
+    candidate.code === 'PGRST202' &&
+    typeof candidate.message === 'string' &&
+    candidate.message.includes(functionName)
+  );
+};
+
 const FALLBACK_PUBLIC_APP_ORIGIN = 'https://fans-only-olive.vercel.app';
 const resolveAuthRedirectOrigin = () => {
   if (env.publicAppOrigin) {
@@ -384,7 +394,13 @@ export async function completeCreatorCardPayoutSetup(params: { reference: string
 export async function fetchChatThreads(): Promise<ChatThreadSummary[]> {
   if (!supabase) return [];
   const { data, error } = await supabase.rpc('get_chat_threads');
-  if (error) throw error;
+  if (error) {
+    if (isMissingRpcError(error, 'get_chat_threads')) {
+      console.warn('Chat threads RPC is unavailable. Apply direct message migrations.', error);
+      return [];
+    }
+    throw error;
+  }
   return (data ?? []) as ChatThreadSummary[];
 }
 
@@ -404,7 +420,13 @@ export async function fetchChatMessages(
 export async function fetchChatableMembers(): Promise<ChatableMember[]> {
   if (!supabase) return [];
   const { data, error } = await supabase.rpc('get_chatable_members');
-  if (error) throw error;
+  if (error) {
+    if (isMissingRpcError(error, 'get_chatable_members')) {
+      console.warn('Chatable members RPC is unavailable. Apply direct message migrations.', error);
+      return [];
+    }
+    throw error;
+  }
   return (data ?? []) as ChatableMember[];
 }
 
