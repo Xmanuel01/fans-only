@@ -26,9 +26,12 @@ body.of-my-body a {
 
 .my-nav {
   min-width: 0;
-  background: #0d1117;
+  background:
+    radial-gradient(circle at top left, rgba(62, 99, 255, 0.14), transparent 32%),
+    linear-gradient(180deg, #0f1626 0%, #0c121d 48%, #0a0f18 100%);
   padding: 16px 14px 16px;
-  border-right: 1px solid #161b22;
+  border-right: 1px solid #1a2740;
+  box-shadow: inset -1px 0 0 rgba(109, 166, 255, 0.08);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -43,31 +46,44 @@ body.of-my-body a {
 }
 
 .my-nav--dark {
-  background: #0d1117;
+  background:
+    radial-gradient(circle at top left, rgba(62, 99, 255, 0.14), transparent 32%),
+    linear-gradient(180deg, #0f1626 0%, #0c121d 48%, #0a0f18 100%);
 }
 
 .my-nav__avatar {
-  width: 54px;
-  height: 54px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   background: linear-gradient(135deg, #f4c6c6, #b79bd6);
-  box-shadow: 0 6px 14px rgba(22, 28, 45, 0.15);
+  border: 2px solid rgba(143, 187, 255, 0.18);
+  box-shadow:
+    0 10px 22px rgba(6, 11, 20, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
   display: block;
   object-fit: cover;
 }
 
 .my-nav__profile {
   display: grid;
-  grid-template-columns: 54px 1fr;
-  gap: 10px;
+  grid-template-columns: 58px 1fr;
+  gap: 12px;
   align-items: center;
   min-width: 0;
+  padding: 12px;
+  border-radius: 20px;
+  border: 1px solid #1e2e4b;
+  background:
+    linear-gradient(180deg, rgba(18, 29, 48, 0.96), rgba(12, 19, 31, 0.92)),
+    #0f1626;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 18px 32px rgba(4, 8, 16, 0.28);
 }
 
 .my-nav__profile .my-nav__avatar {
-  width: 54px;
-  height: 54px;
-  box-shadow: none;
+  width: 58px;
+  height: 58px;
 }
 
 .my-nav__avatar--placeholder {
@@ -79,36 +95,42 @@ body.of-my-body a {
 }
 
 .my-nav__identity .name {
+  font-size: 16px;
   font-weight: 800;
+  letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
 
 .my-nav__identity .handle {
-  color: #9fb0c7;
-  font-size: 13px;
+  color: #7eb5ff;
+  font-size: 14px;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .my-nav__identity .meta {
-  color: #7f8ca1;
+  color: #8ea0bc;
   font-size: 12px;
+  margin-top: 2px;
 }
 
 .my-nav__menu {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .my-nav-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 9px 10px;
-  border-radius: 12px;
-  color: #d3dae7;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  color: #d7e2f1;
   font-weight: 700;
-  background: #0d1117;
+  background: rgba(10, 15, 24, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
 .my-nav-item svg {
@@ -121,29 +143,60 @@ body.of-my-body a {
   stroke-linejoin: round;
 }
 
+.my-nav-item__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(126, 181, 255, 0.12);
+  background: linear-gradient(180deg, rgba(18, 30, 49, 0.92), rgba(12, 18, 30, 0.96));
+  color: #d7e7ff;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.my-nav-item__label {
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
 .my-nav-item.is-active {
-  background: #12263a;
+  background: linear-gradient(135deg, rgba(28, 60, 98, 0.95), rgba(19, 42, 68, 0.98));
+  border-color: rgba(90, 163, 255, 0.22);
   color: #e8edf5;
+  box-shadow:
+    inset 3px 0 0 #56b1ff,
+    0 14px 28px rgba(7, 14, 26, 0.28);
+}
+
+.my-nav-item.is-active .my-nav-item__icon {
+  background: linear-gradient(180deg, rgba(40, 90, 148, 0.92), rgba(23, 53, 87, 0.96));
+  border-color: rgba(117, 189, 255, 0.24);
+  color: #ffffff;
 }
 
 .my-nav__cta {
   margin-top: 4px;
-  background: transparent;
+  background: linear-gradient(135deg, #10213b 0%, #0d1830 100%);
   color: #e8edf5;
   border-radius: 999px;
-  padding: 10px 14px;
+  padding: 12px 14px;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: 40px minmax(0, 1fr);
   align-items: center;
-  column-gap: 10px;
+  column-gap: 12px;
   font-weight: 700;
   justify-items: center;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-size: 13px;
+  font-size: 14px;
   color: #e8edf5;
   text-align: center;
-  border: 1px solid #2a3342;
+  border: 1px solid #27436d;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 16px 28px rgba(6, 11, 20, 0.22);
   transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease, color 0.2s ease,
     border-color 0.2s ease;
 }
@@ -153,10 +206,11 @@ body.of-my-body a {
 }
 
 .my-nav__cta-icon {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.08));
+  border: 1px solid rgba(138, 196, 255, 0.12);
   display: grid;
   place-items: center;
   justify-self: start;
@@ -176,8 +230,10 @@ body.of-my-body a {
 }
 
 .my-nav__cta:hover {
-  background: #12263a;
-  box-shadow: 0 0 0 1px #4ba3ff;
+  background: linear-gradient(135deg, #15305a 0%, #10254a 100%);
+  box-shadow:
+    0 0 0 1px #4ba3ff,
+    0 20px 34px rgba(8, 16, 28, 0.28);
   color: #fff;
   border-color: #4ba3ff;
 }
@@ -206,6 +262,8 @@ button,
 .home-links a:hover,
 .home-hero__actions a:hover,
 .my-nav-item:hover {
+  background: linear-gradient(135deg, rgba(18, 34, 55, 0.92), rgba(12, 22, 36, 0.96));
+  border-color: rgba(75, 163, 255, 0.42);
   box-shadow: 0 0 0 1px #4ba3ff;
 }
 
@@ -222,8 +280,9 @@ button,
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border-top: 1px solid #161b22;
-  padding-top: 10px;
+  border-top: 1px solid rgba(104, 145, 204, 0.14);
+  padding-top: 14px;
+  margin-top: 2px;
 }
 
 .my-nav-item__badge {
@@ -241,10 +300,12 @@ button,
 }
 
 .wallet-pill {
-  background: #1f252f;
-  color: #e8edf5;
-  padding: 6px 10px;
-  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(31, 57, 92, 0.92), rgba(17, 34, 57, 0.96));
+  color: #f4f8ff;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 159, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   font-weight: 800;
   font-size: 12px;
 }
