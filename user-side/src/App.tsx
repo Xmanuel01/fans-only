@@ -81,6 +81,7 @@ const DEFAULT_GIFT_AMOUNT_MAJOR =
     ? env.giftAmountMajor
     : 0
 const MPESA_STK_ENABLED = env.mpesaStkEnabled
+const FEATURE_REQUESTS_ENABLED = env.featureRequestsEnabled
 const BASE_URL = import.meta.env.BASE_URL ?? '/'
 const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`
 const RECENT_CREATORS_STORAGE_KEY = 'fans-only:recent-creators'
@@ -3705,7 +3706,7 @@ export default function App() {
   const resolvedTheme = theme === 'system' ? systemTheme : theme
   const hasReleaseNotes = Boolean(RELEASE_NOTES_URL)
   const hasHelpSupport = Boolean(HELP_CENTER_URL || SUPPORT_EMAIL)
-  const hasFeatureRequests = isSupabaseConfigured
+  const hasFeatureRequests = Boolean(FEATURE_REQUESTS_ENABLED && isSupabaseConfigured)
 
   const refreshPaymentState = async (options?: { ifMounted?: () => boolean }) => {
     const [subs, history, balance, walletEntries] = await Promise.all([

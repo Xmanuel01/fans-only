@@ -1170,9 +1170,9 @@ async function uploadCreatorProfileAsset(userId: string, folder: 'avatar' | 'ban
   });
   if (uploadError) {
     if (isBucketMissingError(uploadError)) {
-      throw new Error(
-        'Profile uploads are not configured yet. Deploy the upload-creator-profile-asset edge function or create the creator-profiles bucket in Supabase.',
-      );
+        throw new Error(
+        'Profile uploads are not configured. Deploy the upload-creator-profile-asset edge function and create the creator-profiles bucket in Supabase.',
+        );
     }
     throw uploadError;
   }

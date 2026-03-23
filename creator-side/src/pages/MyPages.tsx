@@ -298,7 +298,7 @@ const getPayoutVerificationLabel = (
   if (state === 'pending') return 'Pending review';
   if (state === 'rejected') return 'Rejected';
   if (state === 'inactive') return 'Inactive';
-  return 'Not configured';
+  return 'Setup required';
 };
 
 const getPayoutDestinationLabel = (account: PayoutAccount | null) => {
@@ -2126,7 +2126,7 @@ function LegacyMyPayments() {
       <div className="wallet-page wallet-page--payout">
         {payoutAccount?.provider === 'paypal' ? (
           <div className="wallet-notice wallet-notice--warning">
-            Your previous PayPal payout method is not part of the live creator payout workflow.
+            A previously saved payout method is not supported in the live creator payout workflow.
             Save M-PESA, Bank, or Card to receive payouts.
           </div>
         ) : null}
@@ -2344,155 +2344,7 @@ function LegacyMyPayments() {
 }
 
 function LegacyMyPaymentsAddCard() {
-  const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [errorText, setErrorText] = useState<string | null>(null);
-  const [summary, setSummary] = useState<PayoutSummary | null>(null);
-  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadPayoutContext = async () => {
-      try {
-        setLoading(true);
-        setErrorText(null);
-        const [nextSummary, nextAccount] = await Promise.all([
-          fetchPayoutSummary().catch((error) => {
-            console.warn('Could not load payout summary', error);
-            return null;
-          }),
-          fetchPayoutAccount().catch((error) => {
-            console.warn('Could not load payout account', error);
-            return null;
-          }),
-        ]);
-
-        if (!active) return;
-        setSummary(nextSummary);
-        setPayoutAccount(nextAccount);
-      } catch (error) {
-        console.error(error);
-        if (!active) return;
-        setErrorText('Could not load payout context.');
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    };
-
-    void loadPayoutContext();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const livePayoutAccount = payoutAccount?.provider === 'paypal' ? null : payoutAccount;
-  const verificationState = getPayoutVerificationState(livePayoutAccount);
-
-  return (
-    <MyLayout
-      title="Card payouts"
-      subtitle="Withdrawal to cards is not live yet. Use verified payout destinations for real creator transfers."
-      activeNav="payments"
-      headerActions={
-        <div className="wallet-actions wallet-actions--header">
-          <button
-            className="wallet-action-button wallet-action-button--ghost"
-            type="button"
-            onClick={() => navigate('/my/payments')}
-          >
-            Open banking
-          </button>
-          <button className="wallet-action-button" type="button" onClick={() => navigate('/my/payments')}>
-            Back to payments
-          </button>
-        </div>
-      }
-    >
-      <div className="wallet-page wallet-page--single wallet-page--banking">
-        {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
-        {payoutAccount?.provider === 'paypal' ? (
-          <div className="wallet-notice wallet-notice--warning">
-            A previous PayPal payout method is saved, but the live creator payout workflow only uses
-            M-PESA and Bank while card payouts remain unavailable.
-          </div>
-        ) : null}
-
-        <section className="wallet-panel wallet-coming-soon">
-          <div className="wallet-panel__title-row">
-            <div>
-              <h2 className="wallet-panel__title">Card payouts are coming soon</h2>
-              <p className="wallet-panel__subtitle">
-                Creator withdrawals are currently supported on verified M-PESA and Bank
-                destinations only.
-              </p>
-            </div>
-            <span className="wallet-status wallet-status--inactive">Coming soon</span>
-          </div>
-
-          <div className="wallet-support-list wallet-support-list--rails">
-            <div className="wallet-support-list__item">
-              <strong>Live payout rails</strong>
-              <span>M-PESA and Bank can receive creator transfers after verification.</span>
-            </div>
-            <div className="wallet-support-list__item">
-              <strong>Why cards are blocked</strong>
-              <span>
-                Withdrawal-to-card is intentionally disabled until a dedicated card payout provider
-                and compliance workflow are integrated.
-              </span>
-            </div>
-            <div className="wallet-support-list__item">
-              <strong>What to do now</strong>
-              <span>Set up a payout destination in Banking, then request payouts from Payments.</span>
-            </div>
-          </div>
-        </section>
-
-        <section className="wallet-panel wallet-panel--compact">
-          <div className="wallet-panel__title-row">
-            <div>
-              <h2 className="wallet-panel__title">Current payout setup</h2>
-              <p className="wallet-panel__subtitle">
-                This reflects the real creator payout workflow connected to your balance.
-              </p>
-            </div>
-            {loading ? <span className="wallet-status">Syncing...</span> : null}
-          </div>
-
-          <div className="wallet-balance-grid wallet-balance-grid--banking">
-            <article className="wallet-balance-card">
-              <div className="wallet-balance-card__label">Available balance</div>
-              <div className="wallet-balance-card__value">
-                {formatMinorCurrency(summary?.available_amount_minor, summary?.currency)}
-              </div>
-            </article>
-            <article className="wallet-balance-card">
-              <div className="wallet-balance-card__label">Destination status</div>
-              <div className="wallet-balance-card__value wallet-balance-card__value--small">
-                {getPayoutVerificationLabel(verificationState)}
-              </div>
-            </article>
-            <article className="wallet-balance-card">
-              <div className="wallet-balance-card__label">Current rail</div>
-              <div className="wallet-balance-card__value wallet-balance-card__value--small">
-                {getPayoutProviderLabel(livePayoutAccount?.provider)}
-              </div>
-              <div className="wallet-balance-card__meta">{getPayoutDestinationLabel(livePayoutAccount)}</div>
-            </article>
-          </div>
-
-          <div className="wallet-warning">
-            Card payouts are not part of the live creator payout workflow yet. Use Banking to manage
-            the verified destination that will receive your real creator transfers.
-          </div>
-        </section>
-      </div>
-    </MyLayout>
-  );
+  return <Navigate to="/my/payments?rail=card-bank&subrail=card&setup=1&panel=method" replace />;
 }
 
 export function MyPayments() {
@@ -2848,9 +2700,8 @@ export function MyPayments() {
       <div className="wallet-page wallet-page--single payments-workspace">
         {payoutAccount?.provider === 'paypal' ? (
           <div className="wallet-notice wallet-notice--warning">
-            A previous PayPal payout method is saved on this account, but the live creator payout
-            workflow only supports M-PESA, Bank, and Card in KES. Save one of those rails to
-            continue.
+            A previously saved payout method is not supported in the live creator payout workflow.
+            Save M-PESA, Bank, or Card in KES to continue.
           </div>
         ) : null}
         {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
@@ -3852,8 +3703,8 @@ function LegacyMyBanking() {
         {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
         {payoutAccount?.provider === 'paypal' ? (
           <div className="wallet-notice wallet-notice--warning">
-            PayPal is no longer part of the live creator payout workflow. Save M-PESA or Bank to
-            receive payouts.
+            A previously saved payout method is not supported in the live creator payout workflow.
+            Save M-PESA, Bank, or Card to receive payouts.
           </div>
         ) : null}
 
@@ -4029,7 +3880,7 @@ function LegacyMyBanking() {
                 type="button"
                   onClick={() => navigate('/my/payments')}
               >
-                Card payouts coming soon
+                Open payments
               </button>
               <button className="wallet-action-button" type="button" disabled={savingAccount} onClick={handleSave}>
                 {savingAccount ? 'Saving...' : 'Save destination'}

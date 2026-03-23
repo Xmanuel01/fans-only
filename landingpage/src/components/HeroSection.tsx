@@ -51,9 +51,9 @@ const HeroSection = () => {
           className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-2xl mx-auto"
         >
           {[
-            { icon: Users, label: "50K+ Creators", desc: "Active worldwide" },
-            { icon: Shield, label: "SFW & NSFW", desc: "All content welcome" },
-            { icon: Star, label: "85% Payout", desc: "Industry leading" },
+            { icon: Users, label: "Creator-first tools", desc: "Built for direct fan relationships" },
+            { icon: Shield, label: "SFW & NSFW", desc: "Managed under platform policies" },
+            { icon: Star, label: "Fast payouts", desc: "Built around secure Kenya-first payment rails" },
           ].map((stat, i) => (
             <div key={i} className="flex flex-col items-center gap-2 p-4">
               <stat.icon className="h-6 w-6 text-primary mb-1" />

@@ -18,6 +18,11 @@ const envChecks = [
       "VITE_CREATOR_APP_URL",
       "VITE_PUBLIC_APP_ORIGIN",
       "VITE_MPESA_STK_ENABLED",
+      "VITE_RELEASE_NOTES_URL",
+      "VITE_APP_DOWNLOAD_URL",
+      "VITE_GIFT_CREATOR_ID",
+      "VITE_GIFT_AMOUNT_MAJOR",
+      "VITE_FEATURE_REQUESTS_ENABLED",
     ],
   },
   {
@@ -35,16 +40,21 @@ const envChecks = [
 ];
 
 const supabaseEnvCandidates = ["supabase/.env", "supabase/.env.local", "supabase/.env.example"];
-const supabaseRequired = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
-const supabaseOptional = [
+const supabaseRequired = [
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
   "PAYSTACK_SECRET_KEY",
   "PAYSTACK_CARD_SETUP_AMOUNT_MAJOR",
   "MPESA_CONSUMER_KEY",
   "MPESA_CONSUMER_SECRET",
   "MPESA_PASSKEY",
   "MPESA_SHORTCODE",
-  "MPESA_CALLBACK_URL",
   "MPESA_CALLBACK_TOKEN",
+  "PAYOUT_QUEUE_CRON_TOKEN",
+  "OPERATOR_API_TOKEN",
+];
+const supabaseOptional = [
+  "MPESA_CALLBACK_URL",
   "MPESA_ENV",
   "PAYPAL_CLIENT_ID",
   "PAYPAL_CLIENT_SECRET",
@@ -67,6 +77,36 @@ const requiredMigrations = [
   "20260323100000_creator_payout_ops_hardening.sql",
 ];
 
+const requiredFunctions = [
+  "paystack-init",
+  "paystack-webhook",
+  "mpesa-stk-init",
+  "mpesa-stk-callback",
+  "request-creator-payout",
+  "process-payout-queue",
+  "review-creator-payout-account",
+  "upsert-mpesa-payout-account",
+  "upsert-bank-payout-account",
+  "start-creator-card-payout-setup",
+  "complete-creator-card-payout-setup",
+];
+
+const requiredUserLegalPages = [
+  "acceptable-use-policy.html",
+  "cookies.html",
+  "privacy.html",
+  "terms.html",
+  "usc2257.html",
+];
+
+const requiredCreatorLegalPages = [
+  "acceptable-use-policy.html",
+  "cookies.html",
+  "privacy.html",
+  "terms.html",
+  "usc2257.html",
+];
+
 function parseEnv(content) {
   const map = new Map();
   const lines = content.split(/\r?\n/);
@@ -85,7 +125,9 @@ function parseEnv(content) {
 function checkEnvFile(entry) {
   const fullPath = path.join(root, entry.path);
   if (!fs.existsSync(fullPath)) {
-    return { status: "missing", missing: entry.required, file: entry.path, values: new Map() };
+    return entry.required.length
+      ? { status: "missing", missing: entry.required, file: entry.path, values: new Map() }
+      : { status: "ok", missing: [], file: entry.path, values: new Map() };
   }
   const map = parseEnv(fs.readFileSync(fullPath, "utf8"));
   const missing = entry.required.filter((key) => !map.get(key));
@@ -100,6 +142,28 @@ function checkMigrations() {
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".sql"));
   const missing = requiredMigrations.filter((name) => !files.includes(name));
   return { status: missing.length ? "incomplete" : "ok", missing, existing: files };
+}
+
+function checkFunctionDirs() {
+  const dir = path.join(root, "supabase", "functions");
+  if (!fs.existsSync(dir)) {
+    return { status: "missing", missing: requiredFunctions };
+  }
+  const existing = fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  const missing = requiredFunctions.filter((name) => !existing.includes(name));
+  return { status: missing.length ? "incomplete" : "ok", missing, existing };
+}
+
+function checkRequiredFiles(baseDir, files) {
+  const fullDir = path.join(root, baseDir);
+  if (!fs.existsSync(fullDir)) {
+    return { status: "missing", missing: files };
+  }
+  const missing = files.filter((file) => !fs.existsSync(path.join(fullDir, file)));
+  return { status: missing.length ? "incomplete" : "ok", missing };
 }
 
 function printSection(title) {
@@ -133,19 +197,26 @@ function checkSupabaseEnv() {
 }
 
 function main() {
+  let hasFailure = false;
   console.log("Health checklist (local)");
 
   printSection("Frontend envs");
-  envChecks.forEach((entry) => printEnvResult(checkEnvFile(entry)));
+  envChecks.forEach((entry) => {
+    const result = checkEnvFile(entry);
+    printEnvResult(result);
+    if (result.status !== "ok") hasFailure = true;
+  });
 
   printSection("Supabase env");
   const supa = checkSupabaseEnv();
   if (supa.status === "missing") {
     console.log(`- ${supa.file}: MISSING`);
     console.log(`  required missing: ${supa.missing.join(", ")}`);
+    hasFailure = true;
   } else if (supa.status === "incomplete") {
     console.log(`- ${supa.file}: INCOMPLETE`);
     console.log(`  required missing: ${supa.missing.join(", ")}`);
+    hasFailure = true;
   } else {
     console.log(`- ${supa.file}: OK`);
   }
@@ -167,16 +238,54 @@ function main() {
   if (migrationCheck.status === "missing") {
     console.log("- supabase/migrations: MISSING");
     console.log(`  required missing: ${migrationCheck.missing.join(", ")}`);
+    hasFailure = true;
   } else if (migrationCheck.status === "incomplete") {
     console.log("- supabase/migrations: INCOMPLETE");
     console.log(`  required missing: ${migrationCheck.missing.join(", ")}`);
+    hasFailure = true;
   } else {
     console.log("- supabase/migrations: OK");
+  }
+
+  printSection("Supabase functions");
+  const functionCheck = checkFunctionDirs();
+  if (functionCheck.status === "missing") {
+    console.log("- supabase/functions: MISSING");
+    console.log(`  required missing: ${functionCheck.missing.join(", ")}`);
+    hasFailure = true;
+  } else if (functionCheck.status === "incomplete") {
+    console.log("- supabase/functions: INCOMPLETE");
+    console.log(`  required missing: ${functionCheck.missing.join(", ")}`);
+    hasFailure = true;
+  } else {
+    console.log("- supabase/functions: OK");
+  }
+
+  printSection("Legal assets");
+  const userLegalCheck = checkRequiredFiles("user-side/public/pages", requiredUserLegalPages);
+  const creatorLegalCheck = checkRequiredFiles("creator-side/public/pages", requiredCreatorLegalPages);
+  if (userLegalCheck.status !== "ok") {
+    console.log("- user-side/public/pages: INCOMPLETE");
+    console.log(`  required missing: ${userLegalCheck.missing.join(", ")}`);
+    hasFailure = true;
+  } else {
+    console.log("- user-side/public/pages: OK");
+  }
+  if (creatorLegalCheck.status !== "ok") {
+    console.log("- creator-side/public/pages: INCOMPLETE");
+    console.log(`  required missing: ${creatorLegalCheck.missing.join(", ")}`);
+    hasFailure = true;
+  } else {
+    console.log("- creator-side/public/pages: OK");
   }
 
   printSection("Next steps");
   console.log("- Run `supabase db push` after verifying envs.");
   console.log("- Deploy updated Supabase functions.");
+
+  if (hasFailure) {
+    process.exitCode = 1;
+  }
 }
 
 main();

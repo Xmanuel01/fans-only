@@ -8,7 +8,7 @@
     "dev:landing": "npm --prefix landingpage run dev",
     "dev:user": "npm --prefix user-side run dev",
     "dev:creator": "npm --prefix creator-side run dev",
-    "install:apps": "npm --prefix landingpage ci --ignore-scripts && npm --prefix user-side ci --ignore-scripts && npm --prefix creator-side ci --ignore-scripts",
+    "install:apps": "npm --prefix landingpage install --ignore-scripts && npm --prefix user-side install --ignore-scripts && npm --prefix creator-side install --ignore-scripts",
     "build:landing": "npm --prefix landingpage run build",
     "build:user": "npm --prefix user-side run build",
     "build:creator": "npm --prefix creator-side run build",
@@ -16,8 +16,9 @@
     "build": "npm run install:apps && npm run build:apps && node scripts/assemble-dist.mjs",
     "check:no-mock-runtime": "node scripts/no-mock-runtime.mjs",
     "lint": "npm --prefix landingpage run lint && npm --prefix user-side run lint && npm --prefix creator-side run lint",
-    "test": "npm --prefix landingpage run test && npm --prefix user-side run test && npm --prefix creator-side run test",
-    "health": "node scripts/health-check.mjs"
+    "test": "npm run install:apps && npm --prefix landingpage run test && npm --prefix user-side run test && npm --prefix creator-side run test",
+    "health": "node scripts/health-check.mjs",
+    "release:check": "npm run test && npm run build && npm run health"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",

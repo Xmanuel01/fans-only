@@ -91,6 +91,7 @@ const giftAmountMajor = giftAmountRaw && Number.isFinite(Number(giftAmountRaw))
   ? Number(giftAmountRaw)
   : null
 const mpesaStkEnabled = import.meta.env.VITE_MPESA_STK_ENABLED === 'true'
+const featureRequestsEnabled = import.meta.env.VITE_FEATURE_REQUESTS_ENABLED === 'true'
 
 export const env = {
   supabaseUrl,
@@ -105,6 +106,7 @@ export const env = {
   giftCreatorId,
   giftAmountMajor,
   mpesaStkEnabled,
+  featureRequestsEnabled,
   isProd: Boolean(import.meta.env.PROD),
 }
 
