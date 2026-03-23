@@ -105,10 +105,6 @@ export const env = {
   giftCreatorId,
   giftAmountMajor,
   mpesaStkEnabled,
-  enableSampleData:
-    !import.meta.env.PROD && import.meta.env.VITE_ENABLE_SAMPLE_DATA === 'true',
-  enableDemoMode:
-    !import.meta.env.PROD && import.meta.env.VITE_ENABLE_DEMO_MODE !== 'false',
   isProd: Boolean(import.meta.env.PROD),
 }
 

@@ -79,11 +79,10 @@ const DEFAULT_GIFT_AMOUNT_MAJOR =
   typeof env.giftAmountMajor === 'number' && env.giftAmountMajor > 0
     ? env.giftAmountMajor
     : 0
-const DEMO_MODE_ENABLED = env.enableDemoMode
-const USE_SAMPLE_DATA = env.enableSampleData
 const MPESA_STK_ENABLED = env.mpesaStkEnabled
 const BASE_URL = import.meta.env.BASE_URL ?? '/'
 const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`
+const RECENT_CREATORS_STORAGE_KEY = 'fans-only:recent-creators'
 
 const formatKsh = (amountCents?: number | null) => {
   if (!amountCents || amountCents <= 0) return 'Free'
@@ -156,10 +155,8 @@ const getWalletEntryTone = (entryType: WalletHistoryItem['entry_type']) =>
 
 function AuthPrompt({
   onAuthSuccess,
-  onDemo,
 }: {
   onAuthSuccess: (mode: 'sign_in' | 'sign_up', session: any | null) => void
-  onDemo: () => void
 }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -222,18 +219,6 @@ function AuthPrompt({
           Continue with Google
         </button>
       </div>
-
-      {DEMO_MODE_ENABLED && (
-        <button
-          className="auth-btn ghost"
-          onClick={() => {
-            localStorage.setItem('demoMode', 'true')
-            onDemo()
-          }}
-        >
-          Continue as demo (no sign-up)
-        </button>
-      )}
 
       <div className="divider-row">
         <span className="line" />
@@ -376,17 +361,6 @@ const sidebarNav = [
   { icon: FiGift, label: 'Membership', key: 'membership' },
 ]
 
-const memberships = USE_SAMPLE_DATA
-  ? [{ name: 'Brandulate AI', avatar: 'https://i.pravatar.cc/64?img=14' }]
-  : []
-
-const visited = USE_SAMPLE_DATA
-  ? [
-      { name: "Boyo's Medicine", avatar: 'https://i.pravatar.cc/64?img=47' },
-      { name: 'Aranaktu', avatar: 'https://i.pravatar.cc/64?img=36' },
-    ]
-  : []
-
 const exploreSortOptions: { value: ExploreSort; label: string }[] = [
   { value: 'recommended', label: 'Recommended' },
   { value: 'name', label: 'Name A-Z' },
@@ -411,146 +385,31 @@ const topics = [
 
 const filters = ['All', ...topics.map((topic) => topic.label)]
 
-const exploreCreators = USE_SAMPLE_DATA
-  ? [
-  {
-    name: 'ZHX F',
-    tag: 'creating VaM plugins, and other...',
-    img: 'https://i.pravatar.cc/200?img=12',
-  },
-  {
-    name: 'Nonmom Figures',
-    tag: 'Creates Fullsize, Chibi, Bust &...',
-    img: 'https://i.pravatar.cc/200?img=65',
-  },
-  {
-    name: 'Shaky AI',
-    tag: 'You like what you see? Go ahead...',
-    img: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    name: 'Quant Mods',
-    tag: 'Creating shaders',
-    img: 'https://dummyimage.com/600x600/000/fff&text=quant+V',
-  },
-  {
-    name: 'Gofile',
-    tag: 'Creating an innovative cloud...',
-    img: 'https://dummyimage.com/600x600/f6c94c/000&text=Gofile',
-  },
-  {
-    name: 'Sonic Ether',
-    tag: 'Creating Minecraft Shaders',
-    img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
-  },
-    ]
-  : []
+function readRecentCreators(): CreatorCard[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(RECENT_CREATORS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter(
+        (value): value is CreatorCard =>
+          Boolean(value) &&
+          typeof value.id === 'string' &&
+          typeof value.handle === 'string' &&
+          typeof value.display_name === 'string'
+      )
+      .slice(0, 6)
+  } catch {
+    return []
+  }
+}
 
-const newOnChic = USE_SAMPLE_DATA
-  ? [
-  {
-    name: 'CirqueDuSirois',
-    tag: 'The Throbbing Pulse of DFW ...',
-    img: 'https://dummyimage.com/400x400/f68c1f/fff&text=Cirque',
-  },
-  {
-    name: 'What Chaos!',
-    tag: 'Hockey & pop culture podcast.',
-    img: 'https://dummyimage.com/400x400/00a0e9/fff&text=Chaos',
-  },
-  { name: 'Silky', tag: 'Reactions', img: 'https://dummyimage.com/400x400/d71f26/fff&text=Silky' },
-  {
-    name: 'FischTank Productions',
-    tag: 'Reaction Videos and Live Music...',
-    img: 'https://dummyimage.com/400x400/00c087/fff&text=Fish',
-  },
-  {
-    name: 'The Purple Populist Show',
-    tag: 'The Purple Populist Show',
-    img: 'https://dummyimage.com/400x400/6c3b7c/fff&text=Purple',
-  },
-  {
-    name: 'Political Reality Podcast',
-    tag: 'A weekly podcast on politics',
-    img: 'https://dummyimage.com/400x400/9c7a30/fff&text=PRP',
-  },
-    ]
-  : []
-
-const topCreatorsBlocks = USE_SAMPLE_DATA
-  ? [
-  {
-    title: 'Wellness',
-    creators: [
-      {
-        name: 'Maintenance Phase',
-        tag: 'Creating podcasts!',
-        img: 'https://dummyimage.com/360x360/f36ba0/fff&text=??',
-      },
-      {
-        name: 'Zero to Finals',
-        tag: 'Medical Education Content',
-        img: 'https://dummyimage.com/360x360/0b4b8f/fff&text=Zero',
-      },
-      {
-        name: 'Kya & Co',
-        tag: 'Art, Mental Health & Dissociative...',
-        img: 'https://dummyimage.com/360x360/71c5e8/fff&text=KYA',
-      },
-      {
-        name: 'Lindsay Braman',
-        tag: 'Doodling mental health...',
-        img: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80',
-      },
-      {
-        name: 'BracedLife',
-        tag: 'Creating medical videos featured...',
-        img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
-      },
-      {
-        name: 'The Curbsiders Internal Medicine Podcast',
-        tag: 'Knowledge Food for your Brain...',
-        img: 'https://dummyimage.com/360x360/ffffff/111&text=Curbsiders',
-      },
-    ],
-  },
-  {
-    title: 'Soccer',
-    creators: [
-      {
-        name: 'Aranaktu',
-        tag: 'Creating modding tools for...',
-        img: 'https://i.pravatar.cc/360?img=36',
-      },
-      {
-        name: 'FIFER',
-        tag: 'Creating The FC26 Realism Mod',
-        img: 'https://dummyimage.com/360x360/5234bf/fff&text=FIFER',
-      },
-      {
-        name: "Anth James' EAFC Gameplay Overhaul",
-        tag: 'All things gameplay',
-        img: 'https://dummyimage.com/360x360/c3002f/fff&text=AJ',
-      },
-      {
-        name: 'KIARIKA',
-        tag: 'Improving FIFA/FC and other...',
-        img: 'https://dummyimage.com/360x360/000/fff&text=KA',
-      },
-      {
-        name: 'Ultimate Master League',
-        tag: 'Best PES 2021 Master League...',
-        img: 'https://dummyimage.com/360x360/0042a1/fff&text=UML',
-      },
-      {
-        name: 'Dream Patch',
-        tag: 'creando Parches, Mods y Add...',
-        img: 'https://dummyimage.com/360x360/8da31c/fff&text=DP',
-      },
-    ],
-  },
-    ]
-  : []
+function persistRecentCreators(creators: CreatorCard[]) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(RECENT_CREATORS_STORAGE_KEY, JSON.stringify(creators.slice(0, 6)))
+}
 
 function PillRow({ active, onSelect }: { active: string; onSelect: (value: string) => void }) {
   return (
@@ -570,12 +429,20 @@ function PillRow({ active, onSelect }: { active: string; onSelect: (value: strin
   )
 }
 
-function AvatarChip({ name, avatar }: { name: string; avatar: string }) {
+function AvatarChip({
+  name,
+  avatar,
+  onClick,
+}: {
+  name: string
+  avatar: string
+  onClick?: () => void
+}) {
   return (
-    <div className="avatar-chip">
+    <button className="avatar-chip" type="button" onClick={onClick}>
       <img src={avatar} alt={name} />
       <span>{name}</span>
-    </div>
+    </button>
   )
 }
 
@@ -673,16 +540,20 @@ function ExplorePage({
   filter,
   onSelectFilter,
   onOpenTopic,
+  onOpenCreator,
   activeSubscriptions,
   onSubscribe,
   subscribingCreatorId,
+  recentCreators,
 }: {
   filter: string
   onSelectFilter: (value: string) => void
   onOpenTopic: (value: string) => void
+  onOpenCreator: (creator: CreatorCard) => void
   activeSubscriptions: string[]
   onSubscribe: (creator: CreatorCard) => void
   subscribingCreatorId: string | null
+  recentCreators: CreatorCard[]
 }) {
   const [recommendedCreators, setRecommendedCreators] = useState<CreatorCard[]>([])
   const [recommendedLoading, setRecommendedLoading] = useState(true)
@@ -831,25 +702,20 @@ function ExplorePage({
           <span className="recent-row__hint">Jump back into creators you opened before.</span>
         </div>
         <div className="recent-chips">
-          {visited.length ? (
-            visited.map((v) => (
-              <AvatarChip key={v.name} name={v.name} avatar={v.avatar} />
+          {recentCreators.length ? (
+            recentCreators.map((creator) => (
+              <AvatarChip
+                key={creator.id}
+                name={creator.display_name}
+                avatar={creator.avatar_url ?? assetUrl('logo.png')}
+                onClick={() => onOpenCreator(creator)}
+              />
             ))
           ) : (
             <div className="explore-status">No recent visits yet.</div>
           )}
         </div>
       </div>
-
-      {exploreCreators.length ? (
-        <ExploreSection title="Creators for you">
-          <div className="card-row">
-            {exploreCreators.map((c) => (
-              <SquareCard key={c.name} {...c} />
-            ))}
-          </div>
-        </ExploreSection>
-      ) : null}
 
       <ExploreSection title={exploreHeading}>
         <div className="list-grid">
@@ -887,26 +753,6 @@ function ExplorePage({
       </ExploreSection>
 
       <TopicsGrid activeTopic={activeTopic} onOpenTopic={onOpenTopic} />
-
-      {newOnChic.length ? (
-        <ExploreSection title="New on SpicyX">
-          <div className="card-row">
-            {newOnChic.map((c) => (
-              <SquareCard key={c.name} {...c} />
-            ))}
-          </div>
-        </ExploreSection>
-      ) : null}
-
-      {topCreatorsBlocks.map((block) => (
-        <ExploreSection key={block.title} title={`Top creators  ${block.title}`}>
-          <div className="card-row">
-            {block.creators.map((c) => (
-              <SquareCard key={c.name} {...c} />
-            ))}
-          </div>
-        </ExploreSection>
-      ))}
     </div>
   )
 }
@@ -1419,8 +1265,6 @@ function getNotificationTargetPage(
   | 'wallet'
   | 'settings'
   | 'membership'
-  | 'news'
-  | 'help'
   | 'features' {
   if (item.type === 'chat_message') return 'chats'
   if (['wallet_topup_succeeded', 'wallet_topup_failed', 'tip_sent', 'ppv_unlocked'].includes(item.type)) {
@@ -1444,8 +1288,6 @@ function NotificationsPage({
       | 'wallet'
       | 'settings'
       | 'membership'
-      | 'news'
-      | 'help'
       | 'features'
   ) => void
 }) {
@@ -1613,12 +1455,12 @@ const settingsTabs = [
 ]
 
 const settingsTabDescriptions: Record<string, string> = {
-  Basics: 'Profile identity, email details, and location.',
-  Account: 'Security, login methods, and connected account preferences.',
+  Basics: 'Profile identity and verified account details.',
+  Account: 'Security, login provider, and support access.',
   'Email notifications': 'Choose which alerts reach you in-app, email, and SMS.',
   Memberships: 'Track active creator support and recurring subscriptions.',
-  'Billing history': 'Review wallet funds and prepare payment activity.',
-  More: 'Manage payment methods, connected apps, and compliance links.',
+  'Billing history': 'Review wallet funds and recent payment activity.',
+  More: 'Open wallet tools, support channels, and compliance links.',
 }
 
 function SettingsTabs({ active, onChange }: { active: string; onChange: (t: string) => void }) {
@@ -1705,19 +1547,11 @@ function BasicsCard({ session, userProfile }: { session: any; userProfile: UserP
           <label className="input-label">Email</label>
           <input className="text-input" value={email} placeholder="you@example.com" readOnly />
         </div>
-        <div className="settings-field settings-field--full">
-          <label className="input-label">Country of Residence</label>
-          <div className="select-input">
-            <span>Select your country...</span>
-            <FiChevronDown />
-          </div>
-        </div>
       </div>
       <div className="settings-card-footer">
-        <div className="muted small">Public profile changes are controlled from verified account data.</div>
-        <button className="primary-btn" type="button">
-          Save
-        </button>
+        <div className="muted small">
+          Profile details are read from your verified account session and creator records.
+        </div>
       </div>
     </div>
   )
@@ -1735,13 +1569,16 @@ function AccountCard({ session }: { session: any }) {
   const provider = session.user.app_metadata?.provider ?? ''
   const providerLabel = provider ? `Signed in with ${provider}` : 'Sign-in provider'
   const providerMark = provider ? provider.slice(0, 1).toUpperCase() : '?'
+  const email = session.user.email ?? 'Email unavailable'
+  const userId = session.user.id ?? 'Unavailable'
 
   return (
     <div className="settings-stack">
       <div className="settings-card">
         <div className="card-title">Login</div>
         <div className="notice brown">
-          Manage your sign-in methods and password from account security settings.
+          Authentication, password recovery, and session verification are handled by your sign-in
+          provider.
         </div>
         <div className="login-row">
           <div className="login-provider">
@@ -1750,121 +1587,55 @@ function AccountCard({ session }: { session: any }) {
             </span>
             <div>
               <div className="name">{providerLabel}</div>
-              <div className="muted">Manage providers in your account settings.</div>
+              <div className="muted">{email}</div>
             </div>
           </div>
-          <button className="link-like" disabled title="Manage providers in account settings">
-            Manage
-          </button>
         </div>
-        <div className="twofactor">
-          <span>Two-factor authentication</span>
-          <span className="muted">i</span>
+      </div>
+
+      <div className="settings-card">
+        <div className="card-title">Account identity</div>
+        <div className="field-grid two">
+          <div>
+            <label className="input-label">Current email</label>
+            <input className="text-input" value={email} readOnly />
+          </div>
+          <div>
+            <label className="input-label">User ID</label>
+            <input className="text-input" value={userId} readOnly />
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="card-title">Support</div>
+        <div className="muted">
+          Use official support channels for billing, access, and account recovery questions.
         </div>
         <div className="button-row">
-          <button className="pill dark">Use text message</button>
-          <button className="pill dark">Use authenticator app</button>
-        </div>
-      </div>
-
-      <div className="settings-card">
-        <div className="card-title">Shipping address</div>
-        <div className="field-grid two">
-          <div>
-            <label className="input-label">Country</label>
-            <div className="select-input">
-              <span>Select a country...</span>
-              <FiChevronDown />
-            </div>
-          </div>
-        </div>
-        <label className="input-label">Full Name</label>
-        <input className="text-input" placeholder="Full Name" />
-        <div className="field-grid two">
-          <div>
-            <label className="input-label">Address</label>
-            <input className="text-input" />
-          </div>
-          <div>
-            <label className="input-label">Apt, suite, etc...</label>
-            <input className="text-input" />
-          </div>
-        </div>
-        <div className="field-grid two">
-          <div>
-            <label className="input-label">City</label>
-            <input className="text-input" />
-          </div>
-          <div>
-            <label className="input-label">Postal Code</label>
-            <input className="text-input" />
-          </div>
-        </div>
-        <div className="field-grid two">
-          <div>
-            <label className="input-label">State</label>
-            <div className="select-input">
-              <span>Select a state...</span>
-              <FiChevronDown />
-            </div>
-          </div>
-          <div />
-        </div>
-        <div className="button-right">
-          <button className="pill dark">Add address</button>
-        </div>
-      </div>
-
-      <div className="settings-card">
-        <div className="card-title">Social links</div>
-        {['YouTube', 'Instagram', 'Twitter', 'Facebook', 'Twitch', 'TikTok'].map((s) => (
-          <div key={s} className="social-row">
-            <span>{s}</span>
-            <button className="pill light">Connect</button>
-          </div>
-        ))}
-      </div>
-
-      <div className="settings-card">
-        <div className="card-title">Language preference</div>
-        <div className="select-input wide">
-          <span>English (United States)</span>
-          <FiChevronDown />
-        </div>
-      </div>
-
-      <div className="settings-card">
-        <div className="card-title">Currency preference</div>
-        <div className="pill ghost">Currency: not set</div>
-      </div>
-
-      <div className="settings-card">
-        <div className="card-title">Privacy</div>
-        <div className="privacy-row">
-          <div>
-            <div className="name">Full public profile</div>
-            <div className="muted">
-              Your public profile always includes your name, photo, the date you joined SpicyX, and
-              any social links or other information you add.
-            </div>
-          </div>
-          <label className="switch">
-            <input type="checkbox" />
-            <span className="slider" />
-          </label>
-        </div>
-        <div className="privacy-row">
-          <div>
-            <div className="name">Community profile</div>
-            <div className="muted">
-              Shows more information than your public profile and is visible to people in
-              communities you're both part of.
-            </div>
-          </div>
-          <label className="switch checked">
-            <input type="checkbox" defaultChecked />
-            <span className="slider" />
-          </label>
+          {HELP_CENTER_URL ? (
+            <button
+              className="pill ghost"
+              type="button"
+              onClick={() => window.open(HELP_CENTER_URL, '_blank', 'noopener,noreferrer')}
+            >
+              Help Center
+            </button>
+          ) : null}
+          {SUPPORT_EMAIL ? (
+            <button
+              className="pill ghost"
+              type="button"
+              onClick={() => {
+                window.location.href = `mailto:${SUPPORT_EMAIL}`
+              }}
+            >
+              Email support
+            </button>
+          ) : null}
+          {!HELP_CENTER_URL && !SUPPORT_EMAIL ? (
+            <div className="muted small">Support details are not configured for this environment.</div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -2020,6 +1791,7 @@ function MembershipsCard({
 
 function BillingHistoryCard({
   walletBalance,
+  walletHistory,
   walletTopupAmount,
   walletTopupPhone,
   onTopupAmountChange,
@@ -2027,6 +1799,7 @@ function BillingHistoryCard({
   onTopup,
 }: {
   walletBalance: WalletBalance | null
+  walletHistory: WalletHistoryItem[]
   walletTopupAmount: string
   walletTopupPhone: string
   onTopupAmountChange: (value: string) => void
@@ -2068,13 +1841,30 @@ function BillingHistoryCard({
           </div>
         ) : null}
         <div className="button-right">
-          <button className="pill light" onClick={onTopup}>
+          <button className="pill light" onClick={onTopup} type="button">
             {MPESA_STK_ENABLED ? 'Top up via M-PESA' : 'Top up wallet'}
           </button>
         </div>
       </div>
       <div className="divider" style={{ margin: '16px 0' }} />
-      <div className="muted small">No payment history to display yet.</div>
+      {walletHistory.length ? (
+        <div className="settings-stack">
+          {walletHistory.slice(0, 5).map((entry) => (
+            <div key={entry.id} className="payment-row">
+              <div>
+                <div className="name">{getWalletEntryLabel(entry)}</div>
+                <div className="muted small">{formatWalletDate(entry.created_at)}</div>
+              </div>
+              <div className={`payment-value ${getWalletEntryTone(entry.entry_type)}`}>
+                {entry.entry_type === 'credit_topup' || entry.entry_type === 'refund' ? '+' : '-'}
+                {formatKsh(entry.amount_minor)}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="muted small">No payment history to display yet.</div>
+      )}
     </div>
   )
 }
@@ -2083,12 +1873,11 @@ function SettingsPage({
   tab,
   onTabChange,
   paymentRef,
-  connectedRef,
   onPaymentClick,
-  onConnectClick,
   session,
   userProfile,
   walletBalance,
+  walletHistory,
   walletTopupAmount,
   walletTopupPhone,
   onTopupAmountChange,
@@ -2100,12 +1889,11 @@ function SettingsPage({
   tab: string
   onTabChange: (t: string) => void
   paymentRef: React.RefObject<HTMLDivElement | null>
-  connectedRef: React.RefObject<HTMLDivElement | null>
   onPaymentClick: () => void
-  onConnectClick: (app: string) => void
   session: any
   userProfile: UserProfile | null
   walletBalance: WalletBalance | null
+  walletHistory: WalletHistoryItem[]
   walletTopupAmount: string
   walletTopupPhone: string
   onTopupAmountChange: (value: string) => void
@@ -2158,6 +1946,7 @@ function SettingsPage({
         {localTab === 'Billing history' && (
           <BillingHistoryCard
             walletBalance={walletBalance}
+            walletHistory={walletHistory}
             walletTopupAmount={walletTopupAmount}
             walletTopupPhone={walletTopupPhone}
             onTopupAmountChange={onTopupAmountChange}
@@ -2168,29 +1957,46 @@ function SettingsPage({
         {localTab === 'More' && (
           <div className="settings-stack">
             <div className="settings-card" ref={paymentRef}>
-              <div className="card-title">Payment methods</div>
-              <button className="pill ghost" onClick={onPaymentClick}>
-                Add Payment Method
+              <div className="card-title">Wallet & payments</div>
+              <button className="pill ghost" onClick={onPaymentClick} type="button">
+                Open wallet
               </button>
-              <div className="muted small">You do not currently have any payment methods.</div>
+              <div className="muted small">
+                Review balance, history, and top-up options in the wallet page.
+              </div>
             </div>
-            <div className="settings-card" ref={connectedRef}>
-              <div className="card-title">Connected apps</div>
-              {['Discord', 'Vimeo', 'Spotify'].map((app) => (
-                <div key={app} className="connect-row">
-                  <div>
-                    <div className="name">{app}</div>
-                    <div className="muted">Connect to {app} for extra perks.</div>
-                  </div>
-                  <button className="pill light" onClick={() => onConnectClick(app)}>
-                    Connect
-                  </button>
+            {(HELP_CENTER_URL || SUPPORT_EMAIL) && (
+              <div className="settings-card">
+                <div className="card-title">Support</div>
+                <div className="button-row">
+                  {HELP_CENTER_URL ? (
+                    <button
+                      className="pill ghost"
+                      type="button"
+                      onClick={() => window.open(HELP_CENTER_URL, '_blank', 'noopener,noreferrer')}
+                    >
+                      Help Center
+                    </button>
+                  ) : null}
+                  {SUPPORT_EMAIL ? (
+                    <button
+                      className="pill ghost"
+                      type="button"
+                      onClick={() => {
+                        window.location.href = `mailto:${SUPPORT_EMAIL}`
+                      }}
+                    >
+                      Email support
+                    </button>
+                  ) : null}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
             <div className="settings-card">
-              <div className="card-title">Blocked users</div>
-              <div className="muted">You haven't blocked any users.</div>
+              <div className="card-title">Session & privacy</div>
+              <div className="muted">
+                This account uses signed sessions, verified age access, and policy links shown below.
+              </div>
             </div>
             <div className="settings-card">
               <div className="card-title">Policies & Compliance</div>
@@ -2198,7 +2004,6 @@ function SettingsPage({
                 <a href={assetUrl('pages/terms.html')}>Terms</a>
                 <a href={assetUrl('pages/privacy.html')}>Privacy</a>
                 <a href={assetUrl('pages/cookies.html')}>Cookies</a>
-                <a href={assetUrl('pages/dmca.html')}>DMCA</a>
                 <a href={assetUrl('pages/acceptable-use-policy.html')}>Acceptable Use</a>
                 <a href={assetUrl('pages/usc2257.html')}>2257</a>
               </div>
@@ -3606,8 +3411,6 @@ export default function App() {
     | 'settings'
     | 'membership'
     | 'creator'
-    | 'news'
-    | 'help'
     | 'features'
   >('home')
   const [ageConfirmed, setAgeConfirmed] = useState(false)
@@ -3627,13 +3430,15 @@ export default function App() {
     return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
   })
   const [featureText, setFeatureText] = useState('')
-  const [demoMode, setDemoMode] = useState(false)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [feedPosts, setFeedPosts] = useState<FeedPost[]>([])
   const [storyPosts, setStoryPosts] = useState<FeedPost[]>([])
   const [activeSubscriptions, setActiveSubscriptions] = useState<string[]>([])
   const [subscriptionHistory, setSubscriptionHistory] = useState<SubscriptionHistoryItem[]>([])
   const [selectedCreator, setSelectedCreator] = useState<CreatorCard | null>(null)
+  const [creatorReturnPage, setCreatorReturnPage] = useState<
+    'home' | 'explore' | 'chats' | 'notifications' | 'wallet' | 'settings' | 'membership'
+  >('home')
   const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null)
   const [walletHistory, setWalletHistory] = useState<WalletHistoryItem[]>([])
   const [walletTopupAmount, setWalletTopupAmount] = useState('1000')
@@ -3641,7 +3446,8 @@ export default function App() {
   const [ppvPurchases, setPpvPurchases] = useState<number[]>([])
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
   const [subscribingCreatorId, setSubscribingCreatorId] = useState<string | null>(null)
-  const isAuthed = demoMode || Boolean(session)
+  const [recentCreators, setRecentCreators] = useState<CreatorCard[]>([])
+  const isAuthed = Boolean(session)
   const displayName =
     userProfile?.display_name ??
     session?.user?.user_metadata?.full_name ??
@@ -3664,9 +3470,11 @@ export default function App() {
   ]
 
   const paymentRef = useRef<HTMLDivElement | null>(null)
-  const connectedRef = useRef<HTMLDivElement | null>(null)
   const giftRef = useRef<HTMLDivElement | null>(null)
   const resolvedTheme = theme === 'system' ? systemTheme : theme
+  const hasReleaseNotes = Boolean(RELEASE_NOTES_URL)
+  const hasHelpSupport = Boolean(HELP_CENTER_URL || SUPPORT_EMAIL)
+  const hasFeatureRequests = isSupabaseConfigured
 
   const resolveCheckoutUrl = () => {
     if (typeof window === 'undefined') return undefined
@@ -3678,14 +3486,6 @@ export default function App() {
       setSessionChecked(true)
       return
     }
-    const demo = DEMO_MODE_ENABLED && localStorage.getItem('demoMode') === 'true'
-    if (demo) {
-      setDemoMode(true)
-      setSessionChecked(true)
-      setAgeConfirmed(true)
-      return
-    }
-    localStorage.removeItem('demoMode')
     ;(async () => {
       const s = await getCurrentSession()
       setSession(s)
@@ -3694,7 +3494,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (envStatus.hasIssues || demoMode) return
+    if (envStatus.hasIssues) return
     if (!session?.user?.id) {
       setUserProfile(null)
       return
@@ -3707,7 +3507,7 @@ export default function App() {
         console.error(err)
       }
     })()
-  }, [session, demoMode])
+  }, [session])
 
   useEffect(() => {
     if (envStatus.hasIssues) return
@@ -3786,10 +3586,7 @@ export default function App() {
   }, [session, ageConfirmed])
 
   useEffect(() => {
-    if (envStatus.hasIssues || demoMode) {
-      setNotificationUnreadCount(0)
-      return
-    }
+    if (envStatus.hasIssues) return
     if (!session?.user?.id) {
       setNotificationUnreadCount(0)
       return
@@ -3818,7 +3615,11 @@ export default function App() {
       isMounted = false
       unsubscribe()
     }
-  }, [session, demoMode])
+  }, [session])
+
+  useEffect(() => {
+    setRecentCreators(readRecentCreators())
+  }, [])
 
   useEffect(() => {
     const consent = localStorage.getItem('cookieConsent')
@@ -3844,7 +3645,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (envStatus.hasIssues || ageConfirmed || (!session && !demoMode)) return
+    if (envStatus.hasIssues || ageConfirmed || !session) return
     ;(async () => {
       const remote = await fetchAgeConfirmation()
       if (remote) {
@@ -3878,9 +3679,12 @@ export default function App() {
   )
   const filteredHomeStories = storyPosts.filter((post) => matchesCategoryFilter(post, homeTopicFilter))
 
-
-  const scrollToRef = (ref: React.RefObject<HTMLElement | null>) => {
-    setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  const rememberRecentCreator = (creator: CreatorCard) => {
+    setRecentCreators((prev) => {
+      const next = [creator, ...prev.filter((entry) => entry.id !== creator.id)].slice(0, 6)
+      persistRecentCreators(next)
+      return next
+    })
   }
 
   const openExternal = (url: string | null, label: string) => {
@@ -4127,32 +3931,14 @@ export default function App() {
     }
   }
 
-  const handleConnectedApp = (app: string) => {
-    if (!isAuthed) return setToast('Sign in to connect apps')
-    setPage('settings')
-    setSettingsTab('Account')
-    setToast(`Opening ${app} connect`)
-    scrollToRef(connectedRef)
-  }
-
   const handleOpenCreatorPage = (creator: CreatorCard) => {
+    if (page !== 'creator' && page !== 'features') {
+      setCreatorReturnPage(page)
+    }
+    rememberRecentCreator(creator)
     setSelectedCreator(creator)
     setPage('creator')
     setToast(`Opening ${creator.display_name}`)
-  }
-
-  const handleVisitedClick = (name: string) => {
-    if (!session) return setToast('Sign in to view creator details')
-    const matched = subscriptionHistory.find(
-      (item) =>
-        item.creator.display_name.toLowerCase() === name.toLowerCase() ||
-        item.creator.handle.toLowerCase() === name.toLowerCase()
-    )
-    if (matched) {
-      handleOpenCreatorPage(matched.creator)
-      return
-    }
-    openMembershipsPage(`Opening ${name}`)
   }
 
   const openMembershipsPage = (message = 'Opening memberships') => {
@@ -4170,17 +3956,11 @@ export default function App() {
   }
 
   const sidebarMemberships =
-    subscriptionHistory.length > 0
-      ? subscriptionHistory.slice(0, 4).map((item) => ({
-          name: item.creator.display_name,
-          avatar: item.creator.avatar_url ?? assetUrl('logo.png'),
-          creator: item.creator,
-        }))
-      : memberships.map((membership) => ({
-          name: membership.name,
-          avatar: membership.avatar,
-          creator: null,
-        }))
+    subscriptionHistory.slice(0, 4).map((item) => ({
+      name: item.creator.display_name,
+      avatar: item.creator.avatar_url ?? assetUrl('logo.png'),
+      creator: item.creator,
+    }))
 
   const handleClearHomeTopicFilter = () => {
     setHomeTopicFilter(null)
@@ -4212,7 +3992,7 @@ export default function App() {
     )
   }
 
-  if (!session && !demoMode) {
+  if (!session) {
     return (
       <div className="auth-shell">
         <AuthPrompt
@@ -4228,13 +4008,6 @@ export default function App() {
               return
             }
             setToast('Sign-in complete. Refresh if your session does not appear.')
-          }}
-          onDemo={() => {
-            if (!DEMO_MODE_ENABLED) return
-            localStorage.setItem('demoMode', 'true')
-            setDemoMode(true)
-            setAgeConfirmed(true)
-            setSessionChecked(true)
           }}
         />
         <AuthHero />
@@ -4312,7 +4085,7 @@ export default function App() {
               <div
                 key={m.name}
                 className="user-row"
-                onClick={() => (m.creator ? handleOpenCreatorPage(m.creator) : handleVisitedClick(m.name))}
+                onClick={() => handleOpenCreatorPage(m.creator)}
               >
                 <img src={m.avatar} alt={m.name} />
                 <span>{m.name}</span>
@@ -4332,11 +4105,15 @@ export default function App() {
         <div className="section">
           <p className="section-title">Recently Visited</p>
           <div className="divider" />
-          {visited.length ? (
-            visited.map((m) => (
-              <div key={m.name} className="user-row" onClick={() => handleVisitedClick(m.name)}>
-                <img src={m.avatar} alt={m.name} />
-                <span>{m.name}</span>
+          {recentCreators.length ? (
+            recentCreators.map((creator) => (
+              <div
+                key={creator.id}
+                className="user-row"
+                onClick={() => handleOpenCreatorPage(creator)}
+              >
+                <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
+                <span>{creator.display_name}</span>
               </div>
             ))
           ) : (
@@ -4385,17 +4162,38 @@ export default function App() {
                     System
                   </button>
                 </div>
-                <button className="menu-item" onClick={() => setPage('news')}>
-                  News
-                </button>
-                <button className="menu-item" onClick={() => setPage('help')}>
-                  Help Center & FAQ
-                </button>
-                <button className="menu-item" onClick={() => setPage('features')}>
-                  Feature Requests
-                </button>
+                {hasReleaseNotes ? (
+                  <button
+                    className="menu-item"
+                    type="button"
+                    onClick={() => openExternal(RELEASE_NOTES_URL, 'Release notes')}
+                  >
+                    News
+                  </button>
+                ) : null}
+                {hasHelpSupport ? (
+                  <button
+                    className="menu-item"
+                    type="button"
+                    onClick={() => {
+                      if (HELP_CENTER_URL) {
+                        openExternal(HELP_CENTER_URL, 'Help center')
+                        return
+                      }
+                      openSupportEmail()
+                    }}
+                  >
+                    Help Center & FAQ
+                  </button>
+                ) : null}
+                {hasFeatureRequests ? (
+                  <button className="menu-item" type="button" onClick={() => setPage('features')}>
+                    Feature Requests
+                  </button>
+                ) : null}
                 <button
                   className="menu-item"
+                  type="button"
                   onClick={() =>
                     window.open(assetUrl('pages/terms.html'), '_blank', 'noopener,noreferrer')
                   }
@@ -4404,6 +4202,7 @@ export default function App() {
                 </button>
                 <button
                   className="menu-item"
+                  type="button"
                   onClick={() =>
                     window.open(assetUrl('pages/privacy.html'), '_blank', 'noopener,noreferrer')
                   }
@@ -4412,6 +4211,7 @@ export default function App() {
                 </button>
                 <button
                   className="menu-item"
+                  type="button"
                   onClick={() =>
                     window.open(
                       assetUrl('pages/acceptable-use-policy.html'),
@@ -4422,7 +4222,7 @@ export default function App() {
                 >
                   Community Policies
                 </button>
-                <button className="menu-item danger" onClick={handleLogout}>
+                <button className="menu-item danger" type="button" onClick={handleLogout}>
                   Log out
                 </button>
               </div>
@@ -4450,9 +4250,11 @@ export default function App() {
             filter={filter}
             onSelectFilter={setFilter}
             onOpenTopic={handleOpenTopicFeed}
+            onOpenCreator={handleOpenCreatorPage}
             activeSubscriptions={activeSubscriptions}
             onSubscribe={handleSubscribe}
             subscribingCreatorId={subscribingCreatorId}
+            recentCreators={recentCreators}
           />
         )}
         {page === 'chats' && <ChatsPage />}
@@ -4474,31 +4276,7 @@ export default function App() {
             onSendTip={handleSendWalletTip}
           />
         )}
-        {page === 'news' && (
-          <div className="info-page">
-            <h2>Product News</h2>
-            <p>Read the latest release notes and compliance updates.</p>
-            <button
-              className="pill"
-              onClick={() => openExternal(RELEASE_NOTES_URL, 'Release notes')}
-            >
-              Open release notes
-            </button>
-          </div>
-        )}
-        {page === 'help' && (
-          <div className="info-page">
-            <h2>Help Center</h2>
-            <p>Find quick answers or contact support.</p>
-            <button className="pill" onClick={() => openExternal(HELP_CENTER_URL, 'Help center')}>
-              Open Help Center
-            </button>
-            <button className="pill ghost" onClick={openSupportEmail}>
-              Email support
-            </button>
-          </div>
-        )}
-        {page === 'features' && (
+        {page === 'features' && hasFeatureRequests && (
           <div className="info-page">
             <h2>Feature Requests</h2>
             <p>Tell us what to build next. This sends feedback to the team.</p>
@@ -4532,12 +4310,11 @@ export default function App() {
             tab={settingsTab}
             onTabChange={setSettingsTab}
             paymentRef={paymentRef}
-            connectedRef={connectedRef}
             onPaymentClick={handlePaymentMethods}
-            onConnectClick={handleConnectedApp}
             session={session}
             userProfile={userProfile}
             walletBalance={walletBalance}
+            walletHistory={walletHistory}
             walletTopupAmount={walletTopupAmount}
             walletTopupPhone={walletTopupPhone}
             onTopupAmountChange={setWalletTopupAmount}
@@ -4563,7 +4340,7 @@ export default function App() {
             posts={feedPosts}
             stories={storyPosts}
             activeSubscriptions={activeSubscriptions}
-            onBack={() => setPage('membership')}
+            onBack={() => setPage(creatorReturnPage)}
             onSubscribe={handleSubscribe}
             onUnlockPost={handleUnlockPost}
             ppvPurchases={ppvPurchases}
