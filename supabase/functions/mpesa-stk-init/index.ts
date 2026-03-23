@@ -17,6 +17,7 @@ const consumerSecret = Deno.env.get("MPESA_CONSUMER_SECRET");
 const passkey = Deno.env.get("MPESA_PASSKEY");
 const shortcode = Deno.env.get("MPESA_SHORTCODE");
 const callbackUrl = Deno.env.get("MPESA_CALLBACK_URL");
+const callbackToken = Deno.env.get("MPESA_CALLBACK_TOKEN");
 
 type Body = {
   phone: string;
@@ -28,7 +29,7 @@ serve(async (req) => {
   if (req.method !== "POST") return jsonWithCors({ error: "Method not allowed" }, 405);
   if (!supabase) return jsonWithCors({ error: "Supabase not configured" }, 500);
 
-  if (!consumerKey || !consumerSecret || !passkey || !shortcode || !callbackUrl) {
+  if (!consumerKey || !consumerSecret || !passkey || !shortcode || !callbackUrl || !callbackToken) {
     return jsonWithCors({ error: "M-PESA environment variables missing" }, 500);
   }
 
@@ -49,6 +50,15 @@ serve(async (req) => {
     return jsonWithCors({ error: "amountMajor must be positive" }, 400);
   }
 
+  let callbackEndpoint: string;
+  try {
+    const callback = new URL(callbackUrl);
+    callback.searchParams.set("token", callbackToken);
+    callbackEndpoint = callback.toString();
+  } catch {
+    return jsonWithCors({ error: "Invalid MPESA_CALLBACK_URL" }, 500);
+  }
+
   const token = await getMpesaToken();
   if (!token) return jsonWithCors({ error: "M-PESA auth failed" }, 500);
 
@@ -63,7 +73,7 @@ serve(async (req) => {
     PartyA: phone,
     PartyB: shortcode,
     PhoneNumber: phone,
-    CallBackURL: callbackUrl,
+    CallBackURL: callbackEndpoint,
     AccountReference: `WALLET-${userId.slice(0, 8)}`,
     TransactionDesc: "Wallet top up",
   };

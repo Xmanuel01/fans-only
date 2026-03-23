@@ -84,6 +84,39 @@ const MPESA_STK_ENABLED = env.mpesaStkEnabled
 const BASE_URL = import.meta.env.BASE_URL ?? '/'
 const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`
 const RECENT_CREATORS_STORAGE_KEY = 'fans-only:recent-creators'
+type PaymentReturnKind = 'wallet_topup' | 'tip' | 'gift'
+
+const readPaymentReturnFromUrl = (): { kind: PaymentReturnKind | null; hasReference: boolean } => {
+  if (typeof window === 'undefined') {
+    return { kind: null, hasReference: false }
+  }
+
+  const url = new URL(window.location.href)
+  const rawKind = url.searchParams.get('payment_return')
+  const kind =
+    rawKind === 'wallet_topup' || rawKind === 'tip' || rawKind === 'gift' ? rawKind : null
+
+  return {
+    kind,
+    hasReference: Boolean(url.searchParams.get('reference') || url.searchParams.get('trxref')),
+  }
+}
+
+const clearPaymentReturnParams = () => {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('payment_return')
+  url.searchParams.delete('reference')
+  url.searchParams.delete('trxref')
+  window.history.replaceState({}, document.title, url.toString())
+}
+
+const buildFanReturnUrl = (kind: PaymentReturnKind) => {
+  if (typeof window === 'undefined') return undefined
+  const url = new URL('/user/', window.location.origin)
+  url.searchParams.set('payment_return', kind)
+  return url.toString()
+}
 
 const formatKsh = (amountCents?: number | null) => {
   if (!amountCents || amountCents <= 0) return 'Free'
@@ -505,75 +538,6 @@ function ExploreSection({ title, children }: { title: string; children: React.Re
       </div>
       {children}
     </section>
-  )
-}
-
-function SubscribeConfirmModal({
-  creator,
-  priceCents,
-  walletBalanceMinor,
-  busy,
-  onCancel,
-  onConfirm,
-  onTopUp,
-}: {
-  creator: CreatorCard
-  priceCents: number
-  walletBalanceMinor: number
-  busy: boolean
-  onCancel: () => void
-  onConfirm: () => void
-  onTopUp: () => void
-}) {
-  const isFree = priceCents <= 0
-  const canAfford = isFree || walletBalanceMinor >= priceCents
-  const remainingBalance = Math.max(walletBalanceMinor - priceCents, 0)
-
-  return (
-    <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="subscribe-confirm-title">
-      <div className="confirm-backdrop" onClick={busy ? undefined : onCancel} />
-      <div className="confirm-modal">
-        <div className="confirm-kicker">Confirm subscription</div>
-        <h3 id="subscribe-confirm-title">
-          {isFree ? `Subscribe to ${creator.display_name} for free?` : `Subscribe to ${creator.display_name}?`}
-        </h3>
-        <p>
-          {isFree
-            ? 'This creator has a free subscription. Confirm to activate access now.'
-            : canAfford
-              ? `This will deduct ${formatKsh(priceCents)} from your wallet. Remaining balance: ${formatKsh(remainingBalance)}.`
-              : `This subscription costs ${formatKsh(priceCents)}, but your wallet only has ${formatKsh(walletBalanceMinor)} available.`}
-        </p>
-        <div className="confirm-summary">
-          <div className="confirm-summary__row">
-            <span>Creator</span>
-            <strong>{creator.display_name}</strong>
-          </div>
-          <div className="confirm-summary__row">
-            <span>Subscription</span>
-            <strong>{isFree ? 'Free' : formatKsh(priceCents)}</strong>
-          </div>
-          <div className="confirm-summary__row">
-            <span>Wallet balance</span>
-            <strong>{formatKsh(walletBalanceMinor)}</strong>
-          </div>
-        </div>
-        <div className="confirm-actions">
-          <button className="pill ghost" type="button" onClick={onCancel} disabled={busy}>
-            No
-          </button>
-          {canAfford ? (
-            <button className="primary-btn" type="button" onClick={onConfirm} disabled={busy}>
-              {busy ? 'Processing...' : 'Yes, continue'}
-            </button>
-          ) : (
-            <button className="primary-btn" type="button" onClick={onTopUp} disabled={busy}>
-              Top up wallet
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -1866,6 +1830,7 @@ function BillingHistoryCard({
   walletHistory,
   walletTopupAmount,
   walletTopupPhone,
+  topupPending,
   onTopupAmountChange,
   onTopupPhoneChange,
   onTopup,
@@ -1874,6 +1839,7 @@ function BillingHistoryCard({
   walletHistory: WalletHistoryItem[]
   walletTopupAmount: string
   walletTopupPhone: string
+  topupPending: boolean
   onTopupAmountChange: (value: string) => void
   onTopupPhoneChange: (value: string) => void
   onTopup: () => void
@@ -1913,8 +1879,19 @@ function BillingHistoryCard({
           </div>
         ) : null}
         <div className="button-right">
-          <button className="pill light" onClick={onTopup} type="button">
-            {MPESA_STK_ENABLED ? 'Top up via M-PESA' : 'Top up wallet'}
+          <button
+            className="pill light wallet-action-btn"
+            onClick={onTopup}
+            type="button"
+            disabled={topupPending}
+          >
+            {topupPending
+              ? MPESA_STK_ENABLED
+                ? 'Sending M-PESA prompt...'
+                : 'Starting top up...'
+              : MPESA_STK_ENABLED
+                ? 'Top up via M-PESA'
+                : 'Top up wallet'}
           </button>
         </div>
       </div>
@@ -1952,6 +1929,7 @@ function SettingsPage({
   walletHistory,
   walletTopupAmount,
   walletTopupPhone,
+  topupPending,
   onTopupAmountChange,
   onTopupPhoneChange,
   onTopup,
@@ -1968,6 +1946,7 @@ function SettingsPage({
   walletHistory: WalletHistoryItem[]
   walletTopupAmount: string
   walletTopupPhone: string
+  topupPending: boolean
   onTopupAmountChange: (value: string) => void
   onTopupPhoneChange: (value: string) => void
   onTopup: () => void
@@ -2021,6 +2000,7 @@ function SettingsPage({
             walletHistory={walletHistory}
             walletTopupAmount={walletTopupAmount}
             walletTopupPhone={walletTopupPhone}
+            topupPending={topupPending}
             onTopupAmountChange={onTopupAmountChange}
             onTopupPhoneChange={onTopupPhoneChange}
             onTopup={onTopup}
@@ -2093,6 +2073,7 @@ function MembershipPage({
   onTabChange,
   giftRef,
   onGoPayment,
+  paymentPending,
   history,
   onOpenCreator,
 }: {
@@ -2100,6 +2081,7 @@ function MembershipPage({
   onTabChange: (t: 'Membership' | 'Gift Creator') => void
   giftRef: React.RefObject<HTMLDivElement | null>
   onGoPayment: () => void
+  paymentPending: boolean
   history: SubscriptionHistoryItem[]
   onOpenCreator: (creator: CreatorCard) => void
 }) {
@@ -2205,8 +2187,8 @@ function MembershipPage({
                 We’ll take you to payment and create a secure gift checkout for the featured creator.
               </p>
             </div>
-            <button className="primary-btn" onClick={onGoPayment} type="button">
-              Go to payment
+            <button className="primary-btn" onClick={onGoPayment} type="button" disabled={paymentPending}>
+              {paymentPending ? 'Preparing checkout...' : 'Go to payment'}
             </button>
           </div>
         </section>
@@ -2225,6 +2207,7 @@ function WalletPage({
   walletHistory,
   walletTopupAmount,
   walletTopupPhone,
+  topupPending,
   onTopupAmountChange,
   onTopupPhoneChange,
   onTopup,
@@ -2239,6 +2222,7 @@ function WalletPage({
   walletHistory: WalletHistoryItem[]
   walletTopupAmount: string
   walletTopupPhone: string
+  topupPending: boolean
   onTopupAmountChange: (value: string) => void
   onTopupPhoneChange: (value: string) => void
   onTopup: () => void
@@ -2354,7 +2338,7 @@ function WalletPage({
         <div className="wallet-summary-card wallet-summary-card--actions">
           <span className="wallet-summary-card__label">Quick actions</span>
           <div className="wallet-quick-actions">
-            <button className="pill light" type="button" onClick={() => onTabChange('receive')}>
+            <button className="pill light wallet-action-btn" type="button" onClick={() => onTabChange('receive')}>
               Top up now
             </button>
             <button className="pill ghost" type="button" onClick={() => onTabChange('send')}>
@@ -2382,7 +2366,7 @@ function WalletPage({
               <span>{walletCurrency}</span>
             </div>
             <div className="wallet-card__actions">
-              <button className="pill light" type="button" onClick={() => onTabChange('receive')}>
+              <button className="pill light wallet-action-btn" type="button" onClick={() => onTabChange('receive')}>
                 Open top up
               </button>
             </div>
@@ -2497,7 +2481,7 @@ function WalletPage({
 
               <div className="wallet-card__actions">
                 <button
-                  className="pill light"
+                  className="pill light wallet-action-btn"
                   type="button"
                   onClick={handleSend}
                   disabled={sending || !selectedCreator || Number(sendAmount) <= 0}
@@ -2543,8 +2527,19 @@ function WalletPage({
                 </>
               ) : null}
               <div className="wallet-card__actions">
-                <button className="pill light" type="button" onClick={onTopup}>
-                  {MPESA_STK_ENABLED ? 'Top up via M-PESA' : 'Top up wallet'}
+                <button
+                  className="pill light wallet-action-btn"
+                  type="button"
+                  onClick={onTopup}
+                  disabled={topupPending}
+                >
+                  {topupPending
+                    ? MPESA_STK_ENABLED
+                      ? 'Sending M-PESA prompt...'
+                      : 'Starting top up...'
+                    : MPESA_STK_ENABLED
+                      ? 'Top up via M-PESA'
+                      : 'Top up wallet'}
                 </button>
               </div>
             </div>
@@ -3518,8 +3513,10 @@ export default function App() {
   const [ppvPurchases, setPpvPurchases] = useState<number[]>([])
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
   const [subscribingCreatorId, setSubscribingCreatorId] = useState<string | null>(null)
-  const [subscriptionConfirmCreator, setSubscriptionConfirmCreator] = useState<CreatorCard | null>(null)
   const [recentCreators, setRecentCreators] = useState<CreatorCard[]>([])
+  const [walletTopupInFlight, setWalletTopupInFlight] = useState(false)
+  const [giftCheckoutInFlight, setGiftCheckoutInFlight] = useState(false)
+  const [paymentReturn] = useState(() => readPaymentReturnFromUrl())
   const isAuthed = Boolean(session)
   const displayName =
     userProfile?.display_name ??
@@ -3548,6 +3545,38 @@ export default function App() {
   const hasReleaseNotes = Boolean(RELEASE_NOTES_URL)
   const hasHelpSupport = Boolean(HELP_CENTER_URL || SUPPORT_EMAIL)
   const hasFeatureRequests = isSupabaseConfigured
+
+  const refreshPaymentState = async (options?: { ifMounted?: () => boolean }) => {
+    const [subs, history, balance, walletEntries] = await Promise.all([
+      fetchActiveSubscriptions(),
+      fetchSubscriptionHistory(),
+      fetchWalletBalance(),
+      fetchWalletHistory(),
+    ])
+    if (options?.ifMounted && !options.ifMounted()) return
+    setActiveSubscriptions(subs)
+    setSubscriptionHistory(history)
+    setWalletBalance(balance)
+    setWalletHistory(walletEntries)
+  }
+
+  useEffect(() => {
+    if (!paymentReturn.kind && !paymentReturn.hasReference) return
+
+    if (paymentReturn.kind === 'wallet_topup' || paymentReturn.kind === 'tip') {
+      setPage('wallet')
+      setWalletTab('history')
+    } else if (paymentReturn.kind === 'gift') {
+      setPage('membership')
+      setMembershipTab('Gift Creator')
+    }
+
+    if (paymentReturn.hasReference) {
+      setToast('Returning from secure checkout. We are confirming your payment.')
+    }
+
+    clearPaymentReturnParams()
+  }, [paymentReturn.hasReference, paymentReturn.kind])
 
   useEffect(() => {
     if (envStatus.hasIssues) {
@@ -3615,6 +3644,31 @@ export default function App() {
       setWalletHistory(history)
     })()
   }, [session])
+
+  useEffect(() => {
+    if (envStatus.hasIssues) return
+    if (!session?.user?.id) return
+    if (!paymentReturn.kind && !paymentReturn.hasReference) return
+
+    let isMounted = true
+    const refresh = async () => {
+      try {
+        await refreshPaymentState({ ifMounted: () => isMounted })
+      } catch (err) {
+        console.error(err)
+      }
+    }
+
+    void refresh()
+    const timer = window.setTimeout(() => {
+      void refresh()
+    }, 3500)
+
+    return () => {
+      isMounted = false
+      window.clearTimeout(timer)
+    }
+  }, [envStatus.hasIssues, paymentReturn.hasReference, paymentReturn.kind, session])
 
   useEffect(() => {
     if (envStatus.hasIssues) return
@@ -3783,6 +3837,7 @@ export default function App() {
       setToast('Sign in to continue to payment')
       return
     }
+    if (giftCheckoutInFlight) return
     if (!FEATURED_CREATOR_ID) {
       setToast('Payment is not configured: missing creator id')
       return
@@ -3793,6 +3848,7 @@ export default function App() {
     }
 
     try {
+      setGiftCheckoutInFlight(true)
       setToast('Preparing secure checkout...')
       const result = await initiatePaystackPayment({
         email: session.user.email,
@@ -3804,6 +3860,7 @@ export default function App() {
           source: 'gift_creator',
         },
         channels: ['mobile_money'],
+        callbackUrl: buildFanReturnUrl('gift'),
       })
       if (!result.authorization_url) {
         throw new Error('Checkout URL missing')
@@ -3812,6 +3869,7 @@ export default function App() {
     } catch (err) {
       console.error(err)
       setToast('Could not start payment. Try again in a moment.')
+      setGiftCheckoutInFlight(false)
     }
   }
 
@@ -3820,15 +3878,18 @@ export default function App() {
       setToast('Sign in to top up your wallet')
       return
     }
+    if (walletTopupInFlight) return
     const amountMajor = Number(walletTopupAmount)
     if (!Number.isFinite(amountMajor) || amountMajor <= 0) {
       setToast('Enter a valid top up amount')
       return
     }
     try {
+      setWalletTopupInFlight(true)
       if (MPESA_STK_ENABLED) {
         if (!walletTopupPhone.trim()) {
           setToast('Enter your M-PESA phone number')
+          setWalletTopupInFlight(false)
           return
         }
         setToast('Sending M-PESA prompt...')
@@ -3837,6 +3898,7 @@ export default function App() {
           amountMajor,
         })
         setToast(result.customerMessage ?? 'M-PESA prompt sent. Complete on your phone.')
+        setWalletTopupInFlight(false)
         return
       }
       setToast('Redirecting to secure wallet top up...')
@@ -3847,6 +3909,7 @@ export default function App() {
         type: 'wallet_topup',
         metadata: { source: 'wallet_topup' },
         channels: ['mobile_money'],
+        callbackUrl: buildFanReturnUrl('wallet_topup'),
       })
       if (!result.authorization_url) {
         throw new Error('Checkout URL missing')
@@ -3855,6 +3918,7 @@ export default function App() {
     } catch (err) {
       console.error(err)
       setToast('Could not start wallet top up.')
+      setWalletTopupInFlight(false)
     }
   }
 
@@ -3881,6 +3945,7 @@ export default function App() {
         type: 'tip',
         metadata: { source: 'fan_wallet_send' },
         channels: ['mobile_money', 'card'],
+        callbackUrl: buildFanReturnUrl('tip'),
       })
       if (!result.authorization_url) {
         throw new Error('Checkout URL missing')
@@ -3918,40 +3983,49 @@ export default function App() {
     if (subscribingCreatorId === creator.id) {
       return
     }
-    setSubscriptionConfirmCreator(creator as CreatorCard)
-  }
-
-  const handleConfirmSubscription = async () => {
-    if (!subscriptionConfirmCreator) return
-    const creator = subscriptionConfirmCreator
     const priceCents = creator.subscription_price_cents ?? 0
+    const walletBalanceMinor = walletBalance?.available_amount_minor ?? 0
+    const creatorName = creator.display_name ?? creator.handle ?? 'this creator'
+    const canAfford = priceCents <= 0 || walletBalanceMinor >= priceCents
+
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm(
+        priceCents <= 0
+          ? `Subscribe to ${creatorName} for free?`
+          : canAfford
+            ? `Subscribe to ${creatorName} for ${formatKsh(priceCents)}?\n\nThis amount will be deducted from your wallet.\nCurrent wallet balance: ${formatKsh(walletBalanceMinor)}`
+            : `You need ${formatKsh(priceCents)} to subscribe to ${creatorName}, but your wallet only has ${formatKsh(walletBalanceMinor)}.\n\nOpen wallet top-up now?`
+      )
+
+      if (!confirmed) {
+        return
+      }
+    }
+
+    if (!canAfford) {
+      setPage('wallet')
+      setWalletTab('receive')
+      setToast(`Top up your wallet to subscribe to ${creatorName}.`)
+      return
+    }
 
     try {
       setSubscribingCreatorId(creator.id)
       const result = await purchaseSubscription(creator.id)
       if (result) {
         setActiveSubscriptions((prev) => Array.from(new Set([...prev, creator.id])))
-        const [history, balance, walletEntries] = await Promise.all([
-          fetchSubscriptionHistory(),
-          fetchWalletBalance(),
-          fetchWalletHistory(),
-        ])
-        setSubscriptionHistory(history)
-        setWalletBalance(balance)
-        setWalletHistory(walletEntries)
+        await refreshPaymentState()
       }
-      setSubscriptionConfirmCreator(null)
       setToast(
         priceCents > 0
-          ? `Subscribed to ${creator.display_name}. ${formatKsh(priceCents)} deducted from your wallet.`
-          : `Subscribed to ${creator.display_name}.`
+          ? `Subscribed to ${creatorName}. ${formatKsh(priceCents)} deducted from your wallet.`
+          : `Subscribed to ${creatorName}.`
       )
     } catch (err) {
       console.error(err)
       const message =
         err instanceof Error && err.message ? err.message.toLowerCase() : 'could not complete subscription'
       if (message.includes('insufficient wallet balance')) {
-        setSubscriptionConfirmCreator(null)
         setPage('wallet')
         setWalletTab('receive')
         setToast('Top up your wallet to complete this subscription.')
@@ -3963,14 +4037,6 @@ export default function App() {
     } finally {
       setSubscribingCreatorId(null)
     }
-  }
-
-  const handleTopUpForSubscription = () => {
-    const creatorName = subscriptionConfirmCreator?.display_name ?? 'this creator'
-    setSubscriptionConfirmCreator(null)
-    setPage('wallet')
-    setWalletTab('receive')
-    setToast(`Top up your wallet to subscribe to ${creatorName}.`)
   }
 
   const handleUnlockPost = async (post: FeedPost) => {
@@ -4349,6 +4415,7 @@ export default function App() {
             walletHistory={walletHistory}
             walletTopupAmount={walletTopupAmount}
             walletTopupPhone={walletTopupPhone}
+            topupPending={walletTopupInFlight}
             onTopupAmountChange={setWalletTopupAmount}
             onTopupPhoneChange={setWalletTopupPhone}
             onTopup={handleWalletTopup}
@@ -4398,6 +4465,7 @@ export default function App() {
             walletHistory={walletHistory}
             walletTopupAmount={walletTopupAmount}
             walletTopupPhone={walletTopupPhone}
+            topupPending={walletTopupInFlight}
             onTopupAmountChange={setWalletTopupAmount}
             onTopupPhoneChange={setWalletTopupPhone}
             onTopup={handleWalletTopup}
@@ -4411,6 +4479,7 @@ export default function App() {
             onTabChange={setMembershipTab}
             giftRef={giftRef}
             onGoPayment={handleGiftCheckout}
+            paymentPending={giftCheckoutInFlight}
             history={subscriptionHistory}
             onOpenCreator={handleOpenCreatorPage}
           />
@@ -4436,20 +4505,6 @@ export default function App() {
           }}
         />
       )}
-      {subscriptionConfirmCreator ? (
-        <SubscribeConfirmModal
-          creator={subscriptionConfirmCreator}
-          priceCents={subscriptionConfirmCreator.subscription_price_cents ?? 0}
-          walletBalanceMinor={walletBalance?.available_amount_minor ?? 0}
-          busy={subscribingCreatorId === subscriptionConfirmCreator.id}
-          onCancel={() => {
-            if (subscribingCreatorId === subscriptionConfirmCreator.id) return
-            setSubscriptionConfirmCreator(null)
-          }}
-          onConfirm={() => void handleConfirmSubscription()}
-          onTopUp={handleTopUpForSubscription}
-        />
-      ) : null}
       {/* Guest mode removed: sign-in required for content */}
     </div>
   )

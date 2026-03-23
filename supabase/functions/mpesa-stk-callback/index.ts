@@ -4,9 +4,17 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { supabase } from "../_shared/client.ts";
 
+const callbackToken = Deno.env.get("MPESA_CALLBACK_TOKEN");
+
 serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   if (!supabase) return json({ error: "Supabase not configured" }, 500);
+  if (!callbackToken) return json({ error: "MPESA_CALLBACK_TOKEN missing" }, 500);
+
+  const requestUrl = new URL(req.url);
+  if (requestUrl.searchParams.get("token") !== callbackToken) {
+    return json({ error: "Invalid callback token" }, 401);
+  }
 
   let payload: any;
   try {
@@ -38,6 +46,18 @@ serve(async (req) => {
     return json({ error: "Webhook event persistence failed" }, 500);
   }
 
+  const fail = async (error: string, status = 500) => {
+    const { error: cleanupErr } = await supabase
+      .from("provider_webhook_events")
+      .delete()
+      .eq("provider", "mpesa")
+      .eq("provider_event_id", checkoutRequestId);
+    if (cleanupErr) {
+      console.error("Failed to roll back M-PESA webhook event", cleanupErr);
+    }
+    return json({ error }, status);
+  };
+
   const metadataItems = stk.CallbackMetadata?.Item ?? [];
   const lookup = (name: string) =>
     metadataItems.find((item: any) => item.Name === name)?.Value ?? null;
@@ -54,14 +74,23 @@ serve(async (req) => {
     .eq("provider_intent_id", checkoutRequestId)
     .maybeSingle();
 
-  if (paymentErr) return json({ error: "Payment lookup failed" }, 500);
-  if (!payment) return json({ error: "Unknown payment intent" }, 404);
+  if (paymentErr) return await fail("Payment lookup failed");
+  if (!payment) return await fail("Unknown payment intent", 404);
 
   const amountMinor = Math.round(Number.isFinite(amountMajor) ? amountMajor * 100 : 0);
   const succeeded = resultCode === 0;
+  const priorStatus = payment.status;
 
-  if (payment.status === "succeeded") {
-    return json({ ok: true, already_processed: true });
+  if (succeeded) {
+    const creditAmount = amountMinor > 0 ? amountMinor : payment.amount_cents;
+    const { error: creditErr } = await supabase.rpc("credit_user_wallet", {
+      p_user_id: payment.user_id,
+      p_amount_minor: creditAmount,
+      p_currency: payment.currency ?? "KES",
+      p_payment_id: payment.id,
+      p_metadata: { source: "mpesa.stk.callback", receipt: receiptNumber },
+    });
+    if (creditErr) return await fail("Wallet credit failed");
   }
 
   const { error: updateErr } = await supabase
@@ -82,20 +111,15 @@ serve(async (req) => {
     })
     .eq("id", payment.id);
 
-  if (updateErr) return json({ error: "Payment update failed" }, 500);
+  if (updateErr) return await fail("Payment update failed");
 
   if (succeeded) {
     const creditAmount = amountMinor > 0 ? amountMinor : payment.amount_cents;
-    const { error: creditErr } = await supabase.rpc("credit_user_wallet", {
-      p_user_id: payment.user_id,
-      p_amount_minor: creditAmount,
-      p_currency: payment.currency ?? "KES",
-      p_payment_id: payment.id,
-      p_metadata: { source: "mpesa.stk.callback", receipt: receiptNumber },
-    });
-    if (creditErr) return json({ error: "Wallet credit failed" }, 500);
+    if (priorStatus === "succeeded") {
+      return json({ ok: true, already_processed: true });
+    }
 
-    await supabase.rpc("create_notification_if_enabled", {
+    const { error: notifyErr } = await supabase.rpc("create_notification_if_enabled", {
       p_user_id: payment.user_id,
       p_type: "wallet_topup_succeeded",
       p_payload: {
@@ -106,8 +130,9 @@ serve(async (req) => {
       },
       p_pref_key: "payments",
     });
+    if (notifyErr) return await fail("Wallet notification failed");
   } else {
-    await supabase.rpc("create_notification_if_enabled", {
+    const { error: notifyErr } = await supabase.rpc("create_notification_if_enabled", {
       p_user_id: payment.user_id,
       p_type: "wallet_topup_failed",
       p_payload: {
@@ -119,6 +144,7 @@ serve(async (req) => {
       },
       p_pref_key: "payments",
     });
+    if (notifyErr) return await fail("Wallet failure notification failed");
   }
 
   return json({ ok: true });

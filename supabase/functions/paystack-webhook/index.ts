@@ -46,6 +46,18 @@ serve(async (req) => {
     return json({ error: "Webhook event persistence failed" }, 500);
   }
 
+  const fail = async (error: string, status = 500) => {
+    const { error: cleanupErr } = await supabase
+      .from("provider_webhook_events")
+      .delete()
+      .eq("provider", "paystack")
+      .eq("provider_event_id", providerEventId);
+    if (cleanupErr) {
+      console.error("Failed to roll back Paystack webhook event", cleanupErr);
+    }
+    return json({ error }, status);
+  };
+
   if (eventType === "charge.success") {
     const reference: string | undefined = data.reference;
     if (!reference) return json({ error: "Missing reference" }, 400);
@@ -63,10 +75,10 @@ serve(async (req) => {
       .eq("provider_intent_id", reference)
       .maybeSingle();
 
-    if (fetchErr) return json({ error: "DB fetch error" }, 500);
+    if (fetchErr) return await fail("DB fetch error");
     const amount = data.amount; // minor unit
     const currency = (data.currency ?? paymentRow?.currency ?? "KES").toUpperCase();
-    if (!Number.isFinite(amount) || amount <= 0) return json({ error: "Invalid amount" }, 400);
+    if (!Number.isFinite(amount) || amount <= 0) return await fail("Invalid amount", 400);
 
     let resolvedPayment = paymentRow;
     if (!resolvedPayment) {
@@ -82,7 +94,7 @@ serve(async (req) => {
               ? "ppv"
               : "tip";
       if (!creatorId && paymentType !== "wallet_topup") {
-        return json({ error: "Unknown payment reference and missing creator metadata" }, 404);
+        return await fail("Unknown payment reference and missing creator metadata", 404);
       }
 
       const { data: recoveredPayment, error: recoverErr } = await supabase
@@ -94,7 +106,7 @@ serve(async (req) => {
             provider_event_id: providerEventId,
             amount_cents: amount,
             currency,
-            status: "succeeded",
+            status: "requires_action",
             creator_id: creatorId,
             user_id: payerUserId,
             type: paymentType,
@@ -105,30 +117,15 @@ serve(async (req) => {
         )
         .select("id, status, type, creator_id, user_id, amount_cents, currency, metadata")
         .single();
-      if (recoverErr) return json({ error: "Payment recovery failed" }, 500);
+      if (recoverErr) return await fail("Payment recovery failed");
       resolvedPayment = recoveredPayment;
     }
 
-    if (resolvedPayment.status === "succeeded" && paymentRow) return json({ ok: true, already_processed: true });
-
-    if (resolvedPayment.status !== "succeeded") {
-      const { error: updateErr } = await supabase
-        .from("payments")
-        .update({
-          status: "succeeded",
-          amount_cents: amount,
-          currency,
-          provider_event_id: data.id?.toString() ?? null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("provider", "paystack")
-        .eq("provider_intent_id", reference);
-      if (updateErr) return json({ error: "Update failed" }, 500);
-    }
+    const priorStatus = resolvedPayment.status;
 
     if (resolvedPayment.type === "wallet_topup") {
       if (!resolvedPayment.user_id) {
-        return json({ error: "Wallet topup missing user_id" }, 400);
+        return await fail("Wallet topup missing user_id", 400);
       }
       const { error: walletErr } = await supabase.rpc("credit_user_wallet", {
         p_user_id: resolvedPayment.user_id,
@@ -137,20 +134,7 @@ serve(async (req) => {
         p_payment_id: resolvedPayment.id,
         p_metadata: { source: "paystack.wallet_topup", reference },
       });
-      if (walletErr) return json({ error: "Wallet credit failed" }, 500);
-
-      await supabase.rpc("create_notification_if_enabled", {
-        p_user_id: resolvedPayment.user_id,
-        p_type: "wallet_topup_succeeded",
-        p_payload: {
-          amount_cents: amount,
-          currency,
-          provider: "paystack",
-          reference,
-        },
-        p_pref_key: "payments",
-      });
-      return json({ ok: true });
+      if (walletErr) return await fail("Wallet credit failed");
     }
 
     if (resolvedPayment.type === "tip") {
@@ -161,7 +145,7 @@ serve(async (req) => {
         currency,
         payment_id: resolvedPayment.id,
       });
-      if (tipErr && tipErr.code !== "23505") return json({ error: "Tip create failed" }, 500);
+      if (tipErr && tipErr.code !== "23505") return await fail("Tip create failed");
     }
 
     if (resolvedPayment.type === "subscription") {
@@ -180,12 +164,12 @@ serve(async (req) => {
         },
         { onConflict: "subscriber_id,creator_id" },
       );
-      if (subErr) return json({ error: "Subscription upsert failed" }, 500);
+      if (subErr) return await fail("Subscription upsert failed");
     }
 
     if (resolvedPayment.type === "ppv") {
       const postId = resolvedPayment.metadata?.post_id ?? data?.metadata?.post_id;
-      if (!postId) return json({ error: "PPV purchase missing post_id" }, 400);
+      if (!postId) return await fail("PPV purchase missing post_id", 400);
 
       const { error: ppvErr } = await supabase.from("ppv_purchases").upsert(
         {
@@ -199,7 +183,7 @@ serve(async (req) => {
         },
         { onConflict: "user_id,post_id" },
       );
-      if (ppvErr && ppvErr.code !== "23505") return json({ error: "PPV purchase create failed" }, 500);
+      if (ppvErr && ppvErr.code !== "23505") return await fail("PPV purchase create failed");
     }
 
     if (resolvedPayment.creator_id) {
@@ -210,7 +194,35 @@ serve(async (req) => {
         p_payment_id: resolvedPayment.id,
         p_metadata: { source: "paystack.charge.success", reference },
       });
-      if (creditErr) return json({ error: "Creator balance credit failed" }, 500);
+      if (creditErr) return await fail("Creator balance credit failed");
+    }
+
+    const { error: updateErr } = await supabase
+      .from("payments")
+      .update({
+        status: "succeeded",
+        amount_cents: amount,
+        currency,
+        provider_event_id: data.id?.toString() ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("provider", "paystack")
+      .eq("provider_intent_id", reference);
+    if (updateErr) return await fail("Update failed");
+
+    if (resolvedPayment.type === "wallet_topup" && priorStatus !== "succeeded") {
+      const { error: notifyErr } = await supabase.rpc("create_notification_if_enabled", {
+        p_user_id: resolvedPayment.user_id,
+        p_type: "wallet_topup_succeeded",
+        p_payload: {
+          amount_cents: amount,
+          currency,
+          provider: "paystack",
+          reference,
+        },
+        p_pref_key: "payments",
+      });
+      if (notifyErr) return await fail("Wallet notification failed");
     }
     return json({ ok: true });
   }
@@ -222,9 +234,7 @@ serve(async (req) => {
       paystackTransferId ? `paystack_transfer_id.eq.${paystackTransferId}` : null,
       transferCode ? `paystack_transfer_code.eq.${transferCode}` : null,
     ].filter(Boolean);
-    if (!payoutLookupFilters.length) {
-      return json({ error: "Missing transfer identifiers" }, 400);
-    }
+    if (!payoutLookupFilters.length) return await fail("Missing transfer identifiers", 400);
 
     const query = supabase
       .from("payout_transfers")
@@ -233,8 +243,8 @@ serve(async (req) => {
       .limit(1)
       .maybeSingle();
     const { data: payoutRow, error: payoutFetchErr } = await query;
-    if (payoutFetchErr) return json({ error: "Payout fetch failed" }, 500);
-    if (!payoutRow) return json({ error: "Unknown payout transfer" }, 404);
+    if (payoutFetchErr) return await fail("Payout fetch failed");
+    if (!payoutRow) return await fail("Unknown payout transfer", 404);
 
     const statusMap: Record<string, "success" | "failed" | "reversed"> = {
       "transfer.success": "success",
@@ -250,9 +260,9 @@ serve(async (req) => {
       p_failure_reason: data.complete_message ?? data.reason ?? null,
       p_metadata: { source: eventType },
     });
-    if (markErr) return json({ error: "Payout state update failed" }, 500);
+    if (markErr) return await fail("Payout state update failed");
 
-    await supabase
+    const { error: unlockErr } = await supabase
       .from("payout_transfers")
       .update({
         last_attempt_at: new Date().toISOString(),
@@ -260,6 +270,7 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       })
       .eq("id", payoutRow.id);
+    if (unlockErr) return await fail("Payout unlock failed");
   }
 
   return json({ ok: true });

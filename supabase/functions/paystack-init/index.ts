@@ -25,12 +25,31 @@ type InitRequest = {
 };
 
 function resolveCallbackUrl(req: Request, requestedCallbackUrl?: string | null) {
+  const requestOrigin = req.headers.get("origin");
   const trimmed = requestedCallbackUrl?.trim();
   if (!trimmed) {
-    return (
-      Deno.env.get("PAYSTACK_CALLBACK_URL") ??
-      new URL("/paystack/callback", req.url).toString()
-    );
+    const configured = Deno.env.get("PAYSTACK_CALLBACK_URL")?.trim();
+    if (configured) {
+      return configured;
+    }
+
+    if (!requestOrigin) {
+      throw new Error("callback_url required when request origin is unavailable");
+    }
+
+    let requestUrl: URL;
+    try {
+      requestUrl = new URL(requestOrigin);
+    } catch {
+      throw new Error("Invalid request origin");
+    }
+
+    const isLocalhost = ["localhost", "127.0.0.1"].includes(requestUrl.hostname);
+    if (requestUrl.protocol !== "https:" && !isLocalhost) {
+      throw new Error("request origin must use https");
+    }
+
+    return new URL("/user/", requestUrl).toString();
   }
 
   let parsed: URL;
@@ -40,7 +59,6 @@ function resolveCallbackUrl(req: Request, requestedCallbackUrl?: string | null) 
     throw new Error("Invalid callback_url");
   }
 
-  const requestOrigin = req.headers.get("origin");
   if (requestOrigin) {
     let requestUrl: URL;
     try {
