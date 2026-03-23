@@ -2857,8 +2857,8 @@ export function MyPayments() {
   return (
     <MyLayout
       title="Payments"
-      subtitle="Use one clean workspace for setup, payouts, and history."
       activeNav="payments"
+      header={null}
     >
       <div className="wallet-page wallet-page--single payments-workspace">
         {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
@@ -2867,10 +2867,7 @@ export function MyPayments() {
         <section className="wallet-panel wallet-panel--compact payments-summary-strip">
           <div className="wallet-panel__title-row">
             <div>
-              <h2 className="wallet-panel__title">Payments overview</h2>
-              <p className="wallet-panel__subtitle">
-                Keep setup, withdrawals, and history in one simple creator workspace.
-              </p>
+              <h2 className="wallet-panel__title">Payout workspace</h2>
             </div>
             <div className="payments-summary-strip__actions">
               {loading ? <span className="wallet-status">Loading...</span> : null}
@@ -2922,18 +2919,6 @@ export function MyPayments() {
                 {formatMinorCurrency(summary?.pending_amount_minor, currency)}
               </div>
             </article>
-            <article className="wallet-balance-card">
-              <div className="wallet-balance-card__label">Current method</div>
-              <div className="wallet-balance-card__value wallet-balance-card__value--small">
-                {getUnifiedPayoutDestinationLabel(payoutAccount)}
-              </div>
-              <div className="wallet-balance-card__meta">
-                {getUnifiedPayoutDestinationMeta(payoutAccount)}
-              </div>
-              <span className={`wallet-status wallet-status--${verificationState}`}>
-                {getPayoutVerificationLabel(verificationState)}
-              </span>
-            </article>
           </div>
         </section>
 
@@ -2942,9 +2927,6 @@ export function MyPayments() {
           <div className="wallet-panel__title-row">
             <div>
               <h2 className="wallet-panel__title">Set up payout method</h2>
-              <p className="wallet-panel__subtitle">
-                Choose one rail. Saving a new method replaces the current payout destination.
-              </p>
             </div>
             {searchParams.get('setup') === '1' ? <span className="wallet-status">Setup mode</span> : null}
           </div>
@@ -3175,9 +3157,6 @@ export function MyPayments() {
           <div className="wallet-panel__title-row">
             <div>
               <h2 className="wallet-panel__title">Request payout</h2>
-              <p className="wallet-panel__subtitle">
-                Payouts always use your currently saved and verified payout method.
-              </p>
             </div>
           </div>
 
@@ -3222,7 +3201,6 @@ export function MyPayments() {
           <div className="payments-history-header">
             <div>
               <h2 className="wallet-panel__title">History</h2>
-              <p className="wallet-panel__subtitle">Recent payout activity and provider responses.</p>
             </div>
             <div className="my-tabs">
               <button
