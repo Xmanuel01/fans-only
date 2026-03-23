@@ -1,7 +1,9 @@
 begin;
 
+create extension if not exists "uuid-ossp";
+
 create table if not exists public.chat_threads (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default extensions.uuid_generate_v4(),
   creator_id uuid not null references public.creators (id) on delete cascade,
   member_id uuid not null references public.profiles (id) on delete cascade,
   last_message_at timestamptz not null default now(),
