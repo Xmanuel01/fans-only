@@ -45,5 +45,8 @@ verify_jwt = false
 [functions.process-payout-queue]
 verify_jwt = false
 
+[functions.review-creator-payout-account]
+verify_jwt = false
+
 [functions.upload-creator-profile-asset]
 verify_jwt = false

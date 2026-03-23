@@ -111,7 +111,7 @@ export type PayoutAccount = {
   recipient_type?: string | null;
   msisdn_e164?: string | null;
   recipient_active?: boolean | null;
-  kyc_status?: 'pending' | 'verified' | 'rejected' | null;
+  kyc_status?: 'pending' | 'verified' | 'rejected' | 'inactive' | null;
   verified_at?: string | null;
   verification_source?: string | null;
   card_brand?: string | null;

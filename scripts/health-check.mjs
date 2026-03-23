@@ -38,26 +38,33 @@ const supabaseEnvCandidates = ["supabase/.env", "supabase/.env.local", "supabase
 const supabaseRequired = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 const supabaseOptional = [
   "PAYSTACK_SECRET_KEY",
+  "PAYSTACK_CARD_SETUP_AMOUNT_MAJOR",
   "MPESA_CONSUMER_KEY",
   "MPESA_CONSUMER_SECRET",
   "MPESA_PASSKEY",
   "MPESA_SHORTCODE",
   "MPESA_CALLBACK_URL",
+  "MPESA_CALLBACK_TOKEN",
   "MPESA_ENV",
   "PAYPAL_CLIENT_ID",
   "PAYPAL_CLIENT_SECRET",
   "PAYPAL_WEBHOOK_ID",
   "PAYPAL_API_BASE",
   "PAYOUT_QUEUE_CRON_TOKEN",
+  "OPERATOR_API_TOKEN",
 ];
 
 const requiredMigrations = [
-  "20260204T000001_payments_and_content.sql",
-  "20260217T120000_mpesa_payouts.sql",
-  "20260217T133000_payout_retries_and_kyc.sql",
-  "20260225T140000_wallet_ppv.sql",
-  "20260225T141000_recommendations_v2.sql",
-  "20260225T170000_payout_multi_provider.sql",
+  "20260204000001_payments_and_content.sql",
+  "20260217120000_mpesa_payouts.sql",
+  "20260217133000_payout_retries_and_kyc.sql",
+  "20260225140000_wallet_ppv.sql",
+  "20260225141000_recommendations_v2.sql",
+  "20260225170000_payout_multi_provider.sql",
+  "20260315120000_creator_payout_verification_audit.sql",
+  "20260315183000_creator_card_payout_support.sql",
+  "20260323083000_payment_webhook_hardening.sql",
+  "20260323100000_creator_payout_ops_hardening.sql",
 ];
 
 function parseEnv(content) {

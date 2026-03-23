@@ -19,7 +19,6 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
   requestCreatorPayout,
-  requestPaypalPayout,
   sendChatMessage,
   startCreatorCardPayoutSetup,
   subscribeToChatMessages,
@@ -36,7 +35,6 @@ import {
   type PayoutTransfer,
   upsertBankPayoutAccount,
   upsertMpesaPayoutAccount,
-  upsertPaypalPayoutAccount,
 } from '../supabaseClient';
 import './MyPages.css';
 
@@ -240,12 +238,12 @@ const parseMajorAmountToMinor = (value: string) => {
   return Math.round(numeric * 100);
 };
 
-type PaymentsRail = 'paypal' | 'mpesa' | 'card-bank';
+type PaymentsRail = 'mpesa' | 'card-bank';
 type CardBankRail = 'card' | 'bank';
 type PaymentsPanel = 'method' | 'request' | 'history';
 
 const normalizePaymentsRail = (value: string | null): PaymentsRail | null => {
-  if (value === 'paypal' || value === 'mpesa' || value === 'card-bank') {
+  if (value === 'mpesa' || value === 'card-bank') {
     return value;
   }
   return null;
@@ -267,7 +265,6 @@ const normalizePaymentsPanel = (value: string | null): PaymentsPanel | null => {
 
 const getPaymentsRailFromAccount = (account: PayoutAccount | null): PaymentsRail => {
   if (!account) return 'mpesa';
-  if (account?.provider === 'paypal') return 'paypal';
   if (account?.provider === 'mpesa') return 'mpesa';
   return 'card-bank';
 };
@@ -280,7 +277,6 @@ const getCardBankRailFromAccount = (account: PayoutAccount | null): CardBankRail
 const getPayoutProviderLabel = (provider?: PayoutAccount['provider'] | null) => {
   if (provider === 'mpesa') return 'M-PESA';
   if (provider === 'bank') return 'Bank';
-  if (provider === 'paypal') return 'PayPal';
   if (provider === 'card') return 'Card';
   return 'No payout method';
 };
@@ -308,10 +304,6 @@ const getPayoutVerificationLabel = (
 const getPayoutDestinationLabel = (account: PayoutAccount | null) => {
   if (!account) return 'No payout destination configured';
 
-  if (account.provider === 'paypal') {
-    return account.paypal_email ?? 'PayPal destination';
-  }
-
   if (account.account_number_last4) {
     return `${getPayoutProviderLabel(account.provider)} ••••${account.account_number_last4}`;
   }
@@ -331,15 +323,11 @@ const getPayoutDestinationMeta = (account: PayoutAccount | null) => {
     return account.account_name || 'Mobile money destination';
   }
 
-  return account.account_name || 'PayPal destination';
+  return account.account_name || 'Payout destination';
 };
 
 const getUnifiedPayoutDestinationLabel = (account: PayoutAccount | null) => {
   if (!account) return 'No payout method saved';
-
-  if (account.provider === 'paypal') {
-    return account.paypal_email ?? 'PayPal payout rail';
-  }
 
   if (account.provider === 'card') {
     const brand = account.card_brand?.trim();
@@ -384,7 +372,7 @@ const getUnifiedPayoutDestinationMeta = (account: PayoutAccount | null) => {
     return details.join(' · ') || 'Tokenized securely through Paystack';
   }
 
-  return account.account_name || account.paypal_email || 'PayPal payout rail';
+  return account.account_name || 'Payout rail';
 };
 
 const formatPayoutTransferStatus = (status: PayoutTransfer['status']) => {
@@ -2069,9 +2057,10 @@ function LegacyMyPayments() {
     void loadPayments();
   }, []);
 
-  const verificationState = getPayoutVerificationState(payoutAccount);
+  const livePayoutAccount = payoutAccount?.provider === 'paypal' ? null : payoutAccount;
+  const verificationState = getPayoutVerificationState(livePayoutAccount);
   const amountMinor = parseMajorAmountToMinor(amountMajor);
-  const currency = summary?.currency ?? payoutAccount?.currency ?? 'KES';
+  const currency = summary?.currency ?? livePayoutAccount?.currency ?? 'KES';
   const canRequestPayout =
     verificationState === 'verified' &&
     amountMinor !== null &&
@@ -2135,6 +2124,12 @@ function LegacyMyPayments() {
       }
     >
       <div className="wallet-page wallet-page--payout">
+        {payoutAccount?.provider === 'paypal' ? (
+          <div className="wallet-notice wallet-notice--warning">
+            Your previous PayPal payout method is not part of the live creator payout workflow.
+            Save M-PESA, Bank, or Card to receive payouts.
+          </div>
+        ) : null}
         {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
         {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
 
@@ -2173,15 +2168,15 @@ function LegacyMyPayments() {
           <div className="wallet-payout-grid">
             <div className="wallet-payout-card">
               <div className="wallet-payout-card__label">Verified payout destination</div>
-              <div className="wallet-payout-card__value">{getPayoutDestinationLabel(payoutAccount)}</div>
-              <div className="wallet-payout-card__meta">{getPayoutDestinationMeta(payoutAccount)}</div>
+              <div className="wallet-payout-card__value">{getPayoutDestinationLabel(livePayoutAccount)}</div>
+              <div className="wallet-payout-card__meta">{getPayoutDestinationMeta(livePayoutAccount)}</div>
               <div className="wallet-payout-card__details">
-                <span>{getPayoutProviderLabel(payoutAccount?.provider)}</span>
-                {payoutAccount?.verified_at ? (
-                  <span>Verified {formatPayoutTransferDate(payoutAccount.verified_at)}</span>
+                <span>{getPayoutProviderLabel(livePayoutAccount?.provider)}</span>
+                {livePayoutAccount?.verified_at ? (
+                  <span>Verified {formatPayoutTransferDate(livePayoutAccount.verified_at)}</span>
                 ) : null}
-                {payoutAccount?.verification_source ? (
-                  <span>{payoutAccount.verification_source.replace(/_/g, ' ')}</span>
+                {livePayoutAccount?.verification_source ? (
+                  <span>{livePayoutAccount.verification_source.replace(/_/g, ' ')}</span>
                 ) : null}
               </div>
               <div className="wallet-payout-card__actions">
@@ -2227,7 +2222,7 @@ function LegacyMyPayments() {
                     setErrorText('Requested amount exceeds your available balance.');
                     return;
                   }
-                  if (!payoutAccount) {
+                  if (!livePayoutAccount) {
                     setErrorText('Save a payout destination first.');
                     return;
                   }
@@ -2237,18 +2232,16 @@ function LegacyMyPayments() {
                     setNoticeText(null);
                     setErrorText(null);
 
-                    if (payoutAccount.provider === 'paypal') {
-                      await requestPaypalPayout({
-                        amountMinor,
-                        reason: 'Creator initiated payout',
-                      });
-                    } else {
-                      await requestCreatorPayout({
-                        amountMinor,
-                        reason: 'Creator initiated payout',
-                        provider: payoutAccount.provider === 'bank' ? 'bank' : 'mpesa',
-                      });
-                    }
+                    await requestCreatorPayout({
+                      amountMinor,
+                      reason: 'Creator initiated payout',
+                      provider:
+                        livePayoutAccount.provider === 'bank'
+                          ? 'bank'
+                          : livePayoutAccount.provider === 'card'
+                            ? 'card'
+                            : 'mpesa',
+                    });
 
                     setNoticeText(
                       'Payout request submitted. We will update the transfer once the provider confirms it.',
@@ -2396,7 +2389,8 @@ function LegacyMyPaymentsAddCard() {
     };
   }, []);
 
-  const verificationState = getPayoutVerificationState(payoutAccount);
+  const livePayoutAccount = payoutAccount?.provider === 'paypal' ? null : payoutAccount;
+  const verificationState = getPayoutVerificationState(livePayoutAccount);
 
   return (
     <MyLayout
@@ -2420,13 +2414,19 @@ function LegacyMyPaymentsAddCard() {
     >
       <div className="wallet-page wallet-page--single wallet-page--banking">
         {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
+        {payoutAccount?.provider === 'paypal' ? (
+          <div className="wallet-notice wallet-notice--warning">
+            A previous PayPal payout method is saved, but the live creator payout workflow only uses
+            M-PESA and Bank while card payouts remain unavailable.
+          </div>
+        ) : null}
 
         <section className="wallet-panel wallet-coming-soon">
           <div className="wallet-panel__title-row">
             <div>
               <h2 className="wallet-panel__title">Card payouts are coming soon</h2>
               <p className="wallet-panel__subtitle">
-                Creator withdrawals are currently supported on verified M-PESA, Bank, and PayPal
+                Creator withdrawals are currently supported on verified M-PESA and Bank
                 destinations only.
               </p>
             </div>
@@ -2436,7 +2436,7 @@ function LegacyMyPaymentsAddCard() {
           <div className="wallet-support-list wallet-support-list--rails">
             <div className="wallet-support-list__item">
               <strong>Live payout rails</strong>
-              <span>M-PESA, Bank, and PayPal can receive creator transfers after verification.</span>
+              <span>M-PESA and Bank can receive creator transfers after verification.</span>
             </div>
             <div className="wallet-support-list__item">
               <strong>Why cards are blocked</strong>
@@ -2479,9 +2479,9 @@ function LegacyMyPaymentsAddCard() {
             <article className="wallet-balance-card">
               <div className="wallet-balance-card__label">Current rail</div>
               <div className="wallet-balance-card__value wallet-balance-card__value--small">
-                {getPayoutProviderLabel(payoutAccount?.provider)}
+                {getPayoutProviderLabel(livePayoutAccount?.provider)}
               </div>
-              <div className="wallet-balance-card__meta">{getPayoutDestinationLabel(payoutAccount)}</div>
+              <div className="wallet-balance-card__meta">{getPayoutDestinationLabel(livePayoutAccount)}</div>
             </article>
           </div>
 
@@ -2527,7 +2527,7 @@ export function MyPayments() {
   const [bankAccountName, setBankAccountName] = useState('');
   const [bankCode, setBankCode] = useState('');
   const [bankName, setBankName] = useState('');
-  const [paypalEmail, setPaypalEmail] = useState('');
+  const livePayoutAccount = payoutAccount?.provider === 'paypal' ? null : payoutAccount;
 
   const syncPaymentsRoute = (
     nextRail: PaymentsRail,
@@ -2573,7 +2573,6 @@ export function MyPayments() {
     setBankAccountName(account?.provider === 'bank' ? account.account_name ?? '' : '');
     setBankCode(account?.provider === 'bank' ? account.bank_code ?? '' : '');
     setBankName(account?.provider === 'bank' ? account.bank_name ?? '' : '');
-    setPaypalEmail(account?.provider === 'paypal' ? account.paypal_email ?? '' : '');
   };
 
   const loadPayments = async () => {
@@ -2606,32 +2605,32 @@ export function MyPayments() {
       setSelectedRail(requestedRail);
       return;
     }
-    setSelectedRail(getPaymentsRailFromAccount(payoutAccount));
-  }, [requestedRail, payoutAccount]);
+    setSelectedRail(getPaymentsRailFromAccount(livePayoutAccount));
+  }, [requestedRail, livePayoutAccount]);
 
   useEffect(() => {
     if (requestedSubrail) {
       setSelectedCardBankRail(requestedSubrail);
       return;
     }
-    setSelectedCardBankRail(getCardBankRailFromAccount(payoutAccount));
-  }, [requestedSubrail, payoutAccount]);
+    setSelectedCardBankRail(getCardBankRailFromAccount(livePayoutAccount));
+  }, [requestedSubrail, livePayoutAccount]);
 
   useEffect(() => {
     if (requestedPanel) {
       setActivePanel(requestedPanel);
       return;
     }
-    if (searchParams.get('setup') === '1' || !payoutAccount) {
+    if (searchParams.get('setup') === '1' || !livePayoutAccount) {
       setActivePanel('method');
       return;
     }
-    if (getPayoutVerificationState(payoutAccount) === 'verified') {
+    if (getPayoutVerificationState(livePayoutAccount) === 'verified') {
       setActivePanel('request');
       return;
     }
     setActivePanel('method');
-  }, [requestedPanel, payoutAccount, searchParams]);
+  }, [requestedPanel, livePayoutAccount, searchParams]);
 
   useEffect(() => {
     if (!hasCardSetupCallback || !cardSetupReference) {
@@ -2681,28 +2680,24 @@ export function MyPayments() {
     };
   }, [cardSetupReference, hasCardSetupCallback, location.search, navigate]);
 
-  const activeSetupProvider: PayoutAccount['provider'] =
+  const activeSetupProvider: Exclude<PayoutAccount['provider'], 'paypal'> =
     selectedRail === 'card-bank' ? selectedCardBankRail : selectedRail;
-  const verificationState = getPayoutVerificationState(payoutAccount);
-  const currentMethodMatchesSelected = payoutAccount?.provider === activeSetupProvider;
+  const verificationState = getPayoutVerificationState(livePayoutAccount);
+  const currentMethodMatchesSelected = livePayoutAccount?.provider === activeSetupProvider;
   const amountMinor = parseMajorAmountToMinor(amountMajor);
-  const currency = summary?.currency ?? payoutAccount?.currency ?? 'KES';
+  const currency = summary?.currency ?? livePayoutAccount?.currency ?? 'KES';
   const selectedRailLabel =
     selectedRail === 'card-bank'
       ? selectedCardBankRail === 'card'
         ? 'Card'
         : 'Bank'
-      : selectedRail === 'mpesa'
-        ? 'M-PESA'
-        : 'PayPal';
+      : 'M-PESA';
   const selectedRailDescription =
-    activeSetupProvider === 'paypal'
-      ? 'PayPal payouts are processed independently and saved as your creator payout method.'
-      : activeSetupProvider === 'mpesa'
-        ? 'M-PESA payouts run through Paystack once the saved destination is approved.'
-        : activeSetupProvider === 'bank'
-          ? 'Bank payouts run through Paystack once the saved destination is approved.'
-          : 'Paystack will open a secure hosted page and return only masked card details.';
+    activeSetupProvider === 'mpesa'
+      ? 'M-PESA payouts run through Paystack once the saved destination is approved.'
+      : activeSetupProvider === 'bank'
+        ? 'Bank payouts run through Paystack once the saved destination is approved.'
+        : 'Paystack will open a secure hosted page and return only masked card details.';
 
   const filteredTransfers = useMemo(() => {
     if (filter === 'all') {
@@ -2721,11 +2716,11 @@ export function MyPayments() {
     verificationState === 'unconfigured'
       ? 'Save a payout method first.'
       : verificationState === 'pending'
-        ? 'Verification is still pending.'
+        ? 'This payout method is waiting for manual review before withdrawals can be requested.'
         : verificationState === 'rejected'
-          ? 'Your current payout method was rejected. Update it and resubmit.'
+          ? 'This payout method was rejected. Update the details and save it again.'
           : verificationState === 'inactive'
-            ? 'Your current payout method is inactive.'
+            ? 'This payout method is inactive and cannot receive payouts.'
             : amountMajor.trim().length === 0
               ? 'Enter the amount you want to withdraw.'
               : amountMinor === null || amountMinor <= 0
@@ -2740,15 +2735,7 @@ export function MyPayments() {
       setErrorText(null);
       setNoticeText(null);
 
-      if (activeSetupProvider === 'paypal') {
-        const email = paypalEmail.trim().toLowerCase();
-        if (!email) {
-          setErrorText('Enter a valid PayPal email.');
-          return;
-        }
-        await upsertPaypalPayoutAccount({ paypalEmail: email, currency: 'KES' });
-        setNoticeText('PayPal payout method saved. Verification is pending.');
-      } else if (activeSetupProvider === 'bank') {
+      if (activeSetupProvider === 'bank') {
         const normalizedAccount = bankAccountNumber.replace(/\D/g, '');
         const normalizedName = bankAccountName.trim();
         const normalizedBankCode = bankCode.trim().toUpperCase();
@@ -2814,7 +2801,7 @@ export function MyPayments() {
       setErrorText('Requested amount exceeds your available balance.');
       return;
     }
-    if (!payoutAccount) {
+    if (!livePayoutAccount) {
       setErrorText('Save a payout method first.');
       return;
     }
@@ -2824,18 +2811,16 @@ export function MyPayments() {
       setErrorText(null);
       setNoticeText(null);
 
-      if (payoutAccount.provider === 'paypal') {
-        await requestPaypalPayout({
-          amountMinor,
-          reason: 'Creator initiated payout',
-        });
-      } else {
-        await requestCreatorPayout({
-          amountMinor,
-          reason: 'Creator initiated payout',
-          provider: payoutAccount.provider,
-        });
-      }
+      await requestCreatorPayout({
+        amountMinor,
+        reason: 'Creator initiated payout',
+        provider:
+          livePayoutAccount.provider === 'bank'
+            ? 'bank'
+            : livePayoutAccount.provider === 'card'
+              ? 'card'
+              : 'mpesa',
+      });
 
       setNoticeText('Payout request submitted. We will update the history as the provider responds.');
       setAmountMajor('');
@@ -2861,6 +2846,13 @@ export function MyPayments() {
       header={null}
     >
       <div className="wallet-page wallet-page--single payments-workspace">
+        {payoutAccount?.provider === 'paypal' ? (
+          <div className="wallet-notice wallet-notice--warning">
+            A previous PayPal payout method is saved on this account, but the live creator payout
+            workflow only supports M-PESA, Bank, and Card in KES. Save one of those rails to
+            continue.
+          </div>
+        ) : null}
         {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
         {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
 
@@ -2930,16 +2922,6 @@ export function MyPayments() {
 
           <div className="payments-rail-switch">
             <button
-              className={`payments-rail-switch__button${selectedRail === 'paypal' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => {
-                setSelectedRail('paypal');
-                syncPaymentsRoute('paypal');
-              }}
-            >
-              PayPal
-            </button>
-            <button
               className={`payments-rail-switch__button${selectedRail === 'mpesa' ? ' is-active' : ''}`}
               type="button"
               onClick={() => {
@@ -2990,21 +2972,7 @@ export function MyPayments() {
             <div className="payments-setup-form">
               <p className="payments-method-note">{selectedRailDescription}</p>
 
-              {activeSetupProvider === 'paypal' ? (
-                <div className="payments-form-grid payments-form-grid--single">
-                  <label className="create-post__field">
-                    <span>PayPal email</span>
-                    <input
-                      className="my-input"
-                      type="email"
-                      autoComplete="email"
-                      value={paypalEmail}
-                      onChange={(event) => setPaypalEmail(event.target.value)}
-                      placeholder="you@example.com"
-                    />
-                  </label>
-                </div>
-              ) : activeSetupProvider === 'mpesa' ? (
+              {activeSetupProvider === 'mpesa' ? (
                 <div className="payments-form-grid">
                   <label className="create-post__field">
                     <span>M-PESA number</span>
@@ -3121,12 +3089,12 @@ export function MyPayments() {
               </div>
               <h3 className="payments-method-card__title">
                 {currentMethodMatchesSelected
-                  ? getUnifiedPayoutDestinationLabel(payoutAccount)
+                  ? getUnifiedPayoutDestinationLabel(livePayoutAccount)
                   : `${selectedRailLabel} not saved yet`}
               </h3>
               <p className="payments-method-card__meta">
                 {currentMethodMatchesSelected
-                  ? getUnifiedPayoutDestinationMeta(payoutAccount)
+                  ? getUnifiedPayoutDestinationMeta(livePayoutAccount)
                   : 'Save this method to make it your active creator payout destination.'}
               </p>
               <div className="payments-method-card__status">
@@ -3139,7 +3107,7 @@ export function MyPayments() {
                 </span>
                 <span className="my-muted">
                   {currentMethodMatchesSelected
-                    ? `Using ${getPayoutProviderLabel(payoutAccount?.provider)} for live payouts`
+                    ? `Using ${getPayoutProviderLabel(livePayoutAccount?.provider)} for live payouts`
                     : `Selected rail: ${selectedRailLabel}`}
                 </span>
               </div>
@@ -3181,7 +3149,7 @@ export function MyPayments() {
 
           <div className="payments-request-meta">
             <div>
-              <strong>Using:</strong> {getUnifiedPayoutDestinationLabel(payoutAccount)}
+              <strong>Using:</strong> {getUnifiedPayoutDestinationLabel(livePayoutAccount)}
             </div>
             <div>
               <strong>Available:</strong> {formatMinorCurrency(summary?.available_amount_minor, currency)}
@@ -3745,7 +3713,7 @@ function LegacyMyBanking() {
   const [noticeText, setNoticeText] = useState<string | null>(null);
   const [summary, setSummary] = useState<PayoutSummary | null>(null);
   const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
-  const [payoutMethod, setPayoutMethod] = useState<'mpesa' | 'bank' | 'paypal'>('mpesa');
+  const [payoutMethod, setPayoutMethod] = useState<'mpesa' | 'bank'>('mpesa');
   const [mpesaNumber, setMpesaNumber] = useState('');
   const [mpesaName, setMpesaName] = useState('');
   const [mpesaBankCode, setMpesaBankCode] = useState('MPESA');
@@ -3753,12 +3721,9 @@ function LegacyMyBanking() {
   const [bankAccountName, setBankAccountName] = useState('');
   const [bankCode, setBankCode] = useState('');
   const [bankName, setBankName] = useState('');
-  const [paypalEmail, setPaypalEmail] = useState('');
 
   const hydrateForm = (account: PayoutAccount | null) => {
-    setPayoutMethod(
-      account?.provider === 'bank' || account?.provider === 'paypal' ? account.provider : 'mpesa',
-    );
+    setPayoutMethod(account?.provider === 'bank' ? 'bank' : 'mpesa');
     setMpesaNumber(account?.provider === 'mpesa' ? account.msisdn_e164 ?? '' : '');
     setMpesaName(account?.provider === 'mpesa' ? account.account_name ?? '' : '');
     setMpesaBankCode(account?.provider === 'mpesa' ? account.bank_code ?? 'MPESA' : 'MPESA');
@@ -3766,7 +3731,6 @@ function LegacyMyBanking() {
     setBankAccountName(account?.provider === 'bank' ? account.account_name ?? '' : '');
     setBankCode(account?.provider === 'bank' ? account.bank_code ?? '' : '');
     setBankName(account?.provider === 'bank' ? account.bank_name ?? '' : '');
-    setPaypalEmail(account?.provider === 'paypal' ? account.paypal_email ?? '' : '');
   };
 
   useEffect(() => {
@@ -3809,8 +3773,9 @@ function LegacyMyBanking() {
     };
   }, []);
 
-  const verificationState = getPayoutVerificationState(payoutAccount);
-  const destinationMeta = getPayoutDestinationMeta(payoutAccount);
+  const livePayoutAccount = payoutAccount?.provider === 'paypal' ? null : payoutAccount;
+  const verificationState = getPayoutVerificationState(livePayoutAccount);
+  const destinationMeta = getPayoutDestinationMeta(livePayoutAccount);
 
   const handleSave = async () => {
     try {
@@ -3818,14 +3783,7 @@ function LegacyMyBanking() {
       setBankingError(null);
       setNoticeText(null);
 
-      if (payoutMethod === 'paypal') {
-        const email = paypalEmail.trim().toLowerCase();
-        if (!email) {
-          setBankingError('Enter a valid PayPal email.');
-          return;
-        }
-        await upsertPaypalPayoutAccount({ paypalEmail: email, currency: 'KES' });
-      } else if (payoutMethod === 'bank') {
+      if (payoutMethod === 'bank') {
         const normalizedAccount = bankAccountNumber.replace(/\D/g, '');
         const normalizedName = bankAccountName.trim();
         const normalizedBankCode = bankCode.trim().toUpperCase();
@@ -3892,6 +3850,12 @@ function LegacyMyBanking() {
       <div className="wallet-page wallet-page--single">
         {bankingError ? <div className="wallet-notice wallet-notice--warning">{bankingError}</div> : null}
         {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
+        {payoutAccount?.provider === 'paypal' ? (
+          <div className="wallet-notice wallet-notice--warning">
+            PayPal is no longer part of the live creator payout workflow. Save M-PESA or Bank to
+            receive payouts.
+          </div>
+        ) : null}
 
         <section className="wallet-panel">
           <div className="wallet-panel__title-row">
@@ -3914,19 +3878,19 @@ function LegacyMyBanking() {
             <article className="wallet-balance-card">
               <div className="wallet-balance-card__label">Destination</div>
               <div className="wallet-balance-card__value wallet-balance-card__value--small">
-                {getPayoutDestinationLabel(payoutAccount)}
+                {getPayoutDestinationLabel(livePayoutAccount)}
               </div>
               <div className="wallet-balance-card__meta">{destinationMeta}</div>
             </article>
             <article className="wallet-balance-card">
               <div className="wallet-balance-card__label">Verified rail</div>
               <div className="wallet-balance-card__value wallet-balance-card__value--small">
-                {getPayoutProviderLabel(payoutAccount?.provider)}
+                {getPayoutProviderLabel(livePayoutAccount?.provider)}
               </div>
               <div className="wallet-balance-card__meta">
-                {payoutAccount?.verified_at
-                  ? `Verified ${new Date(payoutAccount.verified_at).toLocaleDateString()}`
-                  : payoutAccount?.verification_source === 'manual_review_required'
+                {livePayoutAccount?.verified_at
+                  ? `Verified ${new Date(livePayoutAccount.verified_at).toLocaleDateString()}`
+                  : livePayoutAccount?.verification_source === 'manual_review_required'
                     ? 'Manual review required'
                     : 'Waiting for verification'}
               </div>
@@ -3940,7 +3904,7 @@ function LegacyMyBanking() {
           </div>
 
           <div className="wallet-warning">
-            Saving a destination does not verify it. M-PESA, Bank, and PayPal destinations default to
+            Saving a destination does not verify it. M-PESA and Bank destinations default to
             pending until they are manually approved server-side.
           </div>
         </section>
@@ -3971,32 +3935,10 @@ function LegacyMyBanking() {
               >
                 Bank
               </button>
-              <button
-                className={`wallet-rail-picker__button${payoutMethod === 'paypal' ? ' is-active' : ''}`}
-                type="button"
-                onClick={() => setPayoutMethod('paypal')}
-              >
-                PayPal
-              </button>
             </div>
 
             <div className="wallet-banking-grid">
-              {payoutMethod === 'paypal' ? (
-                <>
-                  <label className="create-post__field">
-                    <span>PayPal email</span>
-                    <input
-                      className="my-input"
-                      type="email"
-                      autoComplete="email"
-                      value={paypalEmail}
-                      onChange={(event) => setPaypalEmail(event.target.value)}
-                      placeholder="you@example.com"
-                    />
-                  </label>
-                  <div className="wallet-balance-card__meta">PayPal payouts stay pending until approved.</div>
-                </>
-              ) : payoutMethod === 'bank' ? (
+              {payoutMethod === 'bank' ? (
                 <>
                   <label className="create-post__field">
                     <span>Bank account number</span>
@@ -4109,7 +4051,7 @@ function LegacyMyBanking() {
             <div className="wallet-support-list">
               <div className="wallet-support-list__item">
                 <strong>1. Save destination</strong>
-                <span>M-PESA, Bank, and PayPal destinations are stored in pending status by default.</span>
+                <span>M-PESA and Bank destinations are stored in pending status by default.</span>
               </div>
               <div className="wallet-support-list__item">
                 <strong>2. Manual verification</strong>

@@ -60,8 +60,20 @@ serve(async (req) => {
     return json({ error: "Webhook event persistence failed" }, 500);
   }
 
+  const fail = async (status: number, error: string) => {
+    const { error: rollbackErr } = await supabase
+      .from("provider_webhook_events")
+      .delete()
+      .eq("provider", "paypal")
+      .eq("provider_event_id", eventId);
+    if (rollbackErr) {
+      console.error("paypal webhook rollback failed", rollbackErr);
+    }
+    return json({ error }, status);
+  };
+
   const outcome = await handlePayoutEvent(event);
-  if (!outcome.ok) return json({ error: outcome.error }, 400);
+  if (!outcome.ok) return await fail(400, outcome.error ?? "Webhook handling failed");
 
   return json({ ok: true, updated: outcome.updated });
 });
