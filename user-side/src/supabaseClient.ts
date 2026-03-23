@@ -133,7 +133,7 @@ export type WalletBalance = {
 
 export type WalletHistoryItem = {
   id: number
-  entry_type: 'credit_topup' | 'debit_ppv' | 'debit_tip' | 'refund'
+  entry_type: 'credit_topup' | 'debit_ppv' | 'debit_tip' | 'debit_subscription' | 'refund'
   amount_minor: number
   currency: string
   created_at: string
@@ -813,74 +813,35 @@ export async function fetchSubscriptionHistory(): Promise<SubscriptionHistoryIte
   const userId = session?.user?.id
   if (!userId) return []
 
-  const [{ data: payments, error: paymentsError }, { data: subscriptions, error: subscriptionsError }] =
-    await Promise.all([
-      supabase
-        .from('payments')
-        .select(
-          'id, creator_id, amount_cents, currency, created_at, creator:creators(id, handle, display_name, avatar_url, category, categories, popularity_score, subscription_price_cents, subscription_currency)'
-        )
-        .eq('user_id', userId)
-        .eq('type', 'subscription')
-        .eq('status', 'succeeded')
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('subscriptions')
-        .select('creator_id, payment_id, current_period_end, status')
-        .eq('subscriber_id', userId),
-    ])
+  const { data: subscriptions, error: subscriptionsError } = await supabase
+    .from('subscriptions')
+    .select(
+      'id, creator_id, payment_id, current_period_end, status, created_at, updated_at, creator:creators(id, handle, display_name, avatar_url, category, categories, popularity_score, subscription_price_cents, subscription_currency), payment:payments(id, amount_cents, currency, created_at)'
+    )
+    .eq('subscriber_id', userId)
+    .order('updated_at', { ascending: false })
 
-  if (paymentsError) {
-    console.warn('Supabase subscription payment history fetch failed', paymentsError)
-    return []
-  }
   if (subscriptionsError) {
     console.warn('Supabase subscription state fetch failed', subscriptionsError)
     return []
   }
 
-  const latestSubscriptionByPaymentId = new Map<number, any>()
-  const latestSubscriptionByCreatorId = new Map<string, any>()
-  ;(subscriptions ?? []).forEach((subscription: any) => {
-    if (typeof subscription.payment_id === 'number') {
-      latestSubscriptionByPaymentId.set(subscription.payment_id, subscription)
-    }
-    if (typeof subscription.creator_id === 'string') {
-      latestSubscriptionByCreatorId.set(subscription.creator_id, subscription)
-    }
-  })
-
-  return ((payments ?? []) as any[])
-    .map((payment) => {
-      const creator = payment.creator ? mapCreatorCard(payment.creator) : null
+  return ((subscriptions ?? []) as any[])
+    .map((subscription) => {
+      const creator = subscription.creator ? mapCreatorCard(subscription.creator) : null
       if (!creator) return null
 
-      const linkedSubscription =
-        latestSubscriptionByPaymentId.get(payment.id) ??
-        latestSubscriptionByCreatorId.get(payment.creator_id)
-
-      const subscribedAt = payment.created_at
-      let expiresAt: string | null = null
-      let status: 'active' | 'canceled' | 'expired' = 'expired'
-
-      if (linkedSubscription?.payment_id === payment.id && linkedSubscription.current_period_end) {
-        expiresAt = linkedSubscription.current_period_end
-        status = linkedSubscription.status ?? 'expired'
-      } else if (subscribedAt) {
-        const expiryDate = new Date(subscribedAt)
-        expiryDate.setMonth(expiryDate.getMonth() + 1)
-        expiresAt = expiryDate.toISOString()
-        status = expiryDate.getTime() > Date.now() ? 'active' : 'expired'
-      }
+      const payment = Array.isArray(subscription.payment) ? subscription.payment[0] : subscription.payment
+      const subscribedAt = payment?.created_at ?? subscription.created_at ?? subscription.updated_at ?? new Date().toISOString()
 
       return {
-        payment_id: payment.id,
+        payment_id: payment?.id ?? subscription.id,
         creator,
-        amount_cents: payment.amount_cents ?? 0,
-        currency: payment.currency ?? 'KES',
+        amount_cents: payment?.amount_cents ?? creator.subscription_price_cents ?? 0,
+        currency: payment?.currency ?? creator.subscription_currency ?? 'KES',
         subscribed_at: subscribedAt,
-        expires_at: expiresAt,
-        status,
+        expires_at: subscription.current_period_end ?? null,
+        status: subscription.status ?? 'expired',
       } satisfies SubscriptionHistoryItem
     })
     .filter((item): item is SubscriptionHistoryItem => Boolean(item))
@@ -1025,6 +986,16 @@ export async function fetchPpvPurchases(): Promise<number[]> {
 export async function purchasePpv(postId: number): Promise<{ purchase_id: number; new_balance_minor: number } | null> {
   if (!supabase) throw new Error('Supabase not configured')
   const { data, error } = await supabase.rpc('purchase_ppv', { p_post_id: postId })
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  return row ?? null
+}
+
+export async function purchaseSubscription(
+  creatorId: string
+): Promise<{ subscription_id: number; payment_id: number | null; new_balance_minor: number } | null> {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data, error } = await supabase.rpc('purchase_subscription', { p_creator_id: creatorId })
   if (error) throw error
   const row = Array.isArray(data) ? data[0] : data
   return row ?? null

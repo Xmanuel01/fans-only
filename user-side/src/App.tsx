@@ -47,6 +47,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
   purchasePpv,
+  purchaseSubscription,
   sendChatMessage,
   subscribeToChatMessages,
   subscribeToMemberChatThreads,
@@ -145,6 +146,8 @@ const getWalletEntryLabel = (entry: WalletHistoryItem) => {
       return entry.post_title ? `Unlocked ${entry.post_title}` : 'PPV unlock'
     case 'debit_tip':
       return entry.creator ? `Tip sent to ${entry.creator.display_name}` : 'Tip sent'
+    case 'debit_subscription':
+      return entry.creator ? `Subscribed to ${entry.creator.display_name}` : 'Subscription'
     default:
       return 'Wallet refund'
   }
@@ -502,6 +505,75 @@ function ExploreSection({ title, children }: { title: string; children: React.Re
       </div>
       {children}
     </section>
+  )
+}
+
+function SubscribeConfirmModal({
+  creator,
+  priceCents,
+  walletBalanceMinor,
+  busy,
+  onCancel,
+  onConfirm,
+  onTopUp,
+}: {
+  creator: CreatorCard
+  priceCents: number
+  walletBalanceMinor: number
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+  onTopUp: () => void
+}) {
+  const isFree = priceCents <= 0
+  const canAfford = isFree || walletBalanceMinor >= priceCents
+  const remainingBalance = Math.max(walletBalanceMinor - priceCents, 0)
+
+  return (
+    <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="subscribe-confirm-title">
+      <div className="confirm-backdrop" onClick={busy ? undefined : onCancel} />
+      <div className="confirm-modal">
+        <div className="confirm-kicker">Confirm subscription</div>
+        <h3 id="subscribe-confirm-title">
+          {isFree ? `Subscribe to ${creator.display_name} for free?` : `Subscribe to ${creator.display_name}?`}
+        </h3>
+        <p>
+          {isFree
+            ? 'This creator has a free subscription. Confirm to activate access now.'
+            : canAfford
+              ? `This will deduct ${formatKsh(priceCents)} from your wallet. Remaining balance: ${formatKsh(remainingBalance)}.`
+              : `This subscription costs ${formatKsh(priceCents)}, but your wallet only has ${formatKsh(walletBalanceMinor)} available.`}
+        </p>
+        <div className="confirm-summary">
+          <div className="confirm-summary__row">
+            <span>Creator</span>
+            <strong>{creator.display_name}</strong>
+          </div>
+          <div className="confirm-summary__row">
+            <span>Subscription</span>
+            <strong>{isFree ? 'Free' : formatKsh(priceCents)}</strong>
+          </div>
+          <div className="confirm-summary__row">
+            <span>Wallet balance</span>
+            <strong>{formatKsh(walletBalanceMinor)}</strong>
+          </div>
+        </div>
+        <div className="confirm-actions">
+          <button className="pill ghost" type="button" onClick={onCancel} disabled={busy}>
+            No
+          </button>
+          {canAfford ? (
+            <button className="primary-btn" type="button" onClick={onConfirm} disabled={busy}>
+              {busy ? 'Processing...' : 'Yes, continue'}
+            </button>
+          ) : (
+            <button className="primary-btn" type="button" onClick={onTopUp} disabled={busy}>
+              Top up wallet
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -3446,6 +3518,7 @@ export default function App() {
   const [ppvPurchases, setPpvPurchases] = useState<number[]>([])
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
   const [subscribingCreatorId, setSubscribingCreatorId] = useState<string | null>(null)
+  const [subscriptionConfirmCreator, setSubscriptionConfirmCreator] = useState<CreatorCard | null>(null)
   const [recentCreators, setRecentCreators] = useState<CreatorCard[]>([])
   const isAuthed = Boolean(session)
   const displayName =
@@ -3475,11 +3548,6 @@ export default function App() {
   const hasReleaseNotes = Boolean(RELEASE_NOTES_URL)
   const hasHelpSupport = Boolean(HELP_CENTER_URL || SUPPORT_EMAIL)
   const hasFeatureRequests = isSupabaseConfigured
-
-  const resolveCheckoutUrl = () => {
-    if (typeof window === 'undefined') return undefined
-    return new URL(import.meta.env.BASE_URL ?? '/', window.location.origin).toString()
-  }
 
   useEffect(() => {
     if (envStatus.hasIssues) {
@@ -3831,14 +3899,7 @@ export default function App() {
     subscription_price_cents?: number | null
     subscription_currency?: string | null
   }) => {
-    const email =
-      session?.user?.email ??
-      session?.user?.user_metadata?.email ??
-      session?.user?.identities?.find?.((identity: { identity_data?: { email?: string } }) =>
-        Boolean(identity?.identity_data?.email)
-      )?.identity_data?.email ??
-      null
-    if (!email) {
+    if (!session?.user?.id) {
       setToast('Sign in to subscribe')
       return
     }
@@ -3857,39 +3918,59 @@ export default function App() {
     if (subscribingCreatorId === creator.id) {
       return
     }
+    setSubscriptionConfirmCreator(creator as CreatorCard)
+  }
+
+  const handleConfirmSubscription = async () => {
+    if (!subscriptionConfirmCreator) return
+    const creator = subscriptionConfirmCreator
     const priceCents = creator.subscription_price_cents ?? 0
-    if (priceCents <= 0) {
-      setToast('This creator is free to follow')
-      return
-    }
+
     try {
       setSubscribingCreatorId(creator.id)
-      setToast(`Starting secure checkout for ${creator.display_name ?? creator.handle ?? 'this creator'}...`)
-      const result = await initiatePaystackPayment({
-        email,
-        creatorId: creator.id,
-        amountMajor: priceCents / 100,
-        currency: creator.subscription_currency ?? 'KES',
-        type: 'subscription',
-        metadata: {
-          source: 'subscribe',
-          creator_handle: creator.handle ?? null,
-        },
-        channels: ['mobile_money', 'card'],
-        callbackUrl: resolveCheckoutUrl(),
-      })
-      if (!result.authorization_url) {
-        throw new Error('Checkout URL missing')
+      const result = await purchaseSubscription(creator.id)
+      if (result) {
+        setActiveSubscriptions((prev) => Array.from(new Set([...prev, creator.id])))
+        const [history, balance, walletEntries] = await Promise.all([
+          fetchSubscriptionHistory(),
+          fetchWalletBalance(),
+          fetchWalletHistory(),
+        ])
+        setSubscriptionHistory(history)
+        setWalletBalance(balance)
+        setWalletHistory(walletEntries)
       }
-      window.location.assign(result.authorization_url)
+      setSubscriptionConfirmCreator(null)
+      setToast(
+        priceCents > 0
+          ? `Subscribed to ${creator.display_name}. ${formatKsh(priceCents)} deducted from your wallet.`
+          : `Subscribed to ${creator.display_name}.`
+      )
     } catch (err) {
       console.error(err)
       const message =
-        err instanceof Error && err.message ? err.message : 'Could not start subscription checkout.'
-      setToast(message)
+        err instanceof Error && err.message ? err.message.toLowerCase() : 'could not complete subscription'
+      if (message.includes('insufficient wallet balance')) {
+        setSubscriptionConfirmCreator(null)
+        setPage('wallet')
+        setWalletTab('receive')
+        setToast('Top up your wallet to complete this subscription.')
+      } else {
+        setToast(
+          err instanceof Error && err.message ? err.message : 'Could not complete subscription.'
+        )
+      }
     } finally {
       setSubscribingCreatorId(null)
     }
+  }
+
+  const handleTopUpForSubscription = () => {
+    const creatorName = subscriptionConfirmCreator?.display_name ?? 'this creator'
+    setSubscriptionConfirmCreator(null)
+    setPage('wallet')
+    setWalletTab('receive')
+    setToast(`Top up your wallet to subscribe to ${creatorName}.`)
   }
 
   const handleUnlockPost = async (post: FeedPost) => {
@@ -4355,6 +4436,20 @@ export default function App() {
           }}
         />
       )}
+      {subscriptionConfirmCreator ? (
+        <SubscribeConfirmModal
+          creator={subscriptionConfirmCreator}
+          priceCents={subscriptionConfirmCreator.subscription_price_cents ?? 0}
+          walletBalanceMinor={walletBalance?.available_amount_minor ?? 0}
+          busy={subscribingCreatorId === subscriptionConfirmCreator.id}
+          onCancel={() => {
+            if (subscribingCreatorId === subscriptionConfirmCreator.id) return
+            setSubscriptionConfirmCreator(null)
+          }}
+          onConfirm={() => void handleConfirmSubscription()}
+          onTopUp={handleTopUpForSubscription}
+        />
+      ) : null}
       {/* Guest mode removed: sign-in required for content */}
     </div>
   )
