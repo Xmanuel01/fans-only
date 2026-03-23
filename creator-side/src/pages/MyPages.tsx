@@ -1101,9 +1101,14 @@ export function MyChats() {
       });
     } catch (error) {
       console.error(error);
-      setThreadsErrorText(
-        error instanceof Error ? error.message : 'Could not load conversations right now.'
-      );
+      setThreads([]);
+      setChatableMembers([]);
+      setSelectedThreadId(null);
+      if (selectedThreadId || selectedMemberId) {
+        setThreadsErrorText(
+          error instanceof Error ? error.message : 'Could not load conversations right now.'
+        );
+      }
     }
   };
 
@@ -1140,9 +1145,10 @@ export function MyChats() {
       } catch (error) {
         if (!mounted) return;
         console.error(error);
-        setThreadsErrorText(
-          error instanceof Error ? error.message : 'Could not load conversations right now.'
-        );
+        setThreads([]);
+        setChatableMembers([]);
+        setSelectedThreadId(null);
+        setThreadsErrorText(null);
       } finally {
         if (mounted) setLoading(false);
       }
