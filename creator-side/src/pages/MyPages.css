@@ -4906,11 +4906,39 @@ button,
   gap: 10px;
   flex-wrap: wrap;
   margin-top: 18px;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .home-feed__hero-button {
-  min-width: 148px;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  align-self: flex-start;
+  min-width: 152px;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 16px;
+  text-align: center;
+  line-height: 1;
+  box-shadow: 0 16px 28px rgba(2, 8, 18, 0.22);
+}
+
+.home-feed__hero-button.create-post__primary {
+  background: linear-gradient(135deg, #1b8bd6, #29b0e8);
+  color: #f7fbff;
+  border: 1px solid rgba(83, 168, 233, 0.4);
+}
+
+.home-feed__hero-button.create-post__ghost {
+  background: rgba(30, 42, 61, 0.92);
+  color: #e8edf5;
+  border: 1px solid rgba(90, 118, 160, 0.24);
+}
+
+.home-feed__hero-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
 }
 
 .creator-home-aside {
@@ -4987,16 +5015,20 @@ button,
 }
 
 .creator-home-links a {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(110, 134, 168, 0.18);
-  background: rgba(13, 20, 32, 0.78);
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(110, 134, 168, 0.2);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 36, 0.92), rgba(10, 16, 26, 0.96));
   color: #e8edf5;
   font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  position: relative;
+  overflow: hidden;
 }
 
 .creator-home-links a small {
@@ -5010,6 +5042,23 @@ button,
 .creator-home-links a:hover {
   border-color: rgba(78, 132, 239, 0.42);
   transform: translateY(-1px);
+  background:
+    radial-gradient(circle at top right, rgba(48, 98, 178, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(17, 27, 42, 0.94), rgba(11, 18, 29, 0.98));
+}
+
+.creator-home-links a::after {
+  content: '→';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(42, 61, 93, 0.7);
+  color: #cfe2ff;
+  font-size: 16px;
+  font-weight: 800;
 }
 
 .creator-home-footer {
