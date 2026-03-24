@@ -3952,11 +3952,6 @@ function HomePage({
             >
               <FiX size={20} />
             </button>
-            <div className="home-story-modal__meta">
-              <div className="home-story-modal__name">{activeStory.creator.display_name}</div>
-              <div>{activeStory.expires_at ? formatMembershipDate(activeStory.expires_at) : 'Active story'}</div>
-            </div>
-
             {(() => {
               const { isPpv, isLocked, showSubscribe } = getAccessState(activeStory)
               const mediaCount = activeStory.media.length
@@ -3967,92 +3962,122 @@ function HomePage({
               const media = mediaCount ? activeStory.media[mediaIndex] : null
               const isVideo = media?.mime_type?.startsWith('video')
               return (
-                <div className={`media-wrapper home-story-modal__media ${isLocked ? 'locked' : ''}`}>
-                  {media ? (
-                    media.url ? (
-                      isVideo ? (
-                        <video className="media-hero" controls preload="metadata" playsInline autoPlay>
-                          <source src={media.url} type={media.mime_type ?? 'video/mp4'} />
-                        </video>
-                      ) : (
-                        <img src={media.url} alt={activeStory.title || 'Story'} />
-                      )
-                  ) : null
-                ) : null}
-                  {mediaCount > 1 ? (
-                    <>
-                      <button
-                        className="media-nav media-nav--prev"
-                        type="button"
-                        aria-label="Previous story media"
-                        onClick={() =>
-                          setActiveStoryMediaIndex((prev) => (prev - 1 + mediaCount) % mediaCount)
-                        }
-                      >
-                        <FiChevronLeft />
-                      </button>
-                      <button
-                        className="media-nav media-nav--next"
-                        type="button"
-                        aria-label="Next story media"
-                        onClick={() =>
-                          setActiveStoryMediaIndex((prev) => (prev + 1) % mediaCount)
-                        }
-                      >
-                        <FiChevronRight />
-                      </button>
-                    </>
-                  ) : null}
-                  {isLocked ? (
-                    <div className="media-lock-overlay">
-                      <div className="media-lock-tag">
-                        <FiLock size={14} />
-                        {isPpv ? 'Pay-per-view' : 'Subscribers only'}
-                      </div>
-                      <div className="lock-title">
-                        {isPpv ? 'Unlock this story' : 'Subscribe to view'}
-                      </div>
-                      <div className="lock-subtitle">
-                        {isPpv
-                          ? `Price: ${formatKsh(activeStory.price_cents ?? 0)}`
-                          : 'Support the creator to access this story.'}
-                      </div>
-                      <div className="media-lock-actions">
-                        {isPpv ? (
-                          <button className="primary-btn" onClick={() => onUnlockPost(activeStory)}>
-                            Unlock for {formatKsh(activeStory.price_cents ?? 0)}
-                          </button>
-                        ) : showSubscribe ? (
-                          <button className="pill light" onClick={() => onSubscribe(activeStory.creator)}>
-                            Subscribe {formatKsh(activeStory.creator.subscription_price_cents)}
-                          </button>
-                        ) : null}
+                <div className="home-story-modal__stage">
+                  <div className="home-story-modal__progress" aria-hidden="true">
+                    {(mediaCount ? activeStory.media : [null]).map((_, index) => (
+                      <span
+                        key={`story-progress-${index}`}
+                        className={index === mediaIndex ? 'is-active' : undefined}
+                      />
+                    ))}
+                  </div>
+                  <div className="home-story-modal__meta">
+                    <div className="home-story-modal__creator">
+                      <img
+                        src={activeStory.creator.avatar_url ?? assetUrl('logo.png')}
+                        alt={activeStory.creator.display_name}
+                      />
+                      <div>
+                        <div className="home-story-modal__name">{activeStory.creator.display_name}</div>
+                        <div className="home-story-modal__stamp">
+                          {activeStory.expires_at
+                            ? `Ends ${formatMembershipDate(activeStory.expires_at)}`
+                            : 'Active story'}
+                        </div>
                       </div>
                     </div>
-                  ) : null}
+                  </div>
+
+                  <div
+                    className={`media-wrapper home-story-modal__media ${isLocked ? 'locked' : ''}`}
+                    style={{ aspectRatio: getBestFitMediaAspectRatio(media) }}
+                  >
+                    {media ? (
+                      media.url ? (
+                        isVideo ? (
+                          <video className="media-hero" controls preload="metadata" playsInline autoPlay>
+                            <source src={media.url} type={media.mime_type ?? 'video/mp4'} />
+                          </video>
+                        ) : (
+                          <img src={media.url} alt={activeStory.title || 'Story'} />
+                        )
+                      ) : null
+                    ) : null}
+                    {mediaCount > 1 ? (
+                      <>
+                        <button
+                          className="media-nav media-nav--prev"
+                          type="button"
+                          aria-label="Previous story media"
+                          onClick={() =>
+                            setActiveStoryMediaIndex((prev) => (prev - 1 + mediaCount) % mediaCount)
+                          }
+                        >
+                          <FiChevronLeft />
+                        </button>
+                        <button
+                          className="media-nav media-nav--next"
+                          type="button"
+                          aria-label="Next story media"
+                          onClick={() =>
+                            setActiveStoryMediaIndex((prev) => (prev + 1) % mediaCount)
+                          }
+                        >
+                          <FiChevronRight />
+                        </button>
+                      </>
+                    ) : null}
+                    {isLocked ? (
+                      <div className="media-lock-overlay">
+                        <div className="media-lock-tag">
+                          <FiLock size={14} />
+                          {isPpv ? 'Pay-per-view' : 'Subscribers only'}
+                        </div>
+                        <div className="lock-title">
+                          {isPpv ? 'Unlock this story' : 'Subscribe to view'}
+                        </div>
+                        <div className="lock-subtitle">
+                          {isPpv
+                            ? `Price: ${formatKsh(activeStory.price_cents ?? 0)}`
+                            : 'Support the creator to access this story.'}
+                        </div>
+                        <div className="media-lock-actions">
+                          {isPpv ? (
+                            <button className="primary-btn" onClick={() => onUnlockPost(activeStory)}>
+                              Unlock for {formatKsh(activeStory.price_cents ?? 0)}
+                            </button>
+                          ) : showSubscribe ? (
+                            <button className="pill light" onClick={() => onSubscribe(activeStory.creator)}>
+                              Subscribe {formatKsh(activeStory.creator.subscription_price_cents)}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="home-story-modal__caption">
+                    <div className="title">{activeStory.title}</div>
+                    {activeStory.body ? <p className="muted">{activeStory.body}</p> : null}
+                    <div className="story-modal__switchers">
+                      <button className="pill ghost" type="button" onClick={() => onOpenCreator(activeStory.creator)}>
+                        Open creator page
+                      </button>
+                      {stories.length > 1 ? (
+                        <>
+                          <button className="pill ghost" type="button" onClick={() => moveStory(-1)}>
+                            Previous story
+                          </button>
+                          <button className="pill ghost" type="button" onClick={() => moveStory(1)}>
+                            Next story
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               )
             })()}
-
-            <div className="home-story-modal__caption">
-              <div className="title">{activeStory.title}</div>
-              {activeStory.body ? <p className="muted">{activeStory.body}</p> : null}
-              <div className="story-modal__switchers">
-                <button className="pill ghost" type="button" onClick={() => onOpenCreator(activeStory.creator)}>
-                  Open creator page
-                </button>
-                {stories.length > 1 ? (
-                  <>
-                    <button className="pill ghost" type="button" onClick={() => moveStory(-1)}>
-                      Previous story
-                    </button>
-                    <button className="pill ghost" type="button" onClick={() => moveStory(1)}>
-                      Next story
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </div>
           </div>
         </div>
       ) : null}
