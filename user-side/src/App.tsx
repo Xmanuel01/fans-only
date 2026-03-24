@@ -3140,17 +3140,36 @@ function HomePage({
   }, [posts, activeFilter])
 
   const railCreators = useMemo(() => {
-    const byId = new Map<string, CreatorCard>()
-    for (const item of [...posts, ...stories]) {
-      if (!byId.has(item.creator.id)) {
-        byId.set(item.creator.id, item.creator)
+    const byId = new Map<
+      string,
+      {
+        creator: CreatorCard
+        bannerUrl: string | null
+        bannerIsVideo: boolean
+        hasActiveStory: boolean
       }
+    >()
+
+    for (const item of [...stories, ...posts]) {
+      const existing = byId.get(item.creator.id)
+      const previewMedia = item.media[0] ?? null
+      const bannerUrl = previewMedia?.url ?? existing?.bannerUrl ?? item.creator.avatar_url ?? null
+      const bannerIsVideo =
+        previewMedia?.mime_type?.startsWith('video') ?? existing?.bannerIsVideo ?? false
+
+      byId.set(item.creator.id, {
+        creator: item.creator,
+        bannerUrl,
+        bannerIsVideo,
+        hasActiveStory: existing?.hasActiveStory ?? item.post_type === 'story',
+      })
     }
+
     return Array.from(byId.values())
   }, [posts, stories])
 
   const recommendedCreators = useMemo(
-    () => railCreators.filter((creator) => !subscriptionSet.has(creator.id)).slice(0, 4),
+    () => railCreators.filter(({ creator }) => !subscriptionSet.has(creator.id)).slice(0, 4),
     [railCreators, subscriptionSet]
   )
 
@@ -3158,7 +3177,7 @@ function HomePage({
     () =>
       railCreators
         .filter(
-          (creator) =>
+          ({ creator }) =>
             !subscriptionSet.has(creator.id) && (creator.subscription_price_cents ?? 0) <= 0
         )
         .slice(0, 4),
@@ -3168,9 +3187,14 @@ function HomePage({
   const freshCreators = useMemo(
     () =>
       railCreators
-        .filter((creator) => !recentCreators.some((recent) => recent.id === creator.id))
+        .filter(({ creator }) => !recentCreators.some((recent) => recent.id === creator.id))
         .slice(0, 4),
     [railCreators, recentCreators]
+  )
+
+  const onlineCreators = useMemo(
+    () => railCreators.filter(({ creator, hasActiveStory }) => hasActiveStory && !subscriptionSet.has(creator.id)).slice(0, 4),
+    [railCreators, subscriptionSet]
   )
 
   useEffect(() => {
@@ -3304,29 +3328,51 @@ function HomePage({
                   {stories.length ? (
                     <div className="home-stories__scroller">
                       <div className="home-stories__track">
-                        {stories.map((story, index) => (
-                          <button
-                            key={story.id}
-                            className="home-story"
-                            type="button"
-                            aria-label={`Open ${story.creator.display_name} story`}
-                            onClick={() => {
-                              setActiveStoryIndex(index)
-                              setActiveStoryMediaIndex(0)
-                            }}
-                          >
-                            <span className="home-story__ring">
-                              {story.creator.avatar_url ? (
-                                <img src={story.creator.avatar_url} alt={story.creator.display_name} />
-                              ) : (
-                                <span className="home-story__placeholder" aria-hidden="true">
-                                  {story.creator.display_name.charAt(0).toUpperCase()}
+                        {stories.map((story, index) => {
+                          const previewMedia = story.media[0] ?? null
+                          const previewIsVideo = Boolean(previewMedia?.mime_type?.startsWith('video'))
+
+                          return (
+                            <button
+                              key={story.id}
+                              className="home-story"
+                              type="button"
+                              aria-label={`Open ${story.creator.display_name} story`}
+                              onClick={() => {
+                                setActiveStoryIndex(index)
+                                setActiveStoryMediaIndex(0)
+                              }}
+                            >
+                              <span className="home-story__preview" aria-hidden="true">
+                                {previewMedia?.url ? (
+                                  previewIsVideo ? (
+                                    <video muted playsInline preload="metadata">
+                                      <source src={previewMedia.url} type={previewMedia.mime_type ?? 'video/mp4'} />
+                                    </video>
+                                  ) : (
+                                    <img src={previewMedia.url} alt="" />
+                                  )
+                                ) : (
+                                  <span className="home-story__fallback-surface" />
+                                )}
+                              </span>
+                              <span className="home-story__shade" aria-hidden="true" />
+                              <span className="home-story__avatar">
+                                <span className="home-story__ring">
+                                  {story.creator.avatar_url ? (
+                                    <img src={story.creator.avatar_url} alt={story.creator.display_name} />
+                                  ) : (
+                                    <span className="home-story__placeholder" aria-hidden="true">
+                                      {story.creator.display_name.charAt(0).toUpperCase()}
+                                    </span>
+                                  )}
                                 </span>
-                              )}
-                            </span>
-                            <span className="home-story__name">{story.creator.display_name}</span>
-                          </button>
-                        ))}
+                              </span>
+                              {previewIsVideo ? <span className="home-story__media-badge">Video</span> : null}
+                              <span className="home-story__name">{story.creator.display_name}</span>
+                            </button>
+                          )
+                        })}
                       </div>
                     </div>
                   ) : (
@@ -3563,24 +3609,34 @@ function HomePage({
               </div>
               <div className="home-rail-list">
                 {recommendedCreators.length ? (
-                  recommendedCreators.map((creator) => (
+                  recommendedCreators.map(({ creator, bannerUrl, bannerIsVideo, hasActiveStory }) => (
                     <button
                       key={creator.id}
-                      className="home-rail-creator"
+                      className="home-rail-banner"
                       type="button"
                       onClick={() => onOpenCreator(creator)}
                     >
-                      <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
-                      <div className="home-rail-creator__copy">
+                      <span className="home-rail-banner__media" aria-hidden="true">
+                        {bannerUrl ? <img src={bannerUrl} alt="" /> : <span className="home-rail-banner__fallback" />}
+                      </span>
+                      <span className="home-rail-banner__shade" aria-hidden="true" />
+                      <span className="home-rail-banner__avatar">
+                        <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
+                      </span>
+                      <div className="home-rail-banner__copy">
                         <strong>{creator.display_name}</strong>
                         <span>@{creator.handle}</span>
                       </div>
+                      <div className="home-rail-banner__badges">
+                        {hasActiveStory ? <span className="home-rail-banner__badge online">Online</span> : null}
+                        {bannerIsVideo ? <span className="home-rail-banner__badge">Video</span> : null}
+                      </div>
                       {(creator.subscription_price_cents ?? 0) > 0 ? (
-                        <span className="home-rail-creator__price">
+                        <span className="home-rail-banner__price">
                           {formatKsh(creator.subscription_price_cents ?? 0)}
                         </span>
                       ) : (
-                        <span className="home-rail-creator__price free">Free</span>
+                        <span className="home-rail-banner__price free">Free</span>
                       )}
                     </button>
                   ))
@@ -3592,11 +3648,47 @@ function HomePage({
 
             <section className="home-rail-card">
               <div className="home-rail-card__head">
+                <h3>Online now</h3>
+                <span>{onlineCreators.length}</span>
+              </div>
+              <div className="home-rail-list">
+                {onlineCreators.length ? (
+                  onlineCreators.map(({ creator, bannerUrl }) => (
+                    <button
+                      key={creator.id}
+                      className="home-rail-banner compact"
+                      type="button"
+                      onClick={() => onOpenCreator(creator)}
+                    >
+                      <span className="home-rail-banner__media" aria-hidden="true">
+                        {bannerUrl ? <img src={bannerUrl} alt="" /> : <span className="home-rail-banner__fallback" />}
+                      </span>
+                      <span className="home-rail-banner__shade" aria-hidden="true" />
+                      <span className="home-rail-banner__avatar">
+                        <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
+                      </span>
+                      <div className="home-rail-banner__copy">
+                        <strong>{creator.display_name}</strong>
+                        <span>@{creator.handle}</span>
+                      </div>
+                      <div className="home-rail-banner__badges">
+                        <span className="home-rail-banner__badge online">Online</span>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="home-rail-empty">No creators are live in this feed right now.</div>
+                )}
+              </div>
+            </section>
+
+            <section className="home-rail-card">
+              <div className="home-rail-card__head">
                 <h3>Fresh creators</h3>
                 <span>{freshCreators.length}</span>
               </div>
               <div className="home-rail-list">
-                {(freshCreators.length ? freshCreators : railCreators.slice(0, 4)).map((creator) => (
+                {(freshCreators.length ? freshCreators : railCreators.slice(0, 4)).map(({ creator }) => (
                   <div key={creator.id} className="home-rail-promo">
                     <button type="button" className="home-rail-promo__open" onClick={() => onOpenCreator(creator)}>
                       <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
@@ -3622,12 +3714,19 @@ function HomePage({
               </div>
               <div className="home-rail-tags">
                 {freeCreators.length ? (
-                  freeCreators.map((creator) => (
+                  freeCreators.map(({ creator, bannerUrl }) => (
                     <button
                       key={creator.id}
-                      className="avatar-chip"
+                      className="avatar-chip avatar-chip--rich"
                       type="button"
                       onClick={() => onOpenCreator(creator)}
+                      style={
+                        bannerUrl
+                          ? {
+                              backgroundImage: `linear-gradient(180deg, rgba(8, 14, 24, 0.18), rgba(8, 14, 24, 0.78)), url(${bannerUrl})`,
+                            }
+                          : undefined
+                      }
                     >
                       <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
                       <span>{creator.display_name}</span>
