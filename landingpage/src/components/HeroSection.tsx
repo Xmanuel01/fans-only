@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import heroBg from "@/assets/hero-bg.jpg";
-import { ArrowRight, BadgeDollarSign, LockKeyhole, MessageCircleMore, PlayCircle, ShieldCheck } from "lucide-react";
+import { ArrowRight, BadgeDollarSign, LockKeyhole, MessageCircleMore } from "lucide-react";
 
 const heroSignals = [
   { icon: LockKeyhole, label: "Subscriber and PPV control" },
@@ -59,27 +59,13 @@ const HeroSection = () => {
             transition={{ duration: 0.7, delay: 0.15, ease: "easeOut" }}
             className="landing-hero-visual"
           >
-            <div className="landing-hero-visual__frame">
-              <div className="landing-hero-visual__badge">
-                <ShieldCheck className="h-4 w-4" />
-                Premium creator zone
-              </div>
+            <div className="landing-hero-visual__glow" />
+            <div className="landing-hero-visual__blend">
               <img
                 src={heroBg}
                 alt="Premium creator campaign visual"
                 className="landing-hero-visual__image"
               />
-              <div className="landing-hero-visual__overlay landing-hero-visual__overlay--top">
-                <span className="landing-hero-visual__overlay-label">Access model</span>
-                <div className="landing-hero-visual__overlay-value">Public, subscriber-only, PPV</div>
-              </div>
-              <div className="landing-hero-visual__overlay landing-hero-visual__overlay--bottom">
-                <div>
-                  <span className="landing-hero-visual__overlay-label">Stories and feed</span>
-                  <div className="landing-hero-visual__overlay-value">Video, images, text</div>
-                </div>
-                <PlayCircle className="h-8 w-8 text-primary" />
-              </div>
             </div>
           </motion.div>
         </div>
