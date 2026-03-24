@@ -3320,9 +3320,6 @@ function HomePage({
         <div className="home-feed-layout">
           <section className="home-feed home-feed--wide">
             <section className="home-stories">
-              <div className="home-stories__title">
-                {activeTopicFilter ? `Home · ${activeTopicFilter}` : 'Home'}
-              </div>
               {stories.length ? (
                 <div className="home-stories__scroller">
                   <div className="home-stories__track">

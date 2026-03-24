@@ -1689,6 +1689,35 @@ body {
   color: #e8edf5;
 }
 
+@media (min-width: 1101px) {
+  .home-feed-layout {
+    grid-template-columns: minmax(0, 530px) minmax(340px, 1fr);
+  }
+
+  .home-stories {
+    padding: 4px 0 4px;
+  }
+
+  .home-stories__scroller {
+    padding: 0 16px 2px;
+  }
+
+  .home-stories__track {
+    gap: 10px;
+  }
+
+  .home-story {
+    min-width: 110px;
+    width: 110px;
+    aspect-ratio: 0.81;
+    border-radius: 22px;
+  }
+
+  .home-feed__filters {
+    padding: 3px 16px 4px;
+  }
+}
+
 .home-feed__posts {
   display: grid;
   gap: 14px;
