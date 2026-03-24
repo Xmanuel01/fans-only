@@ -557,6 +557,13 @@ const sidebarNav = [
   { icon: FiGift, label: 'Membership', key: 'membership' },
 ]
 
+const mobilePrimaryNav = [
+  { icon: FiHome, label: 'Home', key: 'home' },
+  { icon: FiCompass, label: 'Explore', key: 'explore' },
+  { icon: FiMessageCircle, label: 'Chats', key: 'chats' },
+  { icon: FiBell, label: 'Alerts', key: 'notifications' },
+]
+
 const exploreSortOptions: { value: ExploreSort; label: string }[] = [
   { value: 'recommended', label: 'Recommended' },
   { value: 'name', label: 'Name A-Z' },
@@ -3646,6 +3653,7 @@ export default function App() {
   const [filter, setFilter] = useState(filters[0])
   const [homeTopicFilter, setHomeTopicFilter] = useState<string | null>(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [showMobileNav, setShowMobileNav] = useState(false)
   const [settingsTab, setSettingsTab] = useState('Basics')
   const [membershipTab, setMembershipTab] = useState<'Membership' | 'Gift Creator'>('Membership')
   const [walletTab, setWalletTab] = useState<WalletTab>('overview')
@@ -4339,14 +4347,33 @@ export default function App() {
     if (page !== 'creator' && page !== 'features') {
       setCreatorReturnPage(page)
     }
+    setShowMobileNav(false)
+    setShowProfileMenu(false)
     rememberRecentCreator(creator)
     setSelectedCreator(creator)
     setPage('creator')
     setToast(`Opening ${creator.display_name}`)
   }
 
+  const navigateToPage = (
+    nextPage: 'home' | 'explore' | 'chats' | 'notifications' | 'wallet' | 'settings' | 'membership'
+  ) => {
+    const gated = !isAuthed && ['chats', 'notifications', 'wallet', 'settings', 'membership'].includes(nextPage)
+    if (gated) {
+      setToast('Sign in to access this section')
+      return
+    }
+    setShowMobileNav(false)
+    setShowProfileMenu(false)
+    if (nextPage === 'wallet') {
+      setWalletTab('overview')
+    }
+    setPage(nextPage)
+  }
+
   const openMembershipsPage = (message = 'Opening memberships') => {
     if (!isAuthed) return setToast('Sign in to view memberships')
+    setShowMobileNav(false)
     setPage('membership')
     setMembershipTab('Membership')
     setToast(message)
@@ -4490,17 +4517,11 @@ export default function App() {
                 key={item.label}
                 className={`nav-item ${active ? 'active' : ''} ${gated ? 'disabled' : ''}`}
                 disabled={gated}
-                onClick={() => {
-                  if (gated) {
-                    setToast('Sign in to access this section')
-                    return
-                  }
-                  setShowProfileMenu(false)
-                  if (item.key === 'wallet') {
-                    setWalletTab('overview')
-                  }
-                  setPage(item.key as typeof page)
-                }}
+                onClick={() =>
+                  navigateToPage(
+                    item.key as 'home' | 'explore' | 'chats' | 'notifications' | 'wallet' | 'settings' | 'membership'
+                  )
+                }
                 title={gated ? 'Sign in to access' : undefined}
               >
                 <Icon size={18} />
@@ -4671,6 +4692,181 @@ export default function App() {
           </div>
         ) : null}
       </aside>
+
+      <div className="mobile-nav-shell">
+        <div
+          className={`mobile-nav-backdrop ${showMobileNav ? 'open' : ''}`}
+          onClick={() => setShowMobileNav(false)}
+        />
+        <div className="mobile-nav-bar" role="navigation" aria-label="Mobile navigation">
+          {mobilePrimaryNav.map((item) => {
+            const Icon = item.icon
+            const active = page === item.key
+            const gated = !isAuthed && ['chats', 'notifications'].includes(item.key)
+            return (
+              <button
+                key={item.key}
+                className={`mobile-nav-item ${active ? 'active' : ''}`}
+                type="button"
+                onClick={() =>
+                  navigateToPage(item.key as 'home' | 'explore' | 'chats' | 'notifications')
+                }
+                disabled={gated}
+                aria-label={item.label}
+                aria-pressed={active}
+              >
+                <span className="mobile-nav-item__icon-wrap">
+                  <Icon size={20} />
+                  {item.key === 'notifications' && notificationUnreadCount > 0 ? (
+                    <span className="mobile-nav-item__badge">
+                      {Math.min(notificationUnreadCount, 99)}
+                    </span>
+                  ) : null}
+                </span>
+                <span>{item.label}</span>
+              </button>
+            )
+          })}
+          <button
+            className={`mobile-nav-item ${showMobileNav ? 'active' : ''}`}
+            type="button"
+            onClick={() => {
+              setShowMobileNav((current) => !current)
+              setShowProfileMenu(false)
+            }}
+            aria-label="More sections"
+            aria-expanded={showMobileNav}
+          >
+            <span className="mobile-nav-item__icon-wrap">
+              {showMobileNav ? <FiX size={20} /> : <FiMoreHorizontal size={20} />}
+            </span>
+            <span>More</span>
+          </button>
+        </div>
+
+        <div className={`mobile-nav-sheet ${showMobileNav ? 'open' : ''}`}>
+          {sidebarProfile ? (
+            <div className="mobile-nav-sheet__profile">
+              <img src={sidebarProfile.avatar} alt={sidebarProfile.name} />
+              <div>
+                <div className="name">{sidebarProfile.name}</div>
+                <div className="muted">{sidebarProfile.role}</div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mobile-nav-sheet__grid">
+            <button className="mobile-nav-sheet__action" type="button" onClick={() => navigateToPage('wallet')}>
+              <FiCreditCard size={18} />
+              <span>Wallet</span>
+            </button>
+            <button className="mobile-nav-sheet__action" type="button" onClick={() => openMembershipsPage()}>
+              <FiGift size={18} />
+              <span>Membership</span>
+            </button>
+            <button className="mobile-nav-sheet__action" type="button" onClick={() => navigateToPage('settings')}>
+              <FiSettings size={18} />
+              <span>Settings</span>
+            </button>
+            {hasFeatureRequests ? (
+              <button
+                className="mobile-nav-sheet__action"
+                type="button"
+                onClick={() => {
+                  if (!isSupabaseConfigured) {
+                    setToast('Feature requests are unavailable right now.')
+                    return
+                  }
+                  setShowMobileNav(false)
+                  setPage('features')
+                }}
+              >
+                <FiPlus size={18} />
+                <span>Features</span>
+              </button>
+            ) : null}
+          </div>
+
+          <div className="mobile-nav-sheet__section">
+            <div className="menu-title">Appearance</div>
+            <div className="appearance-row">
+              <button
+                className={`chip tiny ${theme === 'light' ? 'active' : ''}`}
+                onClick={() => setTheme('light')}
+                type="button"
+                aria-pressed={theme === 'light'}
+              >
+                Light
+              </button>
+              <button
+                className={`chip tiny ${theme === 'dark' ? 'active' : ''}`}
+                onClick={() => setTheme('dark')}
+                type="button"
+                aria-pressed={theme === 'dark'}
+              >
+                Dark
+              </button>
+              <button
+                className={`chip tiny ${theme === 'system' ? 'active' : ''}`}
+                onClick={() => setTheme('system')}
+                type="button"
+                aria-pressed={theme === 'system'}
+              >
+                System
+              </button>
+            </div>
+          </div>
+
+          <div className="mobile-nav-sheet__section">
+            {hasReleaseNotes ? (
+              <button
+                className="menu-item"
+                type="button"
+                onClick={() => openExternal(RELEASE_NOTES_URL, 'Release notes')}
+              >
+                News
+              </button>
+            ) : null}
+            {hasHelpSupport ? (
+              <button
+                className="menu-item"
+                type="button"
+                onClick={() => {
+                  if (HELP_CENTER_URL) {
+                    openExternal(HELP_CENTER_URL, 'Help center')
+                    return
+                  }
+                  openSupportEmail()
+                }}
+              >
+                Help Center & FAQ
+              </button>
+            ) : null}
+            <button
+              className="menu-item"
+              type="button"
+              onClick={() => window.open(assetUrl('pages/terms.html'), '_blank', 'noopener,noreferrer')}
+            >
+              Terms of Use
+            </button>
+            <button
+              className="menu-item"
+              type="button"
+              onClick={() => window.open(assetUrl('pages/privacy.html'), '_blank', 'noopener,noreferrer')}
+            >
+              Privacy Policy
+            </button>
+          </div>
+
+          {isAuthed ? (
+            <div className="mobile-nav-sheet__section">
+              <button className="menu-item danger" type="button" onClick={handleLogout}>
+                Log out
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
 
       <div className="main-area">
         {page === 'home' && (

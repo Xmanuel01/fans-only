@@ -387,6 +387,171 @@ body {
     transparent;
 }
 
+.mobile-nav-shell {
+  display: none;
+}
+
+.mobile-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 10, 18, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+  z-index: 59;
+}
+
+.mobile-nav-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mobile-nav-bar {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border-radius: 22px;
+  border: 1px solid rgba(157, 198, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(13, 22, 36, 0.96), rgba(10, 18, 30, 0.98)),
+    var(--panel);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(20px);
+  z-index: 61;
+}
+
+.mobile-nav-item {
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--text) 82%, transparent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 58px;
+  border-radius: 16px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.mobile-nav-item:hover,
+.mobile-nav-item.active {
+  background: var(--sidebar-active);
+  color: var(--text);
+}
+
+.mobile-nav-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mobile-nav-item__icon-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.mobile-nav-item__badge {
+  position: absolute;
+  top: -7px;
+  right: -10px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #356ae6;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.mobile-nav-sheet {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(98px + env(safe-area-inset-bottom, 0px));
+  border-radius: 24px;
+  border: 1px solid rgba(157, 198, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(15, 25, 40, 0.98), rgba(10, 18, 30, 0.98)),
+    var(--panel);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.4);
+  padding: 18px;
+  z-index: 60;
+  transform: translateY(18px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.24s ease,
+    transform 0.24s ease;
+  max-height: min(72vh, 620px);
+  overflow-y: auto;
+}
+
+.mobile-nav-sheet.open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.mobile-nav-sheet__profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 2px 14px;
+}
+
+.mobile-nav-sheet__profile img {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  object-fit: cover;
+}
+
+.mobile-nav-sheet__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.mobile-nav-sheet__action {
+  border: 1px solid var(--input-border);
+  background: var(--surface-soft);
+  color: var(--text);
+  border-radius: 16px;
+  min-height: 62px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mobile-nav-sheet__action:hover {
+  background: var(--surface-elevated);
+}
+
+.mobile-nav-sheet__section {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+
 .feed {
   flex: 1;
 }
@@ -4526,9 +4691,12 @@ body {
   .sidebar {
     display: none;
   }
+  .mobile-nav-shell {
+    display: block;
+  }
   .main-area {
     max-width: 100%;
-    padding: 22px 18px 48px;
+    padding: 22px 18px 120px;
   }
   .feed-header {
     position: static;
@@ -4604,6 +4772,26 @@ body {
 }
 
 @media (max-width: 720px) {
+  .mobile-nav-bar {
+    left: 10px;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    gap: 6px;
+    padding: 8px;
+  }
+  .mobile-nav-item {
+    min-height: 54px;
+    font-size: 10px;
+  }
+  .mobile-nav-sheet {
+    left: 10px;
+    right: 10px;
+    bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    padding: 16px;
+  }
+  .mobile-nav-sheet__grid {
+    grid-template-columns: 1fr 1fr;
+  }
   .membership-history-item {
     grid-template-columns: 1fr;
   }
