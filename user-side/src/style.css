@@ -554,6 +554,8 @@ body {
 
 .feed {
   flex: 1;
+  height: calc(100vh - 88px);
+  overflow: hidden;
 }
 
 .feed-header {
@@ -1169,21 +1171,31 @@ body {
 
 .home-feed-layout {
   display: grid;
-  grid-template-columns: minmax(0, 500px) 320px;
-  gap: 20px;
-  align-items: start;
+  grid-template-columns: minmax(0, 430px) minmax(360px, 408px);
+  gap: 18px;
+  align-items: stretch;
   justify-content: center;
+  width: min(100%, 856px);
+  margin: 0 auto;
+  min-height: 100%;
 }
 
 .home-feed-main {
   min-width: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
 }
 
 .home-feed-rail {
   display: grid;
   gap: 16px;
-  position: sticky;
-  top: 24px;
+  align-content: start;
+  max-height: 100%;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
 }
 
 .home-rail-card {
@@ -1666,7 +1678,7 @@ body {
   background: #0d141f;
   border-radius: 14px;
   overflow: hidden;
-  width: min(100%, 440px);
+  width: min(100%, 404px);
   margin: 0 auto;
 }
 
@@ -3460,12 +3472,25 @@ body {
 }
 
 @media (max-width: 900px) {
+  .feed {
+    height: auto;
+    overflow: visible;
+  }
+
   .home-feed-layout {
     grid-template-columns: 1fr;
+    width: 100%;
+    min-height: auto;
   }
 
   .home-feed-rail {
     display: none;
+  }
+
+  .home-feed-main {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .home-post {
@@ -5172,11 +5197,22 @@ body {
   .mobile-nav-shell {
     display: block;
   }
+  .feed {
+    height: auto;
+    overflow: visible;
+  }
   .home-feed-layout {
     grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    min-height: auto;
   }
   .home-feed-rail {
     display: none;
+  }
+  .home-feed-main {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
   .main-area {
     max-width: 100%;
