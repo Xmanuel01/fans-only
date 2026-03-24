@@ -3076,6 +3076,7 @@ function HomePage({
   onSubscribe,
   onOpenCreator,
   activeSubscriptions,
+  recentCreators,
   ppvPurchases,
   onUnlockPost,
 }: {
@@ -3083,9 +3084,10 @@ function HomePage({
   onClearTopicFilter: () => void
   posts: FeedPost[]
   stories: FeedPost[]
-  onSubscribe: (creator: FeedPost['creator']) => void
+  onSubscribe: (creator: CreatorCard) => void
   onOpenCreator: (creator: CreatorCard) => void
   activeSubscriptions: string[]
+  recentCreators: CreatorCard[]
   ppvPurchases: number[]
   onUnlockPost: (post: FeedPost) => void
 }) {
@@ -3136,6 +3138,40 @@ function HomePage({
       return type === 'text'
     })
   }, [posts, activeFilter])
+
+  const railCreators = useMemo(() => {
+    const byId = new Map<string, CreatorCard>()
+    for (const item of [...posts, ...stories]) {
+      if (!byId.has(item.creator.id)) {
+        byId.set(item.creator.id, item.creator)
+      }
+    }
+    return Array.from(byId.values())
+  }, [posts, stories])
+
+  const recommendedCreators = useMemo(
+    () => railCreators.filter((creator) => !subscriptionSet.has(creator.id)).slice(0, 4),
+    [railCreators, subscriptionSet]
+  )
+
+  const freeCreators = useMemo(
+    () =>
+      railCreators
+        .filter(
+          (creator) =>
+            !subscriptionSet.has(creator.id) && (creator.subscription_price_cents ?? 0) <= 0
+        )
+        .slice(0, 4),
+    [railCreators, subscriptionSet]
+  )
+
+  const freshCreators = useMemo(
+    () =>
+      railCreators
+        .filter((creator) => !recentCreators.some((recent) => recent.id === creator.id))
+        .slice(0, 4),
+    [railCreators, recentCreators]
+  )
 
   useEffect(() => {
     if (activeStoryIndex === null && activePostId === null) {
@@ -3257,85 +3293,87 @@ function HomePage({
   return (
     <>
       <main className="feed">
-        <div className="home-feed">
-          <div className="home-feed__sticky">
-            <section className="home-stories">
-              <div className="home-stories__title">
-                {activeTopicFilter ? `Home · ${activeTopicFilter}` : 'Home'}
-              </div>
-              {stories.length ? (
-                <div className="home-stories__scroller">
-                  <div className="home-stories__track">
-                    {stories.map((story, index) => (
-                      <button
-                        key={story.id}
-                        className="home-story"
-                        type="button"
-                        aria-label={`Open ${story.creator.display_name} story`}
-                        onClick={() => {
-                          setActiveStoryIndex(index)
-                          setActiveStoryMediaIndex(0)
-                        }}
-                      >
-                        <span className="home-story__ring">
-                          {story.creator.avatar_url ? (
-                            <img src={story.creator.avatar_url} alt={story.creator.display_name} />
-                          ) : (
-                            <span className="home-story__placeholder" aria-hidden="true">
-                              {story.creator.display_name.charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                        </span>
-                        <span className="home-story__name">{story.creator.display_name}</span>
-                      </button>
-                    ))}
+        <div className="home-feed-layout">
+          <div className="home-feed-main">
+            <div className="home-feed">
+              <div className="home-feed__sticky">
+                <section className="home-stories">
+                  <div className="home-stories__title">
+                    {activeTopicFilter ? `Home · ${activeTopicFilter}` : 'Home'}
                   </div>
-                </div>
-              ) : (
-                <div className="home-feed__empty home-feed__empty--stories">
-                  No active stories right now.
-                </div>
-              )}
+                  {stories.length ? (
+                    <div className="home-stories__scroller">
+                      <div className="home-stories__track">
+                        {stories.map((story, index) => (
+                          <button
+                            key={story.id}
+                            className="home-story"
+                            type="button"
+                            aria-label={`Open ${story.creator.display_name} story`}
+                            onClick={() => {
+                              setActiveStoryIndex(index)
+                              setActiveStoryMediaIndex(0)
+                            }}
+                          >
+                            <span className="home-story__ring">
+                              {story.creator.avatar_url ? (
+                                <img src={story.creator.avatar_url} alt={story.creator.display_name} />
+                              ) : (
+                                <span className="home-story__placeholder" aria-hidden="true">
+                                  {story.creator.display_name.charAt(0).toUpperCase()}
+                                </span>
+                              )}
+                            </span>
+                            <span className="home-story__name">{story.creator.display_name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="home-feed__empty home-feed__empty--stories">
+                      No active stories right now.
+                    </div>
+                  )}
 
-              <div className="home-feed__filters">
-                <button
-                  className={`home-feed__filter${activeFilter === 'all' ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() => setActiveFilter('all')}
-                >
-                  All
-                </button>
-                <button
-                  className={`home-feed__filter${activeFilter === 'photos' ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() => setActiveFilter('photos')}
-                >
-                  Photos
-                </button>
-                <button
-                  className={`home-feed__filter${activeFilter === 'videos' ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() => setActiveFilter('videos')}
-                >
-                  Videos
-                </button>
-                <button
-                  className={`home-feed__filter${activeFilter === 'texts' ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() => setActiveFilter('texts')}
-                >
-                  Texts
-                </button>
-                {activeTopicFilter ? (
-                  <button className="home-feed__filter" type="button" onClick={onClearTopicFilter}>
-                    Clear topic
-                  </button>
-                ) : null}
+                  <div className="home-feed__filters">
+                    <button
+                      className={`home-feed__filter${activeFilter === 'all' ? ' is-active' : ''}`}
+                      type="button"
+                      onClick={() => setActiveFilter('all')}
+                    >
+                      All
+                    </button>
+                    <button
+                      className={`home-feed__filter${activeFilter === 'photos' ? ' is-active' : ''}`}
+                      type="button"
+                      onClick={() => setActiveFilter('photos')}
+                    >
+                      Photos
+                    </button>
+                    <button
+                      className={`home-feed__filter${activeFilter === 'videos' ? ' is-active' : ''}`}
+                      type="button"
+                      onClick={() => setActiveFilter('videos')}
+                    >
+                      Videos
+                    </button>
+                    <button
+                      className={`home-feed__filter${activeFilter === 'texts' ? ' is-active' : ''}`}
+                      type="button"
+                      onClick={() => setActiveFilter('texts')}
+                    >
+                      Texts
+                    </button>
+                    {activeTopicFilter ? (
+                      <button className="home-feed__filter" type="button" onClick={onClearTopicFilter}>
+                        Clear topic
+                      </button>
+                    ) : null}
+                  </div>
+                </section>
               </div>
-            </section>
-          </div>
 
-        <div className="home-feed__posts">
+            <div className="home-feed__posts">
           {filteredPosts.length ? (
             filteredPosts.map((post) => {
             const { isSubscribed, isPpv, isLocked, showSubscribe } = getAccessState(post)
@@ -3513,7 +3551,116 @@ function HomePage({
                 : 'Follow creators to see new content in your feed.'}
             </div>
           )}
-        </div>
+            </div>
+            </div>
+          </div>
+
+          <aside className="home-feed-rail">
+            <section className="home-rail-card">
+              <div className="home-rail-card__head">
+                <h3>Recommended</h3>
+                <span>{recommendedCreators.length}</span>
+              </div>
+              <div className="home-rail-list">
+                {recommendedCreators.length ? (
+                  recommendedCreators.map((creator) => (
+                    <button
+                      key={creator.id}
+                      className="home-rail-creator"
+                      type="button"
+                      onClick={() => onOpenCreator(creator)}
+                    >
+                      <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
+                      <div className="home-rail-creator__copy">
+                        <strong>{creator.display_name}</strong>
+                        <span>@{creator.handle}</span>
+                      </div>
+                      {(creator.subscription_price_cents ?? 0) > 0 ? (
+                        <span className="home-rail-creator__price">
+                          {formatKsh(creator.subscription_price_cents ?? 0)}
+                        </span>
+                      ) : (
+                        <span className="home-rail-creator__price free">Free</span>
+                      )}
+                    </button>
+                  ))
+                ) : (
+                  <div className="home-rail-empty">No recommendations yet.</div>
+                )}
+              </div>
+            </section>
+
+            <section className="home-rail-card">
+              <div className="home-rail-card__head">
+                <h3>Fresh creators</h3>
+                <span>{freshCreators.length}</span>
+              </div>
+              <div className="home-rail-list">
+                {(freshCreators.length ? freshCreators : railCreators.slice(0, 4)).map((creator) => (
+                  <div key={creator.id} className="home-rail-promo">
+                    <button type="button" className="home-rail-promo__open" onClick={() => onOpenCreator(creator)}>
+                      <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
+                      <div>
+                        <strong>{creator.display_name}</strong>
+                        <span>@{creator.handle}</span>
+                      </div>
+                    </button>
+                    {!subscriptionSet.has(creator.id) && (creator.subscription_price_cents ?? 0) > 0 ? (
+                      <button className="pill light home-rail-promo__cta" type="button" onClick={() => onSubscribe(creator)}>
+                        Subscribe
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="home-rail-card">
+              <div className="home-rail-card__head">
+                <h3>Free creators</h3>
+                <span>{freeCreators.length}</span>
+              </div>
+              <div className="home-rail-tags">
+                {freeCreators.length ? (
+                  freeCreators.map((creator) => (
+                    <button
+                      key={creator.id}
+                      className="avatar-chip"
+                      type="button"
+                      onClick={() => onOpenCreator(creator)}
+                    >
+                      <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
+                      <span>{creator.display_name}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="home-rail-empty">No free creator profiles in this feed yet.</div>
+                )}
+              </div>
+            </section>
+
+            {recentCreators.length ? (
+              <section className="home-rail-card">
+                <div className="home-rail-card__head">
+                  <h3>Recently visited</h3>
+                  <span>{recentCreators.length}</span>
+                </div>
+                <div className="home-rail-tags">
+                  {recentCreators.slice(0, 4).map((creator) => (
+                    <button
+                      key={creator.id}
+                      className="avatar-chip"
+                      type="button"
+                      onClick={() => onOpenCreator(creator)}
+                    >
+                      <img src={creator.avatar_url ?? assetUrl('logo.png')} alt={creator.display_name} />
+                      <span>{creator.display_name}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </aside>
         </div>
       </main>
 
@@ -5076,6 +5223,7 @@ export default function App() {
             onSubscribe={(creator) => handleSubscribe(creator)}
             onOpenCreator={handleOpenCreatorPage}
             activeSubscriptions={activeSubscriptions}
+            recentCreators={recentCreators}
             ppvPurchases={ppvPurchases}
             onUnlockPost={handleUnlockPost}
           />
