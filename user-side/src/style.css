@@ -1585,24 +1585,24 @@ body {
 
 .home-story__avatar {
   position: absolute;
-  top: 14px;
-  left: 14px;
+  top: 12px;
+  left: 12px;
   z-index: 1;
 }
 
 .home-story__ring {
-  width: 58px;
+  width: 30px;
   aspect-ratio: 1 / 1;
   border-radius: 50%;
-  padding: 4px;
+  padding: 2px;
   background:
     linear-gradient(145deg, #68ccff 0%, #4685ff 42%, #9ad4ff 100%);
   display: grid;
   place-items: center;
   overflow: hidden;
   box-shadow:
-    0 0 0 3px rgba(255, 255, 255, 0.92),
-    0 10px 22px rgba(10, 28, 56, 0.26);
+    0 0 0 2px rgba(255, 255, 255, 0.92),
+    0 6px 14px rgba(10, 28, 56, 0.24);
 }
 
 .home-story__ring img {
@@ -1612,7 +1612,7 @@ body {
   border-radius: 50%;
   object-fit: cover;
   object-position: center top;
-  border: 2px solid #0f1724;
+  border: 1px solid #0f1724;
 }
 
 .home-story__placeholder {
