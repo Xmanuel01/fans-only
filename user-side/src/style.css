@@ -1169,8 +1169,8 @@ body {
 
 .home-feed-layout {
   display: grid;
-  grid-template-columns: minmax(0, 560px) 320px;
-  gap: 24px;
+  grid-template-columns: minmax(0, 500px) 320px;
+  gap: 20px;
   align-items: start;
   justify-content: center;
 }
@@ -1666,12 +1666,12 @@ body {
   background: #0d141f;
   border-radius: 14px;
   overflow: hidden;
-  width: min(100%, 520px);
+  width: min(100%, 440px);
   margin: 0 auto;
 }
 
 .home-post__header {
-  padding: 12px 14px;
+  padding: 10px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1722,7 +1722,7 @@ body {
   border: none;
   background: transparent;
   color: inherit;
-  padding: 0 14px 12px;
+  padding: 0 12px 10px;
   text-align: left;
   cursor: pointer;
 }
@@ -1743,7 +1743,7 @@ body {
 .home-post__media-frame {
   border-top: 1px solid #1f2733;
   border-bottom: 1px solid #1f2733;
-  margin-top: 8px;
+  margin-top: 6px;
   aspect-ratio: 4 / 5;
   background:
     radial-gradient(circle at top, rgba(84, 132, 241, 0.08), transparent 58%),
