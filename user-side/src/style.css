@@ -1176,18 +1176,28 @@ body {
 
 .home-feed-layout {
   display: grid;
-  grid-template-columns: minmax(0, 404px) 360px;
+  grid-template-columns: minmax(0, 430px) minmax(340px, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 20px;
   align-items: start;
-  justify-content: space-between;
+  justify-content: stretch;
   width: 100%;
   margin: 0;
   min-height: 0;
+  height: calc(100vh - 48px);
+}
+
+.home-feed--wide {
+  grid-column: 1 / -1;
+}
+
+.home-feed--posts {
+  min-height: 100%;
 }
 
 .home-feed-main {
   min-width: 0;
-  height: calc(100vh - 48px);
+  height: 100%;
   overflow-y: auto;
   padding-right: 8px;
   padding-bottom: 24px;
@@ -1200,7 +1210,7 @@ body {
   display: grid;
   gap: 16px;
   align-content: start;
-  height: calc(100vh - 48px);
+  height: 100%;
   overflow-y: auto;
   padding-right: 0;
   padding-bottom: 24px;
@@ -1470,16 +1480,9 @@ body {
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.38);
 }
 
-.home-feed__sticky {
-  position: sticky;
-  top: 0;
-  z-index: 18;
-  background: #0a0f16;
-}
-
 .home-stories {
   border-bottom: 1px solid #1f2733;
-  padding: 5px 0;
+  padding: 10px 0 8px;
 }
 
 .home-stories__title {
@@ -3497,8 +3500,10 @@ body {
 
   .home-feed-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto;
     width: 100%;
     min-height: auto;
+    height: auto;
   }
 
   .home-feed-rail {
@@ -5221,8 +5226,10 @@ body {
   }
   .home-feed-layout {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
     width: 100%;
     min-height: auto;
+    height: auto;
   }
   .home-feed-rail {
     display: none;
