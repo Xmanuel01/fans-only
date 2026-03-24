@@ -4,6 +4,7 @@ import {
   FiCompass,
   FiCreditCard,
   FiGift,
+  FiHeart,
   FiHome,
   FiLock,
   FiMessageCircle,
@@ -87,6 +88,7 @@ const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`
 const RECENT_CREATORS_STORAGE_KEY = 'fans-only:recent-creators'
 const AGE_CONFIRMATION_CACHE_KEY = 'fans-only:age-confirmed-users'
 const FAN_CREATORS_STORAGE_KEY = 'fans-only:fan-creators'
+const POST_SOCIAL_STORAGE_KEY = 'fans-only:post-social'
 const hasGiftCreatorCheckout = Boolean(FEATURED_CREATOR_ID && DEFAULT_GIFT_AMOUNT_MAJOR > 0)
 const SUPPORTED_MEDIA_ASPECT_RATIOS: Array<{ css: string; value: number }> = [
   { css: '1 / 1', value: 1 },
@@ -95,6 +97,16 @@ const SUPPORTED_MEDIA_ASPECT_RATIOS: Array<{ css: string; value: number }> = [
   { css: '9 / 16', value: 9 / 16 },
 ]
 type PaymentReturnKind = 'wallet_topup' | 'tip' | 'gift'
+type PostComment = {
+  id: string
+  author: string
+  body: string
+  created_at: string
+}
+type PostSocialEntry = {
+  likedByUserIds: string[]
+  comments: PostComment[]
+}
 type SubscriptionTarget = {
   id: string
   handle?: string | null
@@ -176,6 +188,70 @@ const persistFanCreators = (creatorIds: string[]) => {
     FAN_CREATORS_STORAGE_KEY,
     JSON.stringify(Array.from(new Set(creatorIds)).slice(0, 100))
   )
+}
+
+const normalizePostSocialEntry = (value: unknown): PostSocialEntry => {
+  const parsed =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+
+  const likedByUserIds = Array.isArray(parsed.likedByUserIds)
+    ? parsed.likedByUserIds.filter((entry): entry is string => typeof entry === 'string')
+    : []
+
+  const comments = Array.isArray(parsed.comments)
+    ? parsed.comments
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+          const comment = entry as Record<string, unknown>
+          if (
+            typeof comment.id !== 'string' ||
+            typeof comment.author !== 'string' ||
+            typeof comment.body !== 'string' ||
+            typeof comment.created_at !== 'string'
+          ) {
+            return null
+          }
+          return {
+            id: comment.id,
+            author: comment.author,
+            body: comment.body,
+            created_at: comment.created_at,
+          } satisfies PostComment
+        })
+        .filter((entry): entry is PostComment => Boolean(entry))
+    : []
+
+  return {
+    likedByUserIds,
+    comments,
+  }
+}
+
+const readPostSocialState = (): Record<number, PostSocialEntry> => {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(POST_SOCIAL_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+
+    const normalized: Record<number, PostSocialEntry> = {}
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const postId = Number(key)
+      if (!Number.isFinite(postId)) continue
+      normalized[postId] = normalizePostSocialEntry(value)
+    }
+    return normalized
+  } catch {
+    return {}
+  }
+}
+
+const persistPostSocialState = (state: Record<number, PostSocialEntry>) => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(POST_SOCIAL_STORAGE_KEY, JSON.stringify(state))
 }
 
 const getBestFitMediaAspectRatio = (media?: FeedPost['media'][number] | null) => {
@@ -268,6 +344,12 @@ const formatWalletDate = (value: string) => {
     minute: '2-digit',
   })
 }
+
+const formatCompactCount = (value: number) =>
+  new Intl.NumberFormat(undefined, {
+    notation: value >= 1000 ? 'compact' : 'standard',
+    maximumFractionDigits: value >= 1000 ? 1 : 0,
+  }).format(value)
 
 const getSessionIdentity = (session: any, userProfile?: UserProfile | null) => {
   const userId = typeof session?.user?.id === 'string' ? session.user.id : ''
@@ -3079,6 +3161,11 @@ function HomePage({
   recentCreators,
   ppvPurchases,
   onUnlockPost,
+  postSocialById,
+  currentUserId,
+  currentUserDisplayName,
+  onTogglePostLike,
+  onAddPostComment,
 }: {
   activeTopicFilter: string | null
   onClearTopicFilter: () => void
@@ -3090,6 +3177,11 @@ function HomePage({
   recentCreators: CreatorCard[]
   ppvPurchases: number[]
   onUnlockPost: (post: FeedPost) => void
+  postSocialById: Record<number, PostSocialEntry>
+  currentUserId: string | null
+  currentUserDisplayName: string
+  onTogglePostLike: (postId: number) => void
+  onAddPostComment: (postId: number, body: string) => void
 }) {
   const subscriptionSet = new Set(activeSubscriptions)
   const ppvPurchaseSet = new Set(ppvPurchases)
@@ -3099,11 +3191,16 @@ function HomePage({
   const [postMediaIndexById, setPostMediaIndexById] = useState<Record<number, number>>({})
   const [activePostId, setActivePostId] = useState<number | null>(null)
   const [activePostMediaIndex, setActivePostMediaIndex] = useState(0)
+  const [commentDraftsById, setCommentDraftsById] = useState<Record<number, string>>({})
+  const [expandedCommentsById, setExpandedCommentsById] = useState<Record<number, boolean>>({})
   const activeStory =
     activeStoryIndex === null || activeStoryIndex < 0 || activeStoryIndex >= stories.length
       ? null
       : stories[activeStoryIndex]
   const activePost = activePostId === null ? null : posts.find((post) => post.id === activePostId) ?? null
+
+  const getPostSocial = (postId: number): PostSocialEntry =>
+    postSocialById[postId] ?? { likedByUserIds: [], comments: [] }
 
   const getAccessState = (post: FeedPost) => {
     const isSubscribed = subscriptionSet.has(post.creator.id)
@@ -3427,6 +3524,12 @@ function HomePage({
                     )
                     const media = mediaCount ? post.media[mediaIndex] : null
                     const isVideo = media?.mime_type?.startsWith('video')
+                    const social = getPostSocial(post.id)
+                    const isLiked = Boolean(currentUserId && social.likedByUserIds.includes(currentUserId))
+                    const likeCount = social.likedByUserIds.length
+                    const commentCount = social.comments.length
+                    const commentsExpanded = expandedCommentsById[post.id] ?? false
+                    const commentDraft = commentDraftsById[post.id] ?? ''
 
                     return (
                       <article key={post.id} className="home-post">
@@ -3572,6 +3675,78 @@ function HomePage({
                               ) : null}
                             </div>
                           </div>
+                        ) : null}
+
+                        {!isLocked ? (
+                          <>
+                            <div className="home-post__social">
+                              <button
+                                className={`home-post__social-btn${isLiked ? ' is-active' : ''}`}
+                                type="button"
+                                onClick={() => onTogglePostLike(post.id)}
+                                aria-pressed={isLiked}
+                              >
+                                <FiHeart size={22} />
+                                <span>{formatCompactCount(likeCount)}</span>
+                              </button>
+                              <button
+                                className="home-post__social-btn"
+                                type="button"
+                                onClick={() =>
+                                  setExpandedCommentsById((prev) => ({
+                                    ...prev,
+                                    [post.id]: !commentsExpanded,
+                                  }))
+                                }
+                                aria-expanded={commentsExpanded}
+                              >
+                                <FiMessageCircle size={22} />
+                                <span>{formatCompactCount(commentCount)}</span>
+                              </button>
+                            </div>
+
+                            {(commentsExpanded || commentCount > 0) && (
+                              <div className="home-post__comments">
+                                {social.comments.length ? (
+                                  <div className="home-post__comment-list">
+                                    {social.comments.slice(-3).map((comment) => (
+                                      <div key={comment.id} className="home-post__comment">
+                                        <strong>{comment.author}</strong>
+                                        <span>{comment.body}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null}
+                                <form
+                                  className="home-post__comment-form"
+                                  onSubmit={(event) => {
+                                    event.preventDefault()
+                                    const next = commentDraft.trim()
+                                    if (!next) return
+                                    onAddPostComment(post.id, next)
+                                    setCommentDraftsById((prev) => ({ ...prev, [post.id]: '' }))
+                                    setExpandedCommentsById((prev) => ({ ...prev, [post.id]: true }))
+                                  }}
+                                >
+                                  <input
+                                    className="home-post__comment-input"
+                                    type="text"
+                                    placeholder={`Comment as ${currentUserDisplayName}`}
+                                    value={commentDraft}
+                                    onChange={(event) =>
+                                      setCommentDraftsById((prev) => ({
+                                        ...prev,
+                                        [post.id]: event.target.value,
+                                      }))
+                                    }
+                                  />
+                                  <button className="home-post__comment-submit" type="submit">
+                                    Post
+                                  </button>
+                                </form>
+                              </div>
+                            )}
+                          </>
                         ) : null}
 
                         <footer className="home-post__footer">
@@ -4003,15 +4178,98 @@ function HomePage({
               )
             })()}
 
+            {(() => {
+              const { isLocked } = getAccessState(activePost)
+              return (
             <footer className="home-post-modal__footer">
               <div className="title">{activePost.title}</div>
               {activePost.body ? <p className="muted">{activePost.body}</p> : null}
+              {!isLocked ? (
+                <div className="home-post__social home-post__social--modal">
+                  {(() => {
+                    const social = getPostSocial(activePost.id)
+                    const isLiked = Boolean(
+                      currentUserId && social.likedByUserIds.includes(currentUserId)
+                    )
+                    return (
+                      <>
+                        <button
+                          className={`home-post__social-btn${isLiked ? ' is-active' : ''}`}
+                          type="button"
+                          onClick={() => onTogglePostLike(activePost.id)}
+                          aria-pressed={isLiked}
+                        >
+                          <FiHeart size={22} />
+                          <span>{formatCompactCount(social.likedByUserIds.length)}</span>
+                        </button>
+                        <button
+                          className="home-post__social-btn"
+                          type="button"
+                          onClick={() =>
+                            setExpandedCommentsById((prev) => ({
+                              ...prev,
+                              [activePost.id]: !(prev[activePost.id] ?? false),
+                            }))
+                          }
+                          aria-expanded={expandedCommentsById[activePost.id] ?? false}
+                        >
+                          <FiMessageCircle size={22} />
+                          <span>{formatCompactCount(social.comments.length)}</span>
+                        </button>
+                      </>
+                    )
+                  })()}
+                </div>
+              ) : null}
+              {!isLocked && ((expandedCommentsById[activePost.id] ?? false) || getPostSocial(activePost.id).comments.length > 0) ? (
+                <div className="home-post__comments home-post__comments--modal">
+                  {getPostSocial(activePost.id).comments.length ? (
+                    <div className="home-post__comment-list">
+                      {getPostSocial(activePost.id).comments.slice(-4).map((comment) => (
+                        <div key={comment.id} className="home-post__comment">
+                          <strong>{comment.author}</strong>
+                          <span>{comment.body}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <form
+                    className="home-post__comment-form"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      const next = (commentDraftsById[activePost.id] ?? '').trim()
+                      if (!next) return
+                      onAddPostComment(activePost.id, next)
+                      setCommentDraftsById((prev) => ({ ...prev, [activePost.id]: '' }))
+                      setExpandedCommentsById((prev) => ({ ...prev, [activePost.id]: true }))
+                    }}
+                  >
+                    <input
+                      className="home-post__comment-input"
+                      type="text"
+                      placeholder={`Comment as ${currentUserDisplayName}`}
+                      value={commentDraftsById[activePost.id] ?? ''}
+                      onChange={(event) =>
+                        setCommentDraftsById((prev) => ({
+                          ...prev,
+                          [activePost.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <button className="home-post__comment-submit" type="submit">
+                      Post
+                    </button>
+                  </form>
+                </div>
+              ) : null}
               <div className="story-modal__switchers">
                 <button className="pill ghost" type="button" onClick={() => onOpenCreator(activePost.creator)}>
                   Open creator page
                 </button>
               </div>
             </footer>
+              )
+            })()}
           </div>
         </div>
       ) : null}
@@ -4065,6 +4323,7 @@ export default function App() {
   const [walletTopupAmount, setWalletTopupAmount] = useState('1000')
   const [walletTopupPhone, setWalletTopupPhone] = useState('')
   const [ppvPurchases, setPpvPurchases] = useState<number[]>([])
+  const [postSocialById, setPostSocialById] = useState<Record<number, PostSocialEntry>>({})
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
   const [subscribingCreatorId, setSubscribingCreatorId] = useState<string | null>(null)
   const [purchasePrompt, setPurchasePrompt] = useState<PurchasePromptAction | null>(null)
@@ -4096,6 +4355,7 @@ export default function App() {
     ...envStatus.missing.map((name) => `Missing ${name}`),
     ...envStatus.invalid.map((name) => `Invalid ${name}`),
   ]
+  const sessionIdentity = getSessionIdentity(session, userProfile)
 
   const paymentRef = useRef<HTMLDivElement | null>(null)
   const giftRef = useRef<HTMLDivElement | null>(null)
@@ -4103,6 +4363,14 @@ export default function App() {
   const hasReleaseNotes = Boolean(RELEASE_NOTES_URL)
   const hasHelpSupport = Boolean(HELP_CENTER_URL || SUPPORT_EMAIL)
   const hasFeatureRequests = Boolean(FEATURE_REQUESTS_ENABLED && isSupabaseConfigured)
+
+  useEffect(() => {
+    setPostSocialById(readPostSocialState())
+  }, [])
+
+  useEffect(() => {
+    persistPostSocialState(postSocialById)
+  }, [postSocialById])
 
   const refreshPaymentState = async (options?: { ifMounted?: () => boolean }) => {
     const [subs, history, balance, walletEntries] = await Promise.all([
@@ -4116,6 +4384,58 @@ export default function App() {
     setSubscriptionHistory(history)
     setWalletBalance(balance)
     setWalletHistory(walletEntries)
+  }
+
+  const handleTogglePostLike = (postId: number) => {
+    if (!sessionIdentity.userId) {
+      setToast('Sign in to like posts')
+      return
+    }
+
+    setPostSocialById((prev) => {
+      const current = prev[postId] ?? { likedByUserIds: [], comments: [] }
+      const liked = current.likedByUserIds.includes(sessionIdentity.userId)
+      const likedByUserIds = liked
+        ? current.likedByUserIds.filter((id) => id !== sessionIdentity.userId)
+        : [...current.likedByUserIds, sessionIdentity.userId]
+
+      return {
+        ...prev,
+        [postId]: {
+          ...current,
+          likedByUserIds,
+        },
+      }
+    })
+  }
+
+  const handleAddPostComment = (postId: number, body: string) => {
+    const trimmed = body.trim()
+    if (!trimmed) return
+    if (!sessionIdentity.userId) {
+      setToast('Sign in to comment on posts')
+      return
+    }
+
+    const author = sessionIdentity.displayName || 'Fan'
+    setPostSocialById((prev) => {
+      const current = prev[postId] ?? { likedByUserIds: [], comments: [] }
+      return {
+        ...prev,
+        [postId]: {
+          ...current,
+          comments: [
+            ...current.comments,
+            {
+              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              author,
+              body: trimmed,
+              created_at: new Date().toISOString(),
+            },
+          ],
+        },
+      }
+    })
   }
 
   const refreshAccessState = async () => {
@@ -5322,6 +5642,11 @@ export default function App() {
             recentCreators={recentCreators}
             ppvPurchases={ppvPurchases}
             onUnlockPost={handleUnlockPost}
+            postSocialById={postSocialById}
+            currentUserId={sessionIdentity.userId || null}
+            currentUserDisplayName={sessionIdentity.displayName || 'Fan'}
+            onTogglePostLike={handleTogglePostLike}
+            onAddPostComment={handleAddPostComment}
           />
         )}
         {page === 'explore' && (

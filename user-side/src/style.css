@@ -1842,6 +1842,109 @@ body {
   flex-wrap: wrap;
 }
 
+.home-post__social {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 14px 8px;
+}
+
+.home-post__social--modal {
+  padding: 0;
+}
+
+.home-post__social-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: #f2f7ff;
+  padding: 0;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.home-post__social-btn svg {
+  color: #f4f7fb;
+  stroke-width: 2.1;
+  transition:
+    color 0.18s ease,
+    fill 0.18s ease,
+    transform 0.18s ease;
+}
+
+.home-post__social-btn:hover svg {
+  transform: scale(1.04);
+}
+
+.home-post__social-btn.is-active svg {
+  color: #ff3b5c;
+  fill: #ff3b5c;
+}
+
+.home-post__comments {
+  display: grid;
+  gap: 10px;
+  padding: 0 14px 10px;
+}
+
+.home-post__comments--modal {
+  padding: 0;
+}
+
+.home-post__comment-list {
+  display: grid;
+  gap: 8px;
+}
+
+.home-post__comment {
+  display: grid;
+  gap: 2px;
+  color: #dce7f6;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.home-post__comment strong {
+  color: #f3f8ff;
+  font-size: 13px;
+}
+
+.home-post__comment-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-post__comment-input {
+  flex: 1;
+  min-width: 0;
+  border-radius: 999px;
+  border: 1px solid #2b3647;
+  background: #101927;
+  color: #eef4fc;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.home-post__comment-input::placeholder {
+  color: #8ea0b5;
+}
+
+.home-post__comment-submit {
+  border: none;
+  border-radius: 999px;
+  background: #eef4fc;
+  color: #0f1724;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .home-post__caption {
   font-size: 18px;
 }
