@@ -4853,6 +4853,23 @@ button,
 }
 
 @media (max-width: 900px) {
+  .my-main__grid.home-feed-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .my-main__grid.home-feed-grid > .my-main__content {
+    order: 1;
+  }
+
+  .my-main__grid.home-feed-grid > .my-main__aside {
+    order: 2;
+  }
+
+  .creator-home-aside {
+    gap: 14px;
+  }
+
   .wallet-panel {
     padding: 22px 20px;
     border-radius: 22px;

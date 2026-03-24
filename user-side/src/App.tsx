@@ -85,7 +85,15 @@ const FEATURE_REQUESTS_ENABLED = env.featureRequestsEnabled
 const BASE_URL = import.meta.env.BASE_URL ?? '/'
 const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`
 const RECENT_CREATORS_STORAGE_KEY = 'fans-only:recent-creators'
+const AGE_CONFIRMATION_CACHE_KEY = 'fans-only:age-confirmed-users'
+const FAN_CREATORS_STORAGE_KEY = 'fans-only:fan-creators'
 const hasGiftCreatorCheckout = Boolean(FEATURED_CREATOR_ID && DEFAULT_GIFT_AMOUNT_MAJOR > 0)
+const SUPPORTED_MEDIA_ASPECT_RATIOS: Array<{ css: string; value: number }> = [
+  { css: '1 / 1', value: 1 },
+  { css: '4 / 5', value: 4 / 5 },
+  { css: '3 / 4', value: 3 / 4 },
+  { css: '9 / 16', value: 9 / 16 },
+]
 type PaymentReturnKind = 'wallet_topup' | 'tip' | 'gift'
 type SubscriptionTarget = {
   id: string
@@ -124,6 +132,72 @@ const readPaymentReturnFromUrl = (): { kind: PaymentReturnKind | null; hasRefere
     kind,
     hasReference: Boolean(url.searchParams.get('reference') || url.searchParams.get('trxref')),
   }
+}
+
+const readAgeConfirmationCache = (): string[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(AGE_CONFIRMATION_CACHE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? parsed.filter((entry: unknown): entry is string => typeof entry === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
+const hasCachedAgeConfirmation = (userId: string) => readAgeConfirmationCache().includes(userId)
+
+const persistAgeConfirmationCache = (userId: string) => {
+  if (typeof window === 'undefined') return
+  const next = Array.from(new Set([userId, ...readAgeConfirmationCache()])).slice(0, 20)
+  window.localStorage.setItem(AGE_CONFIRMATION_CACHE_KEY, JSON.stringify(next))
+}
+
+const readFanCreators = (): string[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(FAN_CREATORS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? parsed.filter((entry: unknown): entry is string => typeof entry === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
+const persistFanCreators = (creatorIds: string[]) => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(
+    FAN_CREATORS_STORAGE_KEY,
+    JSON.stringify(Array.from(new Set(creatorIds)).slice(0, 100))
+  )
+}
+
+const getBestFitMediaAspectRatio = (media?: FeedPost['media'][number] | null) => {
+  const width = media?.width ?? 0
+  const height = media?.height ?? 0
+  if (width <= 0 || height <= 0) {
+    return '3 / 4'
+  }
+
+  const actualRatio = width / height
+  let closest = SUPPORTED_MEDIA_ASPECT_RATIOS[0]
+  let smallestDelta = Math.abs(actualRatio - closest.value)
+
+  for (const candidate of SUPPORTED_MEDIA_ASPECT_RATIOS.slice(1)) {
+    const delta = Math.abs(actualRatio - candidate.value)
+    if (delta < smallestDelta) {
+      closest = candidate
+      smallestDelta = delta
+    }
+  }
+
+  return closest.css
 }
 
 const clearPaymentReturnParams = () => {
@@ -2383,6 +2457,7 @@ function WalletPage({
   walletTopupAmount,
   walletTopupPhone,
   topupPending,
+  preferredCreator,
   onTopupAmountChange,
   onTopupPhoneChange,
   onTopup,
@@ -2398,6 +2473,7 @@ function WalletPage({
   walletTopupAmount: string
   walletTopupPhone: string
   topupPending: boolean
+  preferredCreator: CreatorCard | null
   onTopupAmountChange: (value: string) => void
   onTopupPhoneChange: (value: string) => void
   onTopup: () => void
@@ -2433,6 +2509,15 @@ function WalletPage({
       setSelectedCreator(quickCreators[0])
     }
   }, [quickCreators, selectedCreator])
+
+  useEffect(() => {
+    if (preferredCreator) {
+      setSelectedCreator(preferredCreator)
+      if (activeTab !== 'send') {
+        onTabChange('send')
+      }
+    }
+  }, [activeTab, onTabChange, preferredCreator])
 
   useEffect(() => {
     let cancelled = false
@@ -2793,8 +2878,12 @@ function CreatorPage({
   posts,
   stories,
   activeSubscriptions,
+  isFan,
   onBack,
+  onBecomeFan,
   onSubscribe,
+  onMessageCreator,
+  onGiftCreator,
   onUnlockPost,
   ppvPurchases,
 }: {
@@ -2802,8 +2891,12 @@ function CreatorPage({
   posts: FeedPost[]
   stories: FeedPost[]
   activeSubscriptions: string[]
+  isFan: boolean
   onBack: () => void
+  onBecomeFan: (creator: CreatorCard) => void
   onSubscribe: (creator: CreatorCard) => void
+  onMessageCreator: (creator: CreatorCard, isSubscribed: boolean) => void
+  onGiftCreator: (creator: CreatorCard) => void
   onUnlockPost: (post: FeedPost) => void
   ppvPurchases: number[]
 }) {
@@ -2845,12 +2938,34 @@ function CreatorPage({
             <span className="pill ghost">
               {formatKsh(creator.subscription_price_cents ?? 0)}
             </span>
-            {!isSubscribed && (creator.subscription_price_cents ?? 0) > 0 ? (
-              <button className="pill light" type="button" onClick={() => onSubscribe(creator)}>
-                Subscribe
+            {!isFan ? (
+              <button className="pill light creator-page__action-button" type="button" onClick={() => onBecomeFan(creator)}>
+                Become a fan
               </button>
             ) : (
-              <span className="pill">Subscribed</span>
+              <>
+                {!isSubscribed && (creator.subscription_price_cents ?? 0) > 0 ? (
+                  <button className="pill light creator-page__action-button" type="button" onClick={() => onSubscribe(creator)}>
+                    Subscribe
+                  </button>
+                ) : (
+                  <span className="pill">Subscribed</span>
+                )}
+                <button
+                  className={`pill ghost creator-page__action-button${!isSubscribed ? ' is-disabled' : ''}`}
+                  type="button"
+                  onClick={() => onMessageCreator(creator, isSubscribed)}
+                >
+                  Message
+                </button>
+                <button
+                  className="pill ghost creator-page__action-button"
+                  type="button"
+                  onClick={() => onGiftCreator(creator)}
+                >
+                  Gift
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -2888,13 +3003,38 @@ function CreatorPage({
               const isLocked =
                 (post.visibility === 'subscribers' && !isSubscribed) ||
                 (post.visibility === 'ppv' && !ppvPurchaseSet.has(post.id))
+              const primaryMedia = post.media[0] ?? null
+              const primaryIsVideo = Boolean(primaryMedia?.mime_type?.startsWith('video'))
               return (
                 <article key={post.id} className="creator-page__post-card">
-                  {post.media[0]?.url ? (
-                    <div className="creator-page__post-media">
-                      <img src={post.media[0].url} alt={post.title} />
+                  <div
+                    className={`creator-page__post-media${isLocked ? ' is-locked' : ''}`}
+                    style={{ aspectRatio: getBestFitMediaAspectRatio(primaryMedia) }}
+                  >
+                    {primaryMedia?.url ? (
+                      primaryIsVideo ? (
+                        <video muted playsInline preload="metadata">
+                          <source src={primaryMedia.url} type={primaryMedia.mime_type ?? 'video/mp4'} />
+                        </video>
+                      ) : (
+                        <img src={primaryMedia.url} alt={post.title} />
+                      )
+                    ) : (
+                      <div className="creator-page__post-empty">Text</div>
+                    )}
+                    <div className="creator-page__post-badges">
+                      <span className="pill ghost creator-page__post-visibility">
+                        {post.visibility === 'ppv'
+                          ? `PPV ${formatKsh(post.price_cents ?? 0)}`
+                          : post.visibility === 'subscribers'
+                            ? 'Subscribers'
+                            : 'Public'}
+                      </span>
+                      {primaryIsVideo ? (
+                        <span className="pill ghost creator-page__post-visibility">Video</span>
+                      ) : null}
                     </div>
-                  ) : null}
+                  </div>
                   <div className="creator-page__post-copy">
                     <div className="creator-page__post-top">
                       <h4>{post.title}</h4>
@@ -2902,16 +3042,13 @@ function CreatorPage({
                     </div>
                     {post.body ? <p className="muted">{post.body}</p> : null}
                     <div className="creator-page__post-actions">
-                      <span className="pill ghost">
-                        {post.visibility === 'ppv'
-                          ? `PPV ${formatKsh(post.price_cents ?? 0)}`
-                          : post.visibility === 'subscribers'
-                            ? 'Subscribers'
-                            : 'Public'}
-                      </span>
                       {post.visibility === 'ppv' && isLocked ? (
                         <button className="pill light" type="button" onClick={() => onUnlockPost(post)}>
                           Unlock
+                        </button>
+                      ) : post.visibility === 'subscribers' && !isSubscribed ? (
+                        <button className="pill light" type="button" onClick={() => onSubscribe(creator)}>
+                          Subscribe
                         </button>
                       ) : null}
                     </div>
@@ -3256,7 +3393,10 @@ function HomePage({
                 </button>
 
                 {media ? (
-                  <div className={`media-wrapper home-post__media-frame ${isLocked ? 'locked' : ''}`}>
+                  <div
+                    className={`media-wrapper home-post__media-frame ${isLocked ? 'locked' : ''}`}
+                    style={{ aspectRatio: getBestFitMediaAspectRatio(media) }}
+                  >
                     {media.url ? (
                       isVideo ? (
                         <video className="media-hero" controls preload="metadata" playsInline>
@@ -3550,7 +3690,10 @@ function HomePage({
               const media = mediaCount ? activePost.media[mediaIndex] : null
               const isVideo = media?.mime_type?.startsWith('video')
               return (
-                <div className={`media-wrapper home-post-modal__media ${isLocked ? 'locked' : ''}`}>
+                <div
+                  className={`media-wrapper home-post-modal__media ${isLocked ? 'locked' : ''}`}
+                  style={{ aspectRatio: getBestFitMediaAspectRatio(media) }}
+                >
                   {media ? (
                     media.url ? (
                       isVideo ? (
@@ -3684,8 +3827,10 @@ export default function App() {
   const [purchasePrompt, setPurchasePrompt] = useState<PurchasePromptAction | null>(null)
   const [purchasePromptBusy, setPurchasePromptBusy] = useState(false)
   const [recentCreators, setRecentCreators] = useState<CreatorCard[]>([])
+  const [fanCreatorIds, setFanCreatorIds] = useState<string[]>([])
   const [walletTopupInFlight, setWalletTopupInFlight] = useState(false)
   const [giftCheckoutInFlight, setGiftCheckoutInFlight] = useState(false)
+  const [preferredGiftCreator, setPreferredGiftCreator] = useState<CreatorCard | null>(null)
   const [paymentReturn] = useState(() => readPaymentReturnFromUrl())
   const isAuthed = Boolean(session)
   const displayName =
@@ -3940,6 +4085,10 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    setFanCreatorIds(readFanCreators())
+  }, [])
+
+  useEffect(() => {
     const consent = localStorage.getItem('cookieConsent')
     if (consent === 'accepted') setConsentAccepted(true)
     const storedTheme = localStorage.getItem('theme')
@@ -3973,14 +4122,18 @@ export default function App() {
       return
     }
 
+    const userId = session.user.id
+    const hasCachedConfirmation = hasCachedAgeConfirmation(userId)
     let isMounted = true
-    setAgeCheckComplete(false)
+    setAgeConfirmed(hasCachedConfirmation)
+    setAgeCheckComplete(hasCachedConfirmation)
     setAgeConfirming(false)
 
     ;(async () => {
       const remote = await fetchAgeConfirmation()
       if (!isMounted) return
-      setAgeConfirmed(Boolean(remote))
+      const confirmed = remote === true || hasCachedConfirmation
+      setAgeConfirmed(confirmed)
       setAgeCheckComplete(true)
     })()
 
@@ -4355,6 +4508,48 @@ export default function App() {
     setToast(`Opening ${creator.display_name}`)
   }
 
+  const handleBecomeFan = (creator: CreatorCard) => {
+    if (!session?.user?.id) {
+      setToast('Sign in to become a fan')
+      return
+    }
+    if (fanCreatorIds.includes(creator.id)) {
+      return
+    }
+    const next = [creator.id, ...fanCreatorIds.filter((id) => id !== creator.id)]
+    setFanCreatorIds(next)
+    persistFanCreators(next)
+    setToast(`You are now a fan of ${creator.display_name}.`)
+  }
+
+  const handleMessageCreator = (creator: CreatorCard, isSubscribed: boolean) => {
+    if (!session?.user?.id) {
+      setToast('Sign in to send messages')
+      return
+    }
+    if (!isSubscribed) {
+      setToast(`Subscribe to ${creator.display_name} before messaging.`)
+      return
+    }
+    setShowMobileNav(false)
+    setShowProfileMenu(false)
+    setPage('chats')
+    setToast(`Opening chats for ${creator.display_name}.`)
+  }
+
+  const handleGiftCreator = (creator: CreatorCard) => {
+    if (!session?.user?.id) {
+      setToast('Sign in to send support')
+      return
+    }
+    setPreferredGiftCreator(creator)
+    setShowMobileNav(false)
+    setShowProfileMenu(false)
+    setWalletTab('send')
+    setPage('wallet')
+    setToast(`Choose an amount to gift ${creator.display_name}.`)
+  }
+
   const navigateToPage = (
     nextPage: 'home' | 'explore' | 'chats' | 'notifications' | 'wallet' | 'settings' | 'membership'
   ) => {
@@ -4366,6 +4561,7 @@ export default function App() {
     setShowMobileNav(false)
     setShowProfileMenu(false)
     if (nextPage === 'wallet') {
+      setPreferredGiftCreator(null)
       setWalletTab('overview')
     }
     setPage(nextPage)
@@ -4483,7 +4679,9 @@ export default function App() {
             return
           }
 
+          persistAgeConfirmationCache(session.user.id)
           setAgeConfirmed(true)
+          setAgeCheckComplete(true)
           setAgeConfirming(false)
           void logAgeEvent('enter')
         }}
@@ -4906,6 +5104,7 @@ export default function App() {
             walletTopupAmount={walletTopupAmount}
             walletTopupPhone={walletTopupPhone}
             topupPending={walletTopupInFlight}
+            preferredCreator={preferredGiftCreator}
             onTopupAmountChange={setWalletTopupAmount}
             onTopupPhoneChange={setWalletTopupPhone}
             onTopup={handleWalletTopup}
@@ -4981,8 +5180,12 @@ export default function App() {
             posts={feedPosts}
             stories={storyPosts}
             activeSubscriptions={activeSubscriptions}
+            isFan={fanCreatorIds.includes(selectedCreator.id)}
             onBack={() => setPage(creatorReturnPage)}
+            onBecomeFan={handleBecomeFan}
             onSubscribe={handleSubscribe}
+            onMessageCreator={handleMessageCreator}
+            onGiftCreator={handleGiftCreator}
             onUnlockPost={handleUnlockPost}
             ppvPurchases={ppvPurchases}
           />

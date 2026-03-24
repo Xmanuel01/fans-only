@@ -1202,41 +1202,64 @@ body {
 
 .home-stories__track {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 12px;
   width: max-content;
   min-width: 100%;
 }
 
 .home-story {
-  border: none;
-  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--link-accent) 24%, var(--border));
+  background:
+    linear-gradient(180deg, rgba(20, 34, 57, 0.98), rgba(10, 18, 30, 0.98)),
+    radial-gradient(circle at top, rgba(94, 144, 255, 0.16), transparent 62%);
   color: #d9e1ec;
   display: grid;
   justify-items: center;
-  gap: 6px;
+  align-content: start;
+  gap: 10px;
   cursor: pointer;
-  min-width: 78px;
-  padding: 0;
+  min-width: 104px;
+  min-height: 136px;
+  padding: 14px 10px 12px;
   position: relative;
+  border-radius: 28px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 34px rgba(4, 10, 20, 0.22);
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.home-story:hover {
+  border-color: color-mix(in srgb, var(--link-accent) 54%, var(--border));
+  transform: translateY(-2px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 22px 38px rgba(4, 10, 20, 0.28);
 }
 
 .home-story__ring {
-  width: 68px;
-  height: 68px;
+  width: 76px;
+  aspect-ratio: 1 / 1;
   border-radius: 50%;
-  padding: 2px;
-  background: linear-gradient(135deg, #00aef0, #475a74);
+  padding: 4px;
+  background:
+    linear-gradient(145deg, #58d0ff 0%, #3778ff 42%, #87b8ff 100%);
   display: grid;
   place-items: center;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 3px rgba(11, 19, 33, 0.92),
+    0 12px 24px rgba(10, 28, 56, 0.28);
 }
 
 .home-story__ring img {
   width: 100%;
   height: 100%;
+  display: block;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid #0f1724;
+  object-position: center top;
+  border: 3px solid #0b1220;
 }
 
 .home-story__placeholder {
@@ -1253,13 +1276,18 @@ body {
 }
 
 .home-story__name {
-  font-size: 12px;
-  font-weight: 600;
-  color: #95a8bd;
-  max-width: 76px;
-  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #e6efff;
+  width: 100%;
+  max-width: 84px;
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-wrap: balance;
 }
 
 .home-feed__filters {
@@ -1299,6 +1327,8 @@ body {
   background: #0d141f;
   border-radius: 14px;
   overflow: hidden;
+  width: min(100%, 1080px);
+  margin: 0 auto;
 }
 
 .home-post__header {
@@ -1374,6 +1404,28 @@ body {
 .home-post__media-frame {
   border-top: 1px solid #1f2733;
   border-bottom: 1px solid #1f2733;
+  margin-top: 8px;
+  aspect-ratio: 3 / 4;
+  background:
+    radial-gradient(circle at top, rgba(84, 132, 241, 0.08), transparent 58%),
+    #09111b;
+  display: grid;
+  place-items: center;
+}
+
+.home-post__media-frame img,
+.home-post__media-frame video,
+.home-post-modal__media img,
+.home-post-modal__media video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: contain;
+  object-position: center center;
+  border: none;
+  border-radius: 0;
+  display: block;
+  background: #09111b;
 }
 
 .home-post__footer {
@@ -1539,6 +1591,7 @@ body {
   background: #0a0f16;
   display: grid;
   place-items: center;
+  aspect-ratio: 3 / 4;
 }
 
 .explore-section {
@@ -3342,6 +3395,19 @@ body {
   flex-wrap: wrap;
 }
 
+.creator-page__actions {
+  align-items: center;
+}
+
+.creator-page__action-button {
+  min-width: 116px;
+  justify-content: center;
+}
+
+.creator-page__action-button.is-disabled {
+  opacity: 0.72;
+}
+
 .creator-page__story-card,
 .creator-page__post-card {
   background: var(--panel);
@@ -3365,32 +3431,85 @@ body {
 }
 
 .creator-page__post-list {
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .creator-page__post-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.creator-page__post-media {
+  position: relative;
+  background:
+    radial-gradient(circle at top, rgba(84, 132, 241, 0.08), transparent 58%),
+    #09111b;
   display: grid;
-  grid-template-columns: minmax(220px, 280px) 1fr;
+  place-items: center;
+  overflow: hidden;
 }
 
 .creator-page__post-media img,
-.creator-page__post-media .media-placeholder {
+.creator-page__post-media video,
+.creator-page__post-media .media-placeholder,
+.creator-page__post-empty {
   width: 100%;
   height: 100%;
-  min-height: 220px;
-  object-fit: cover;
+  min-height: 0;
+  object-fit: contain;
+  background: #09111b;
+}
+
+.creator-page__post-media video,
+.creator-page__post-media img {
+  display: block;
+}
+
+.creator-page__post-empty {
+  display: grid;
+  place-items: center;
+  color: #d7e6ff;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.creator-page__post-media.is-locked img,
+.creator-page__post-media.is-locked video {
+  filter: blur(14px);
+  transform: scale(1.02);
+}
+
+.creator-page__post-badges {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.creator-page__post-visibility {
+  background: rgba(7, 14, 25, 0.78);
+  border-color: rgba(123, 164, 255, 0.22);
+  color: #edf4ff;
 }
 
 .creator-page__post-copy {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 18px;
+  gap: 10px;
+  padding: 14px 14px 16px;
 }
 
 .creator-page__post-top {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
@@ -3398,7 +3517,7 @@ body {
 
 .creator-page__post-top h4 {
   margin: 0;
-  font-size: 20px;
+  font-size: 17px;
 }
 
 .creator-page__post-actions {
@@ -4752,8 +4871,11 @@ body {
   .membership-history-item__status {
     justify-content: flex-start;
   }
+  .creator-page__post-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .creator-page__post-card {
-    grid-template-columns: 1fr;
+    min-width: 0;
   }
   .gift-creator--simple {
     flex-direction: column;
@@ -4798,6 +4920,9 @@ body {
   .creator-page__hero {
     flex-direction: column;
     align-items: flex-start;
+  }
+  .creator-page__post-list {
+    grid-template-columns: 1fr;
   }
   .wallet-page__header {
     flex-direction: column;

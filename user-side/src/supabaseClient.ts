@@ -10,6 +10,7 @@ export const supabase =
     : null
 
 const FALLBACK_PUBLIC_APP_ORIGIN = 'https://fans-only-olive.vercel.app'
+const AGE_CONFIRMATION_TIMEOUT_MS = 8000
 const resolveAuthRedirectOrigin = () => {
   if (env.publicAppOrigin) {
     return env.publicAppOrigin
@@ -108,6 +109,19 @@ async function describeFunctionInvokeError(error: unknown, fallback: string): Pr
   }
 
   return fallback
+}
+
+async function withTimeout<T>(
+  run: () => PromiseLike<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  return await Promise.race([
+    Promise.resolve(run()),
+    new Promise<T>((_, reject) => {
+      globalThis.setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs)
+    }),
+  ])
 }
 
 export type CreatorProfile = {
@@ -391,11 +405,21 @@ export async function fetchAgeConfirmation(): Promise<boolean | null> {
   const userId = session?.user?.id
   if (!userId) return null
 
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('age_confirmed_at')
-    .eq('id', userId)
-    .maybeSingle()
+  let data: { age_confirmed_at?: string | null } | null = null
+  let error: unknown = null
+
+  try {
+    const result = await withTimeout(
+      () => supabase.from('profiles').select('age_confirmed_at').eq('id', userId).maybeSingle(),
+      AGE_CONFIRMATION_TIMEOUT_MS,
+      'Age confirmation check'
+    )
+    data = result.data as { age_confirmed_at?: string | null } | null
+    error = result.error
+  } catch (err) {
+    console.warn('Supabase age fetch timed out', err)
+    return null
+  }
 
   if (error) {
     console.warn('Supabase age fetch failed', error)
@@ -411,15 +435,28 @@ export async function markAgeConfirmed(): Promise<boolean> {
   const userId = session?.user?.id
   if (!userId) return false
 
-  const { error } = await supabase
-    .from('profiles')
-    .upsert(
-      {
-        id: userId,
-        age_confirmed_at: new Date().toISOString(),
-      },
-      { onConflict: 'id' }
+  let error: unknown = null
+
+  try {
+    const result = await withTimeout(
+      () =>
+        supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: userId,
+              age_confirmed_at: new Date().toISOString(),
+            },
+            { onConflict: 'id' }
+          ),
+      AGE_CONFIRMATION_TIMEOUT_MS,
+      'Age confirmation update'
     )
+    error = result.error
+  } catch (err) {
+    console.warn('Supabase age confirm update timed out', err)
+    return false
+  }
 
   if (error) {
     console.warn('Supabase age confirm update failed', error)
