@@ -1176,11 +1176,12 @@ body {
 
 .home-feed-layout {
   display: grid;
-  grid-template-columns: minmax(0, 404px) minmax(420px, 1fr);
+  grid-template-columns: minmax(0, 404px) 360px;
   gap: 20px;
   align-items: start;
-  justify-content: stretch;
-  width: 100%;
+  justify-content: start;
+  width: fit-content;
+  max-width: 100%;
   margin: 0;
   min-height: 0;
 }
@@ -1192,6 +1193,8 @@ body {
   padding-right: 8px;
   padding-bottom: 24px;
   scrollbar-gutter: stable;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .home-feed-rail {
@@ -1202,7 +1205,16 @@ body {
   overflow-y: auto;
   padding-right: 0;
   padding-bottom: 24px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   scrollbar-gutter: stable;
+}
+
+.home-feed-main::-webkit-scrollbar,
+.home-feed-rail::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .home-rail-card {
