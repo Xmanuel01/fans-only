@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
-import { Menu, Shield, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import BrandLogo from "@/components/BrandLogo";
 
 const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -10,15 +11,7 @@ const Navbar = () => {
     <nav className="fixed inset-x-0 top-0 z-50 border-b border-border/60 bg-background/86 backdrop-blur-2xl">
       <div className="container mx-auto flex h-20 items-center justify-between px-4">
         <a href="/app/" className="flex items-center gap-3" aria-label="SpicyX">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 text-primary">
-            <Shield className="h-5 w-5" />
-          </span>
-          <div>
-            <div className="text-lg font-display font-bold tracking-tight text-foreground">SpicyX</div>
-            <div className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">
-              Premium creator access
-            </div>
-          </div>
+          <BrandLogo compact />
         </a>
 
         <div className="hidden items-center gap-8 lg:flex">

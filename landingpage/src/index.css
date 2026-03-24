@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lobster&family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -96,6 +96,103 @@
     @apply inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.3em] text-primary;
   }
 
+  .brand-logo {
+    @apply inline-flex flex-col;
+    line-height: 1;
+  }
+
+  .brand-logo__row {
+    @apply inline-flex items-end;
+    gap: 0.08em;
+  }
+
+  .brand-logo__word {
+    font-family: "Lobster", cursive;
+    font-size: 3rem;
+    line-height: 0.9;
+    letter-spacing: 0.01em;
+    background: linear-gradient(180deg, #fff0b8 0%, #ffc84f 26%, #ff9b1f 62%, #ff541f 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(75, 13, 0, 0.72);
+    text-shadow:
+      0 1px 0 rgba(255, 245, 202, 0.25),
+      0 4px 0 rgba(118, 18, 0, 0.34),
+      0 10px 26px rgba(255, 109, 25, 0.2);
+  }
+
+  .brand-logo__mark {
+    position: relative;
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: center;
+    min-width: 0.9em;
+    margin-left: -0.06em;
+  }
+
+  .brand-logo__mark-glow {
+    position: absolute;
+    inset: 28% 8% 6%;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(255, 122, 29, 0.35), transparent 68%);
+    filter: blur(10px);
+    pointer-events: none;
+  }
+
+  .brand-logo__flame {
+    position: absolute;
+    top: -0.16em;
+    right: -0.08em;
+    height: 0.56em;
+    width: 0.56em;
+    color: #ffb21d;
+    filter:
+      drop-shadow(0 0 6px rgba(255, 132, 20, 0.45))
+      drop-shadow(0 2px 4px rgba(0, 0, 0, 0.32));
+    transform: rotate(12deg);
+  }
+
+  .brand-logo__x {
+    position: relative;
+    z-index: 1;
+    font-family: "Lobster", cursive;
+    font-size: 3.15rem;
+    line-height: 0.82;
+    background: linear-gradient(180deg, #ffdf6b 0%, #ff8031 24%, #ff2b21 70%, #a60000 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(58, 8, 0, 0.78);
+    text-shadow:
+      0 1px 0 rgba(255, 226, 138, 0.22),
+      0 4px 0 rgba(137, 10, 0, 0.34),
+      0 10px 20px rgba(255, 74, 35, 0.25);
+  }
+
+  .brand-logo__tag {
+    margin-top: 0.18rem;
+    padding-left: 0.16rem;
+    font-size: 0.61rem;
+    line-height: 1;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: rgba(255, 214, 138, 0.72);
+  }
+
+  .brand-logo--compact .brand-logo__word {
+    font-size: 2.45rem;
+  }
+
+  .brand-logo--compact .brand-logo__x {
+    font-size: 2.6rem;
+  }
+
+  .brand-logo--compact .brand-logo__tag {
+    font-size: 0.52rem;
+    letter-spacing: 0.28em;
+  }
+
   .landing-nav-link {
     @apply text-sm font-medium text-foreground opacity-80 transition-colors duration-300 hover:text-primary hover:opacity-100;
   }
@@ -105,7 +202,7 @@
   }
 
   .landing-hero-visual {
-    @apply relative mx-auto w-full max-w-[560px];
+    @apply relative mx-auto w-full max-w-[500px];
   }
 
   .landing-hero-visual__glow {
@@ -139,10 +236,11 @@
   }
 
   .landing-hero-visual__image {
-    @apply block h-[620px] w-full object-cover object-center;
+    @apply block h-[600px] w-full object-cover;
     border-radius: 2rem;
     filter: saturate(0.96) contrast(1.04);
     box-shadow: 0 42px 110px rgba(0, 0, 0, 0.34);
+    object-position: center 18%;
   }
 
   .landing-feature-card {
@@ -240,12 +338,13 @@
 
 @media (max-width: 1024px) {
   .landing-hero-visual {
-    max-width: 500px;
+    max-width: 460px;
   }
 }
 
 @media (max-width: 768px) {
   .landing-hero-visual__image {
-    height: 460px;
+    height: 430px;
+    object-position: center 16%;
   }
 }

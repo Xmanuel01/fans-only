@@ -1,10 +1,12 @@
+import BrandLogo from "@/components/BrandLogo";
+
 const Footer = () => {
   return (
     <footer className="border-t border-border/60 bg-[#090c14] py-12">
       <div className="container mx-auto px-4">
         <div className="grid gap-10 md:grid-cols-[1.2fr_0.8fr] md:items-end">
           <div>
-            <div className="text-2xl font-display font-bold text-foreground">SpicyX</div>
+            <BrandLogo />
             <p className="mt-4 max-w-xl text-sm leading-7 text-muted-foreground">
               A premium creator-access platform designed around subscriptions, PPV unlocks, direct
               fan relationships, and Kenya-first payment flows.
