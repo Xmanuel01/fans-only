@@ -9,6 +9,9 @@ export const supabase =
     ? createClient(supabaseUrl, supabaseAnonKey)
     : null
 
+const AUTH_NETWORK_ERROR_MESSAGE =
+  'Could not reach the authentication service. Check the Supabase URL/DNS and try again.'
+
 const FALLBACK_PUBLIC_APP_ORIGIN = 'https://fans-only-olive.vercel.app'
 const AGE_CONFIRMATION_TIMEOUT_MS = 8000
 const resolveAuthRedirectOrigin = () => {
@@ -106,6 +109,73 @@ async function describeFunctionInvokeError(error: unknown, fallback: string): Pr
 
   if (response?.status && response?.statusText) {
     return `${fallback} (${response.status} ${response.statusText})`
+  }
+
+  return fallback
+}
+
+function isAuthNetworkError(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  const candidate = error as {
+    name?: string
+    message?: string
+    details?: string
+    code?: string
+  }
+
+  const text = [candidate.name, candidate.message, candidate.details, candidate.code]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLowerCase()
+
+  return (
+    text.includes('failed to fetch') ||
+    text.includes('err_name_not_resolved') ||
+    text.includes('networkerror') ||
+    text.includes('network error') ||
+    text.includes('authretryablefetcherror')
+  )
+}
+
+function clearStoredAuthSession() {
+  if (typeof window === 'undefined' || !supabaseUrl) {
+    return
+  }
+
+  let projectRef = ''
+  try {
+    projectRef = new URL(supabaseUrl).hostname.split('.')[0] ?? ''
+  } catch {
+    projectRef = ''
+  }
+
+  const keys = ['supabase.auth.token']
+  if (projectRef) {
+    keys.push(`sb-${projectRef}-auth-token`)
+  }
+
+  for (const key of keys) {
+    window.localStorage.removeItem(key)
+    window.sessionStorage.removeItem(key)
+  }
+}
+
+function formatAuthError(error: unknown, fallback: string) {
+  if (isAuthNetworkError(error)) {
+    return AUTH_NETWORK_ERROR_MESSAGE
+  }
+
+  if (error && typeof error === 'object') {
+    const candidate = error as { message?: string; details?: string }
+    if (typeof candidate.message === 'string' && candidate.message.trim()) {
+      return candidate.message.trim()
+    }
+    if (typeof candidate.details === 'string' && candidate.details.trim()) {
+      return candidate.details.trim()
+    }
   }
 
   return fallback
@@ -393,6 +463,10 @@ export async function getCurrentSession(): Promise<Session | null> {
   if (!supabase) return null
   const { data, error } = await supabase.auth.getSession()
   if (error) {
+    if (isAuthNetworkError(error)) {
+      clearStoredAuthSession()
+      return null
+    }
     console.warn('Supabase session fetch failed', error)
     return null
   }
@@ -508,7 +582,7 @@ export async function sendMagicLink(email: string) {
 export async function signInWithPassword(email: string, password: string) {
   if (!supabase) throw new Error('Supabase not configured')
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) throw error
+  if (error) throw new Error(formatAuthError(error, 'Could not sign in right now.'))
   return data
 }
 
@@ -519,7 +593,7 @@ export async function signUpWithPassword(email: string, password: string) {
     password,
     options: { emailRedirectTo: appRedirectUrl() },
   })
-  if (error) throw error
+  if (error) throw new Error(formatAuthError(error, 'Could not create account right now.'))
   return data
 }
 
@@ -537,7 +611,7 @@ export async function signInWithProvider(provider: Provider) {
     provider,
     options: { redirectTo: appRedirectUrl() },
   })
-  if (error) throw error
+  if (error) throw new Error(formatAuthError(error, 'Could not start sign-in right now.'))
 }
 
 export async function submitFeatureRequest(message: string) {

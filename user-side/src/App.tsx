@@ -408,9 +408,9 @@ function AuthPrompt({
       const data = await signInWithPassword(email, password)
       onAuthSuccess('sign_in', data?.session ?? null)
       setStatus('idle')
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      setError('Could not sign in with email and password. Check your credentials.')
+      setError(err?.message || 'Could not sign in with email and password. Check your credentials.')
       setStatus('error')
     }
   }
@@ -423,9 +423,9 @@ function AuthPrompt({
       const data = await signUpWithPassword(email, password)
       onAuthSuccess('sign_up', data?.session ?? null)
       setStatus('idle')
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      setError('Could not create account. Try a different email or password.')
+      setError(err?.message || 'Could not create account. Try a different email or password.')
       setStatus('error')
     }
   }
@@ -447,9 +447,9 @@ function AuthPrompt({
           onClick={async () => {
             try {
               await signInWithProvider('google')
-            } catch (err) {
+            } catch (err: any) {
               console.error(err)
-              setError('Google sign-in failed')
+              setError(err?.message || 'Google sign-in failed')
             }
           }}
         >
@@ -4317,7 +4317,6 @@ export default function App() {
   const [ageConfirmed, setAgeConfirmed] = useState(false)
   const [ageCheckComplete, setAgeCheckComplete] = useState(false)
   const [ageConfirming, setAgeConfirming] = useState(false)
-  const [sessionChecked, setSessionChecked] = useState(false)
   const [session, setSession] = useState<any>(null)
   const [filter, setFilter] = useState(filters[0])
   const [homeTopicFilter, setHomeTopicFilter] = useState<string | null>(null)
@@ -4509,13 +4508,11 @@ export default function App() {
 
   useEffect(() => {
     if (envStatus.hasIssues) {
-      setSessionChecked(true)
       return
     }
     ;(async () => {
       const s = await getCurrentSession()
       setSession(s)
-      setSessionChecked(true)
     })()
   }, [])
 
@@ -5197,16 +5194,6 @@ export default function App() {
     return <ConfigRequired issues={envIssues} />
   }
 
-  if (!sessionChecked) {
-    return (
-      <div className="auth-shell">
-        <div className="auth-panel single">
-          <p>Checking session...</p>
-        </div>
-      </div>
-    )
-  }
-
   if (!session) {
     return (
       <div className="auth-shell">
@@ -5214,7 +5201,6 @@ export default function App() {
           onAuthSuccess={(mode, authSession) => {
             if (authSession) {
               setSession(authSession)
-              setSessionChecked(true)
               setToast('Signed in successfully')
               return
             }
