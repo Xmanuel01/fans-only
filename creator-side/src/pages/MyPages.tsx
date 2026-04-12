@@ -99,11 +99,15 @@ type HomePost = {
 type StoryItem = {
   id: string;
   name: string;
+  handle: string;
   image: string;
   previewUrl: string;
   previewType: 'image' | 'video' | 'text';
   caption: string;
   expiresLabel: string;
+  publishedLabel: string;
+  visibilityLabel: string;
+  contentLabel: string;
   isLive?: boolean;
 };
 
@@ -420,11 +424,15 @@ const mapCreatorStoryToStoryItem = (story: CreatorContentItem): StoryItem => {
   return {
     id: String(story.id),
     name: story.creator?.display_name?.trim() || 'You',
+    handle: ensureHandle(story.creator?.handle) || '@you',
     image: story.creator?.avatar_url ?? primaryMedia?.url ?? '',
     previewUrl: primaryMedia?.url ?? '',
     previewType,
     caption: story.body?.trim() || story.title || 'Story',
     expiresLabel: formatExpiryLabel(story.expires_at),
+    publishedLabel: formatRelativeTime(story.created_at),
+    visibilityLabel: describeVisibility(story).replace('Â·', '-'),
+    contentLabel: story.content_rating.toUpperCase(),
     isLive: false,
   };
 };
@@ -986,6 +994,11 @@ export function MyHome() {
             onClick={() => setActiveStory(null)}
           />
           <div className="home-story-modal__card">
+            <div className="home-story-modal__progress" aria-hidden="true">
+              <span className="is-active" />
+              <span />
+              <span />
+            </div>
             <button
               className="home-story-modal__close"
               type="button"
@@ -994,22 +1007,60 @@ export function MyHome() {
             >
               <CloseIcon />
             </button>
-            <div className="home-story-modal__meta">
-              <div className="home-story-modal__name">{activeStory.name}</div>
-              <div className="home-story-modal__expires">{activeStory.expiresLabel}</div>
+            <div className="home-story-modal__layout">
+              <div className="home-story-modal__stage">
+                <div className="home-story-modal__meta">
+                  <div className="home-story-modal__identity">
+                    <span className="home-story-modal__avatar">
+                      {activeStory.image ? (
+                        <img src={activeStory.image} alt={activeStory.name} />
+                      ) : (
+                        <span className="home-story-modal__avatar-fallback" aria-hidden="true">
+                          {activeStory.name.charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </span>
+                    <div className="home-story-modal__title-group">
+                      <div className="home-story-modal__name-row">
+                        <div className="home-story-modal__name">{activeStory.name}</div>
+                        <span className="home-story-modal__dot" aria-hidden="true" />
+                        <div className="home-story-modal__published">{activeStory.publishedLabel}</div>
+                      </div>
+                      <div className="home-story-modal__handle">{activeStory.handle}</div>
+                    </div>
+                  </div>
+                  <div className="home-story-modal__expires">{activeStory.expiresLabel}</div>
+                </div>
+                <div className="home-story-modal__media">
+                  {activeStory.previewType === 'video' && activeStory.previewUrl ? (
+                    <video controls autoPlay muted playsInline preload="metadata">
+                      <source src={activeStory.previewUrl} />
+                    </video>
+                  ) : activeStory.previewType === 'image' && activeStory.previewUrl ? (
+                    <img src={activeStory.previewUrl} alt={activeStory.caption} />
+                  ) : (
+                    <div className="home-story-modal__text">{activeStory.caption}</div>
+                  )}
+                </div>
+              </div>
+              <aside className="home-story-modal__details">
+                <div className="home-story-modal__eyebrow">Story preview</div>
+                <h3 className="home-story-modal__details-title">{activeStory.caption}</h3>
+                <p className="home-story-modal__details-copy">
+                  Review exactly how this story appears inside your creator workspace before it
+                  expires from the rail.
+                </p>
+                <div className="home-story-modal__badges">
+                  <span>{activeStory.visibilityLabel}</span>
+                  <span>{activeStory.contentLabel}</span>
+                  <span>{activeStory.previewType === 'video' ? 'Video story' : activeStory.previewType === 'image' ? 'Photo story' : 'Text story'}</span>
+                </div>
+                <div className="home-story-modal__caption">
+                  <div className="home-story-modal__caption-label">Caption</div>
+                  <p>{activeStory.caption}</p>
+                </div>
+              </aside>
             </div>
-            <div className="home-story-modal__media">
-              {activeStory.previewType === 'video' && activeStory.previewUrl ? (
-                <video controls autoPlay muted playsInline preload="metadata">
-                  <source src={activeStory.previewUrl} />
-                </video>
-              ) : activeStory.previewType === 'image' && activeStory.previewUrl ? (
-                <img src={activeStory.previewUrl} alt={activeStory.caption} />
-              ) : (
-                <div className="home-story-modal__text">{activeStory.caption}</div>
-              )}
-            </div>
-            <div className="home-story-modal__caption">{activeStory.caption}</div>
           </div>
         </div>
       ) : null}

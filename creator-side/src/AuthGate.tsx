@@ -221,7 +221,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <div className="auth-loading-shell" aria-live="polite" aria-busy="true">
         <div className="auth-loading-spinner" />
-        <div className="auth-loading-copy">Checking account...</div>
       </div>
     );
   }
