@@ -5104,31 +5104,18 @@ button,
   align-self: start;
   position: sticky;
   top: 0;
-  max-height: calc(100vh - 168px);
+  max-height: calc(100vh - 136px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 6px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(88, 132, 194, 0.68) rgba(9, 14, 22, 0.22);
+  padding-right: 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .create-post__side::-webkit-scrollbar {
-  width: 8px;
-}
-
-.create-post__side::-webkit-scrollbar-track {
-  background: rgba(9, 14, 22, 0.22);
-  border-radius: 999px;
-}
-
-.create-post__side::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(88, 132, 194, 0.78), rgba(54, 90, 142, 0.82));
-  border-radius: 999px;
-  border: 1px solid rgba(14, 22, 36, 0.72);
-}
-
-.create-post__side::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(110, 156, 222, 0.88), rgba(66, 108, 168, 0.92));
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .create-post__panel {
