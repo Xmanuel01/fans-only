@@ -5103,11 +5103,13 @@ button,
   gap: 16px;
   align-self: start;
   position: sticky;
-  top: 0;
-  max-height: calc(100vh - 136px);
+  top: 8px;
+  min-height: 0;
+  max-height: calc(100vh - 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 2px;
+  padding-right: 4px;
+  padding-bottom: 28px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
