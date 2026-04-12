@@ -329,6 +329,75 @@ export type FeedPost = {
   media: FeedMedia[]
 }
 
+function mapRowMediaAssets(row: any, signedMap: Map<string, string>): FeedMedia[] {
+  const uniqueMedia = new Map<number, FeedMedia>()
+
+  for (const asset of row.media_assets ?? []) {
+    const assetId = Number(asset?.id)
+    if (!Number.isFinite(assetId)) continue
+
+    const storagePath = typeof asset.storage_path === 'string' ? asset.storage_path : ''
+    uniqueMedia.set(assetId, {
+      id: assetId,
+      url: storagePath ? signedMap.get(storagePath) ?? '' : '',
+      mime_type: asset.mime_type ?? null,
+      width: asset.width ?? null,
+      height: asset.height ?? null,
+    })
+  }
+
+  return Array.from(uniqueMedia.values())
+}
+
+function mapFeedRows(rows: any[], signedMap: Map<string, string>): FeedPost[] {
+  const postsById = new Map<number, FeedPost>()
+
+  for (const row of rows) {
+    const postId = Number(row?.id)
+    if (!Number.isFinite(postId)) continue
+
+    const mappedMedia = mapRowMediaAssets(row, signedMap)
+    const existing = postsById.get(postId)
+
+    if (!existing) {
+      postsById.set(postId, {
+        id: postId,
+        title: row.title,
+        body: row.body,
+        visibility: row.visibility,
+        price_cents: row.price_cents,
+        currency: row.currency,
+        content_rating: row.content_rating,
+        post_type: row.post_type,
+        expires_at: row.expires_at,
+        created_at: row.created_at,
+        creator: {
+          id: row.creator?.id,
+          handle: row.creator?.handle,
+          display_name: row.creator?.display_name,
+          avatar_url: row.creator?.avatar_url,
+          category: row.creator?.category ?? null,
+          categories: Array.isArray(row.creator?.categories)
+            ? row.creator.categories.filter((item: unknown): item is string => typeof item === 'string')
+            : null,
+          subscription_price_cents: row.creator?.subscription_price_cents ?? null,
+          subscription_currency: row.creator?.subscription_currency ?? null,
+        },
+        media: mappedMedia,
+      })
+      continue
+    }
+
+    const mediaById = new Map(existing.media.map((media) => [media.id, media]))
+    for (const media of mappedMedia) {
+      mediaById.set(media.id, media)
+    }
+    existing.media = Array.from(mediaById.values())
+  }
+
+  return Array.from(postsById.values())
+}
+
 export type ChatThreadSummary = {
   thread_id: string
   creator_id: string
@@ -1172,40 +1241,7 @@ export async function fetchFeedPosts(limit = 20): Promise<FeedPost[]> {
     }
   }
 
-  return rows.map((row) => ({
-    id: row.id,
-    title: row.title,
-    body: row.body,
-    visibility: row.visibility,
-    price_cents: row.price_cents,
-    currency: row.currency,
-    content_rating: row.content_rating,
-    post_type: row.post_type,
-    expires_at: row.expires_at,
-    created_at: row.created_at,
-    creator: {
-      id: row.creator?.id,
-      handle: row.creator?.handle,
-      display_name: row.creator?.display_name,
-      avatar_url: row.creator?.avatar_url,
-      category: row.creator?.category ?? null,
-      categories: Array.isArray(row.creator?.categories)
-        ? row.creator.categories.filter((item: unknown): item is string => typeof item === 'string')
-        : null,
-      subscription_price_cents: row.creator?.subscription_price_cents ?? null,
-      subscription_currency: row.creator?.subscription_currency ?? null,
-    },
-    media: (row.media_assets ?? []).map((asset: any) => {
-      const storagePath = typeof asset.storage_path === 'string' ? asset.storage_path : ''
-      return {
-        id: asset.id,
-        url: storagePath ? signedMap.get(storagePath) ?? '' : '',
-        mime_type: asset.mime_type ?? null,
-        width: asset.width ?? null,
-        height: asset.height ?? null,
-      }
-    }),
-  })) as FeedPost[]
+  return mapFeedRows(rows, signedMap)
 }
 
 export async function fetchStories(limit = 10): Promise<FeedPost[]> {
@@ -1263,40 +1299,7 @@ export async function fetchStories(limit = 10): Promise<FeedPost[]> {
     }
   }
 
-  return rows.map((row) => ({
-    id: row.id,
-    title: row.title,
-    body: row.body,
-    visibility: row.visibility,
-    price_cents: row.price_cents,
-    currency: row.currency,
-    content_rating: row.content_rating,
-    post_type: row.post_type,
-    expires_at: row.expires_at,
-    created_at: row.created_at,
-    creator: {
-      id: row.creator?.id,
-      handle: row.creator?.handle,
-      display_name: row.creator?.display_name,
-      avatar_url: row.creator?.avatar_url,
-      category: row.creator?.category ?? null,
-      categories: Array.isArray(row.creator?.categories)
-        ? row.creator.categories.filter((item: unknown): item is string => typeof item === 'string')
-        : null,
-      subscription_price_cents: row.creator?.subscription_price_cents ?? null,
-      subscription_currency: row.creator?.subscription_currency ?? null,
-    },
-    media: (row.media_assets ?? []).map((asset: any) => {
-      const storagePath = typeof asset.storage_path === 'string' ? asset.storage_path : ''
-      return {
-        id: asset.id,
-        url: storagePath ? signedMap.get(storagePath) ?? '' : '',
-        mime_type: asset.mime_type ?? null,
-        width: asset.width ?? null,
-        height: asset.height ?? null,
-      }
-    }),
-  })) as FeedPost[]
+  return mapFeedRows(rows, signedMap)
 }
 
 export async function fetchChatThreads(): Promise<ChatThreadSummary[]> {
