@@ -12,7 +12,7 @@ import {
 import { env, envStatus, isSupabaseConfigured } from './env';
 import './auth.css';
 
-type GateState = 'loading' | 'unauthenticated' | 'ready' | 'misconfigured';
+type GateState = 'unauthenticated' | 'ready' | 'misconfigured';
 type OnboardingStep =
   | 'post-signup-intro'
   | 'post-signup-referrals'
@@ -100,7 +100,12 @@ const POST_SIGNUP_STEPS: ReadonlyArray<OnboardingStep> = [
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  const [state, setState] = useState<GateState | OnboardingStep>('loading');
+  const [state, setState] = useState<GateState | OnboardingStep>(() => {
+    if (envStatus.hasIssues || !isSupabaseConfigured || !supabase) {
+      return 'misconfigured';
+    }
+    return 'unauthenticated';
+  });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -215,14 +220,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     } else {
       setState('ready');
     }
-  }
-
-  if (state === 'loading') {
-    return (
-      <div className="auth-loading-shell" aria-live="polite" aria-busy="true">
-        <div className="auth-loading-spinner" />
-      </div>
-    );
   }
 
   if (state === 'misconfigured') {

@@ -112,6 +112,7 @@ type StoryItem = {
 };
 
 const CREATOR_DRAFT_STORAGE_KEY = 'creator-post-draft-v1';
+const CREATOR_PROFILE_CACHE_KEY = 'creator-profile-cache-v1';
 
 const ensureHandle = (value: string | null | undefined) => {
   if (!value) return '';
@@ -133,6 +134,13 @@ const formatRelativeTime = (value: string) => {
   if (diffDays < 7) return `${diffDays}d ago`;
 
   return new Date(value).toLocaleDateString();
+};
+
+type CreatorNavProfile = {
+  name: string;
+  handle: string;
+  avatar: string;
+  meta: null | { fans: string; followers: string };
 };
 
 const formatMinorCurrency = (amountMinor?: number | null, currency?: string | null) => {
@@ -3145,7 +3153,9 @@ export function MyPaymentsAddCard() {
 
 export function PostsCreate() {
   const navigate = useNavigate();
-  const [composerProfile, setComposerProfile] = useState(NAV_PROFILE);
+  const [composerProfile, setComposerProfile] = useState<CreatorNavProfile>(() =>
+    readCachedCreatorProfile()
+  );
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [isPaid, setIsPaid] = useState(false);
@@ -3198,13 +3208,17 @@ export function PostsCreate() {
           return;
         }
 
-        setComposerProfile((prev) => ({
-          ...prev,
-          name: profile.name || prev.name,
-          handle: profile.handle,
-          avatar: profile.avatar_url ?? '',
-          meta: prev.meta,
-        }));
+        setComposerProfile((prev) => {
+          const next = {
+            ...prev,
+            name: profile.name || prev.name,
+            handle: profile.handle,
+            avatar: profile.avatar_url ?? '',
+            meta: prev.meta,
+          };
+          persistCachedCreatorProfile(next);
+          return next;
+        });
       } catch (error) {
         console.error('Could not load composer profile', error);
       }
@@ -4148,6 +4162,62 @@ const NAV_PROFILE = {
   meta: null as null | { fans: string; followers: string },
 };
 
+const readCachedCreatorProfile = (): CreatorNavProfile => {
+  if (typeof window === 'undefined') {
+    return NAV_PROFILE;
+  }
+
+  const runtimeWindow = window as typeof window & {
+    __creatorProfileCache?: Partial<CreatorNavProfile>;
+  };
+
+  const normalize = (value: Partial<CreatorNavProfile> | null | undefined): CreatorNavProfile => ({
+    ...NAV_PROFILE,
+    ...(value ?? {}),
+    name:
+      typeof value?.name === 'string' && value.name.trim().length > 0
+        ? value.name.trim()
+        : NAV_PROFILE.name,
+    handle: typeof value?.handle === 'string' ? value.handle : NAV_PROFILE.handle,
+    avatar: typeof value?.avatar === 'string' ? value.avatar : NAV_PROFILE.avatar,
+    meta: value?.meta ?? NAV_PROFILE.meta,
+  });
+
+  if (runtimeWindow.__creatorProfileCache) {
+    return normalize(runtimeWindow.__creatorProfileCache);
+  }
+
+  try {
+    const raw = window.localStorage.getItem(CREATOR_PROFILE_CACHE_KEY);
+    if (!raw) {
+      return NAV_PROFILE;
+    }
+    const parsed = JSON.parse(raw) as Partial<CreatorNavProfile>;
+    const next = normalize(parsed);
+    runtimeWindow.__creatorProfileCache = next;
+    return next;
+  } catch {
+    return NAV_PROFILE;
+  }
+};
+
+const persistCachedCreatorProfile = (profile: CreatorNavProfile) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const runtimeWindow = window as typeof window & {
+    __creatorProfileCache?: CreatorNavProfile;
+  };
+  runtimeWindow.__creatorProfileCache = profile;
+
+  try {
+    window.localStorage.setItem(CREATOR_PROFILE_CACHE_KEY, JSON.stringify(profile));
+  } catch {
+    // Ignore storage write failures and keep the in-memory cache.
+  }
+};
+
 function MyLayout({
   title,
   subtitle,
@@ -4159,7 +4229,9 @@ function MyLayout({
   contentClassName,
   children,
 }: MyLayoutProps) {
-  const [navProfile, setNavProfile] = useState(NAV_PROFILE);
+  const [navProfile, setNavProfile] = useState<CreatorNavProfile>(() =>
+    readCachedCreatorProfile()
+  );
   const [isNavPanelOpen, setIsNavPanelOpen] = useState(false);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [navBalanceLabel, setNavBalanceLabel] = useState('KES 0');
@@ -4185,13 +4257,17 @@ function MyLayout({
           return;
         }
 
-        setNavProfile((prev) => ({
-          ...prev,
-          name: profile.name || prev.name,
-          handle: profile.handle,
-          avatar: profile.avatar_url ?? '',
-          meta: prev.meta,
-        }));
+        setNavProfile((prev) => {
+          const next = {
+            ...prev,
+            name: profile.name || prev.name,
+            handle: profile.handle,
+            avatar: profile.avatar_url ?? '',
+            meta: prev.meta,
+          };
+          persistCachedCreatorProfile(next);
+          return next;
+        });
       } catch (error) {
         console.error('Could not load creator nav profile', error);
       }
