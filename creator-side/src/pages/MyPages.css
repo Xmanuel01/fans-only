@@ -36,6 +36,29 @@ body.of-my-body a {
   flex-direction: column;
   gap: 12px;
   color: #e8edf5;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(88, 132, 194, 0.68) rgba(9, 14, 22, 0.22);
+}
+
+.my-nav::-webkit-scrollbar {
+  width: 8px;
+}
+
+.my-nav::-webkit-scrollbar-track {
+  background: rgba(9, 14, 22, 0.22);
+  border-radius: 999px;
+}
+
+.my-nav::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(88, 132, 194, 0.78), rgba(54, 90, 142, 0.82));
+  border-radius: 999px;
+  border: 1px solid rgba(14, 22, 36, 0.72);
+}
+
+.my-nav::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(110, 156, 222, 0.88), rgba(66, 108, 168, 0.92));
 }
 
 .my-nav-backdrop,
