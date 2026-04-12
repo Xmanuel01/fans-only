@@ -5137,16 +5137,6 @@ button,
   color: #526170;
 }
 
-.create-post__status-note {
-  border: 1px solid #1f2733;
-  border-radius: 12px;
-  background: #0f1724;
-  padding: 12px 14px;
-  color: #9db0c6;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
 .create-post__toggle-title {
   font-weight: 600;
   font-size: 13px;

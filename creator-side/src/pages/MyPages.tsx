@@ -453,6 +453,10 @@ type CreatorPostDraft = {
   storyDurationHours: string;
   isPaid: boolean;
   price: string;
+  isScheduled: boolean;
+  scheduleAt: string;
+  pollEnabled: boolean;
+  pollOptions: string[];
 };
 
 const DEFAULT_CREATOR_DRAFT: CreatorPostDraft = {
@@ -463,6 +467,10 @@ const DEFAULT_CREATOR_DRAFT: CreatorPostDraft = {
   storyDurationHours: '24',
   isPaid: false,
   price: '',
+  isScheduled: false,
+  scheduleAt: '',
+  pollEnabled: false,
+  pollOptions: ['', ''],
 };
 
 const readCreatorDraft = (): CreatorPostDraft | null => {
@@ -481,6 +489,12 @@ const readCreatorDraft = (): CreatorPostDraft | null => {
       storyDurationHours: parsed.storyDurationHours ?? DEFAULT_CREATOR_DRAFT.storyDurationHours,
       isPaid: Boolean(parsed.isPaid),
       price: typeof parsed.price === 'string' ? parsed.price : '',
+      isScheduled: Boolean(parsed.isScheduled),
+      scheduleAt: typeof parsed.scheduleAt === 'string' ? parsed.scheduleAt : '',
+      pollEnabled: Boolean(parsed.pollEnabled),
+      pollOptions: Array.isArray(parsed.pollOptions)
+        ? parsed.pollOptions.filter((option): option is string => typeof option === 'string').slice(0, 6)
+        : DEFAULT_CREATOR_DRAFT.pollOptions,
       content: typeof parsed.content === 'string' ? parsed.content : '',
     };
   } catch (error) {
@@ -3164,6 +3178,10 @@ export function PostsCreate() {
   const [postType, setPostType] = useState<'post' | 'story'>('post');
   const [contentRating, setContentRating] = useState<'sfw' | 'nsfw'>('sfw');
   const [storyDurationHours, setStoryDurationHours] = useState('24');
+  const [isScheduled, setIsScheduled] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState('');
+  const [pollEnabled, setPollEnabled] = useState(false);
+  const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
   const [notice, setNotice] = useState('');
   const [publishing, setPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -3171,6 +3189,7 @@ export function PostsCreate() {
 
   const remaining = 1000 - content.length;
   const hasContent = content.trim().length > 0 || attachments.length > 0;
+  const validPollOptions = pollOptions.map((option) => option.trim()).filter(Boolean);
   const hasDraftData =
     content.trim().length > 0 ||
     attachments.length > 0 ||
@@ -3179,7 +3198,11 @@ export function PostsCreate() {
     audience !== DEFAULT_CREATOR_DRAFT.audience ||
     postType !== DEFAULT_CREATOR_DRAFT.postType ||
     contentRating !== DEFAULT_CREATOR_DRAFT.contentRating ||
-    storyDurationHours !== DEFAULT_CREATOR_DRAFT.storyDurationHours;
+    storyDurationHours !== DEFAULT_CREATOR_DRAFT.storyDurationHours ||
+    isScheduled ||
+    scheduleAt.trim().length > 0 ||
+    pollEnabled ||
+    validPollOptions.some((option) => option.length > 0);
   const canPublish = hasContent && (!isPaid || price.trim().length > 0) && !publishing;
   const creatorDisplayName = composerProfile.name || 'Creator';
 
@@ -3196,7 +3219,22 @@ export function PostsCreate() {
     setStoryDurationHours(restored.storyDurationHours);
     setIsPaid(restored.isPaid);
     setPrice(restored.price);
+    setIsScheduled(restored.isScheduled);
+    setScheduleAt(restored.scheduleAt);
+    setPollEnabled(restored.pollEnabled);
+    setPollOptions(restored.pollOptions.length >= 2 ? restored.pollOptions : ['', '']);
   }, []);
+
+  useEffect(() => {
+    if (postType !== 'story') {
+      return;
+    }
+
+    setIsScheduled(false);
+    setScheduleAt('');
+    setPollEnabled(false);
+    setPollOptions(['', '']);
+  }, [postType]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3274,6 +3312,10 @@ export function PostsCreate() {
     setPostType(DEFAULT_CREATOR_DRAFT.postType);
     setContentRating(DEFAULT_CREATOR_DRAFT.contentRating);
     setStoryDurationHours(DEFAULT_CREATOR_DRAFT.storyDurationHours);
+    setIsScheduled(DEFAULT_CREATOR_DRAFT.isScheduled);
+    setScheduleAt(DEFAULT_CREATOR_DRAFT.scheduleAt);
+    setPollEnabled(DEFAULT_CREATOR_DRAFT.pollEnabled);
+    setPollOptions(DEFAULT_CREATOR_DRAFT.pollOptions);
     clearCreatorDraft();
   };
 
@@ -3292,6 +3334,10 @@ export function PostsCreate() {
       storyDurationHours,
       isPaid,
       price,
+      isScheduled,
+      scheduleAt,
+      pollEnabled,
+      pollOptions,
     };
 
     if (
@@ -3301,7 +3347,11 @@ export function PostsCreate() {
       audience !== DEFAULT_CREATOR_DRAFT.audience ||
       postType !== DEFAULT_CREATOR_DRAFT.postType ||
       contentRating !== DEFAULT_CREATOR_DRAFT.contentRating ||
-      storyDurationHours !== DEFAULT_CREATOR_DRAFT.storyDurationHours
+      storyDurationHours !== DEFAULT_CREATOR_DRAFT.storyDurationHours ||
+      isScheduled ||
+      scheduleAt.trim().length > 0 ||
+      pollEnabled ||
+      validPollOptions.some((option) => option.length > 0)
     ) {
       writeCreatorDraft(draftPayload);
     } else {
@@ -3330,6 +3380,29 @@ export function PostsCreate() {
     const durationHours = Math.round(Number(storyDurationHours) || 24);
     if (postType === 'story' && (!Number.isFinite(durationHours) || durationHours < 1 || durationHours > 72)) {
       showNotice('Story duration must be between 1 and 72 hours.');
+      return;
+    }
+    if (pollEnabled && validPollOptions.length < 2) {
+      showNotice('Add at least two poll options.');
+      return;
+    }
+    if (isScheduled) {
+      if (!scheduleAt) {
+        showNotice('Choose when the post should go live.');
+        return;
+      }
+
+      const scheduledAt = new Date(scheduleAt).getTime();
+      if (!Number.isFinite(scheduledAt) || scheduledAt <= Date.now()) {
+        showNotice('Pick a future publish time.');
+        return;
+      }
+
+      showNotice('Scheduling is back in the editor. Connect backend scheduling before publishing it live.');
+      return;
+    }
+    if (pollEnabled) {
+      showNotice('Poll builder restored. Connect poll storage before publishing it live.');
       return;
     }
 
@@ -3375,6 +3448,34 @@ export function PostsCreate() {
       }
       return next;
     });
+  };
+
+  const toggleSchedule = () => {
+    setIsScheduled((prev) => {
+      const next = !prev;
+      if (!next) {
+        setScheduleAt('');
+      }
+      return next;
+    });
+  };
+
+  const togglePoll = () => {
+    setPollEnabled((prev) => {
+      const next = !prev;
+      if (!next) {
+        setPollOptions(['', '']);
+      }
+      return next;
+    });
+  };
+
+  const updatePollOption = (index: number, value: string) => {
+    setPollOptions((prev) => prev.map((item, itemIndex) => (itemIndex === index ? value : item)));
+  };
+
+  const addPollOption = () => {
+    setPollOptions((prev) => [...prev, ''].slice(0, 6));
   };
 
   return (
@@ -3465,10 +3566,41 @@ export function PostsCreate() {
                 <CameraMiniIcon />
                 Add media
               </button>
+              {postType === 'post' ? (
+                <button
+                  className={`create-post__tool${pollEnabled ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={togglePoll}
+                >
+                  <PollIcon />
+                  Poll
+                </button>
+              ) : null}
               <span className={`create-post__count${remaining < 50 ? ' is-low' : ''}`}>
                 {remaining}
               </span>
             </div>
+
+            {pollEnabled ? (
+              <div className="create-post__poll">
+                <div className="create-post__poll-title">Poll options</div>
+                {pollOptions.map((option, index) => (
+                  <input
+                    key={`poll-${index}`}
+                    className="my-input"
+                    placeholder={`Option ${index + 1}`}
+                    value={option}
+                    onChange={(event) => updatePollOption(index, event.target.value)}
+                  />
+                ))}
+                {pollOptions.length < 6 ? (
+                  <button className="create-post__link" type="button" onClick={addPollOption}>
+                    <PlusIcon />
+                    Add another option
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="create-post__attachments">
               {attachments.length ? (
@@ -3576,13 +3708,36 @@ export function PostsCreate() {
                 </label>
               ) : null}
 
-              <div className="my-divider" />
+              {postType === 'post' ? (
+                <>
+                  <div className="my-divider" />
 
-              <div className="create-post__status-note">
-                {postType === 'story'
-                  ? 'Stories publish immediately and expire automatically after the selected duration.'
-                  : 'Posts publish immediately. Scheduling and polls are disabled until the backend workflow is ready.'}
-              </div>
+                  <div className="my-toggle">
+                    <div>
+                      <div className="create-post__toggle-title">Schedule post</div>
+                      <div className="my-muted">Pick a time for this post to go live.</div>
+                    </div>
+                    <button
+                      className={`my-toggle__switch${isScheduled ? ' is-on' : ''}`}
+                      type="button"
+                      aria-pressed={isScheduled}
+                      onClick={toggleSchedule}
+                    />
+                  </div>
+
+                  {isScheduled ? (
+                    <label className="create-post__field">
+                      <span>Publish at</span>
+                      <input
+                        className="my-input"
+                        type="datetime-local"
+                        value={scheduleAt}
+                        onChange={(event) => setScheduleAt(event.target.value)}
+                      />
+                    </label>
+                  ) : null}
+                </>
+              ) : null}
             </div>
 
             <div className="my-card create-post__summary">
@@ -3613,6 +3768,18 @@ export function PostsCreate() {
                 <span>Content rating</span>
                 <strong>{contentRating.toUpperCase()}</strong>
               </div>
+              {pollEnabled ? (
+                <div className="create-post__summary-row">
+                  <span>Poll options</span>
+                  <strong>{validPollOptions.length}</strong>
+                </div>
+              ) : null}
+              {isScheduled ? (
+                <div className="create-post__summary-row">
+                  <span>Scheduled</span>
+                  <strong>{scheduleAt || 'Pick a time'}</strong>
+                </div>
+              ) : null}
             </div>
           </aside>
         </div>
@@ -4605,6 +4772,19 @@ function SearchIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="11" cy="11" r="6" />
       <path d="M16 16l5 5" />
+    </svg>
+  );
+}
+
+function PollIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 7h12" />
+      <path d="M6 12h8" />
+      <path d="M6 17h10" />
+      <circle cx="4" cy="7" r="1" />
+      <circle cx="4" cy="12" r="1" />
+      <circle cx="4" cy="17" r="1" />
     </svg>
   );
 }
