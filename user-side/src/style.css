@@ -4148,12 +4148,20 @@ body {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .creator-page__post-visibility {
   background: rgba(7, 14, 25, 0.78);
   border-color: rgba(123, 164, 255, 0.22);
   color: #edf4ff;
+}
+
+.creator-page__post-stack-indicator {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .creator-page__post-copy {

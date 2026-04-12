@@ -16,6 +16,7 @@ import {
   FiChevronRight,
   FiChevronLeft,
   FiChevronDown,
+  FiCopy,
   FiX,
 } from 'react-icons/fi'
 import {
@@ -2986,6 +2987,7 @@ function CreatorPage({
   const creatorStories = stories.filter((story) => story.creator.id === creator.id)
   const isSubscribed = activeSubscriptions.includes(creator.id)
   const ppvPurchaseSet = new Set(ppvPurchases)
+  const [creatorPostMediaIndexById, setCreatorPostMediaIndexById] = useState<Record<number, number>>({})
 
   return (
     <div className="creator-page">
@@ -3085,21 +3087,26 @@ function CreatorPage({
               const isLocked =
                 (post.visibility === 'subscribers' && !isSubscribed) ||
                 (post.visibility === 'ppv' && !ppvPurchaseSet.has(post.id))
-              const primaryMedia = post.media[0] ?? null
-              const primaryIsVideo = Boolean(primaryMedia?.mime_type?.startsWith('video'))
+              const mediaCount = post.media.length
+              const mediaIndex = Math.max(
+                0,
+                Math.min(creatorPostMediaIndexById[post.id] ?? 0, Math.max(mediaCount - 1, 0))
+              )
+              const activeMedia = post.media[mediaIndex] ?? null
+              const activeIsVideo = Boolean(activeMedia?.mime_type?.startsWith('video'))
               return (
                 <article key={post.id} className="creator-page__post-card">
                   <div
                     className={`creator-page__post-media${isLocked ? ' is-locked' : ''}`}
-                    style={{ aspectRatio: getBestFitMediaAspectRatio(primaryMedia) }}
+                    style={{ aspectRatio: getBestFitMediaAspectRatio(activeMedia) }}
                   >
-                    {primaryMedia?.url ? (
-                      primaryIsVideo ? (
+                    {activeMedia?.url ? (
+                      activeIsVideo ? (
                         <video muted playsInline preload="metadata">
-                          <source src={primaryMedia.url} type={primaryMedia.mime_type ?? 'video/mp4'} />
+                          <source src={activeMedia.url} type={activeMedia.mime_type ?? 'video/mp4'} />
                         </video>
                       ) : (
-                        <img src={primaryMedia.url} alt={post.title} />
+                        <img src={activeMedia.url} alt={post.title} />
                       )
                     ) : (
                       <div className="creator-page__post-empty">Text</div>
@@ -3112,10 +3119,49 @@ function CreatorPage({
                             ? 'Subscribers'
                             : 'Public'}
                       </span>
-                      {primaryIsVideo ? (
+                      {activeIsVideo ? (
                         <span className="pill ghost creator-page__post-visibility">Video</span>
                       ) : null}
+                      {mediaCount > 1 ? (
+                        <span className="pill ghost creator-page__post-visibility creator-page__post-stack-indicator">
+                          <FiCopy size={13} />
+                          {mediaCount} media
+                        </span>
+                      ) : null}
                     </div>
+                    {mediaCount > 1 ? (
+                      <>
+                        <button
+                          className="media-nav media-nav--prev"
+                          type="button"
+                          aria-label="Previous post media"
+                          onClick={() =>
+                            setCreatorPostMediaIndexById((prev) => ({
+                              ...prev,
+                              [post.id]: (mediaIndex - 1 + mediaCount) % mediaCount,
+                            }))
+                          }
+                        >
+                          <FiChevronLeft />
+                        </button>
+                        <button
+                          className="media-nav media-nav--next"
+                          type="button"
+                          aria-label="Next post media"
+                          onClick={() =>
+                            setCreatorPostMediaIndexById((prev) => ({
+                              ...prev,
+                              [post.id]: (mediaIndex + 1) % mediaCount,
+                            }))
+                          }
+                        >
+                          <FiChevronRight />
+                        </button>
+                        <div className="media-count">
+                          {mediaIndex + 1}/{mediaCount}
+                        </div>
+                      </>
+                    ) : null}
                   </div>
                   <div className="creator-page__post-copy">
                     <div className="creator-page__post-top">
