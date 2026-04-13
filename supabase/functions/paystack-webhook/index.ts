@@ -58,6 +58,10 @@ serve(async (req) => {
     return json({ error }, status);
   };
 
+  const logNonCritical = (label: string, error: unknown) => {
+    console.error(`Non-critical Paystack webhook follow-up failed: ${label}`, error);
+  };
+
   if (eventType === "charge.success") {
     const reference: string | undefined = data.reference;
     if (!reference) return json({ error: "Missing reference" }, 400);
@@ -122,6 +126,9 @@ serve(async (req) => {
     }
 
     const priorStatus = resolvedPayment.status;
+    if (priorStatus === "succeeded") {
+      return json({ ok: true, already_processed: true });
+    }
 
     if (resolvedPayment.type === "wallet_topup") {
       if (!resolvedPayment.user_id) {
@@ -222,7 +229,7 @@ serve(async (req) => {
         },
         p_pref_key: "payments",
       });
-      if (notifyErr) return await fail("Wallet notification failed");
+      if (notifyErr) logNonCritical("wallet_topup_succeeded notification", notifyErr);
     }
     return json({ ok: true });
   }

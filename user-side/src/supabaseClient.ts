@@ -692,6 +692,28 @@ export async function submitFeatureRequest(message: string) {
   return data
 }
 
+const PAYSTACK_CHECKOUT_TYPES = new Set<string>(['tip', 'wallet_topup'])
+
+function assertKesCurrency(currency?: string) {
+  const normalized = (currency ?? 'KES').toUpperCase()
+  if (normalized !== 'KES') {
+    throw new Error('KES is the only supported payment currency in this launch flow.')
+  }
+  return normalized
+}
+
+function assertPositiveAmount(amountMajor: number) {
+  if (!Number.isFinite(amountMajor) || amountMajor <= 0) {
+    throw new Error('Enter a valid amount.')
+  }
+}
+
+function assertCheckoutEmail(email: string) {
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
+    throw new Error('Enter a valid email address.')
+  }
+}
+
 export async function initiatePaystackPayment({
   email,
   creatorId,
@@ -714,13 +736,29 @@ export async function initiatePaystackPayment({
   callbackUrl?: string
 }) {
   if (!supabase) throw new Error('Supabase not configured')
+  assertCheckoutEmail(email)
+  assertPositiveAmount(amountMajor)
+  const normalizedCurrency = assertKesCurrency(currency)
+  if (!PAYSTACK_CHECKOUT_TYPES.has(type)) {
+    throw new Error(
+      type === 'subscription'
+        ? 'Direct subscription checkout is disabled. Top up your wallet and subscribe from wallet balance.'
+        : 'Direct PPV checkout is disabled. Unlock PPV content from wallet balance.'
+    )
+  }
+  if (type === 'wallet_topup' && (creatorId || postId)) {
+    throw new Error('Wallet top ups cannot target a creator or post.')
+  }
+  if (type === 'tip' && !creatorId) {
+    throw new Error('Choose a creator before starting a tip payment.')
+  }
   const { data, error } = await supabase.functions.invoke('paystack-init', {
     body: {
       email,
       creator_id: creatorId,
       post_id: postId,
       amountMajor,
-      currency,
+      currency: normalizedCurrency,
       type,
       metadata,
       channels,
@@ -741,6 +779,7 @@ export async function initiateMpesaStkPush({
   amountMajor: number
 }): Promise<{ checkoutRequestId?: string; merchantRequestId?: string; customerMessage?: string }> {
   if (!supabase) throw new Error('Supabase not configured')
+  assertPositiveAmount(amountMajor)
   const { data, error } = await supabase.functions.invoke('mpesa-stk-init', {
     body: { phone, amountMajor },
   })

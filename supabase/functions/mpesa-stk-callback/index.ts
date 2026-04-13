@@ -58,6 +58,10 @@ serve(async (req) => {
     return json({ error }, status);
   };
 
+  const logNonCritical = (label: string, error: unknown) => {
+    console.error(`Non-critical M-PESA callback follow-up failed: ${label}`, error);
+  };
+
   const metadataItems = stk.CallbackMetadata?.Item ?? [];
   const lookup = (name: string) =>
     metadataItems.find((item: any) => item.Name === name)?.Value ?? null;
@@ -80,6 +84,10 @@ serve(async (req) => {
   const amountMinor = Math.round(Number.isFinite(amountMajor) ? amountMajor * 100 : 0);
   const succeeded = resultCode === 0;
   const priorStatus = payment.status;
+
+  if (succeeded && priorStatus === "succeeded") {
+    return json({ ok: true, already_processed: true });
+  }
 
   if (succeeded) {
     const creditAmount = amountMinor > 0 ? amountMinor : payment.amount_cents;
@@ -115,10 +123,6 @@ serve(async (req) => {
 
   if (succeeded) {
     const creditAmount = amountMinor > 0 ? amountMinor : payment.amount_cents;
-    if (priorStatus === "succeeded") {
-      return json({ ok: true, already_processed: true });
-    }
-
     const { error: notifyErr } = await supabase.rpc("create_notification_if_enabled", {
       p_user_id: payment.user_id,
       p_type: "wallet_topup_succeeded",
@@ -130,7 +134,7 @@ serve(async (req) => {
       },
       p_pref_key: "payments",
     });
-    if (notifyErr) return await fail("Wallet notification failed");
+    if (notifyErr) logNonCritical("wallet_topup_succeeded notification", notifyErr);
   } else {
     const { error: notifyErr } = await supabase.rpc("create_notification_if_enabled", {
       p_user_id: payment.user_id,
@@ -144,7 +148,7 @@ serve(async (req) => {
       },
       p_pref_key: "payments",
     });
-    if (notifyErr) return await fail("Wallet failure notification failed");
+    if (notifyErr) logNonCritical("wallet_topup_failed notification", notifyErr);
   }
 
   return json({ ok: true });

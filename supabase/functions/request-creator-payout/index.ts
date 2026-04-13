@@ -58,6 +58,9 @@ serve(async (req) => {
   }
 
   const currency = (body.currency ?? payoutAccount.currency ?? "KES").toUpperCase();
+  if (currency !== "KES") {
+    return jsonWithCors({ error: "KES is the only supported payout currency" }, 400);
+  }
   const { data: balanceRow, error: balanceErr } = await supabase
     .from("creator_balances")
     .select("available_amount_minor, pending_amount_minor, currency")

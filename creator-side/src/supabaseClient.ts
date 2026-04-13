@@ -1255,12 +1255,21 @@ export async function requestCreatorPayout(params: {
   provider?: 'mpesa' | 'bank' | 'card';
 }) {
   if (!supabase) throw new Error('Supabase not configured');
+  if (!Number.isFinite(params.amountMinor) || params.amountMinor <= 0) {
+    throw new Error('Enter a valid payout amount.');
+  }
+  if ((params.currency ?? 'KES').toUpperCase() !== 'KES') {
+    throw new Error('KES is the only supported payout currency in this launch flow.');
+  }
   const idempotencyKey =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random()}`;
   const { data, error } = await supabase.functions.invoke('request-creator-payout', {
-    body: params,
+    body: {
+      ...params,
+      currency: (params.currency ?? 'KES').toUpperCase(),
+    },
     headers: { 'x-idempotency-key': idempotencyKey },
   });
   if (error) throw error;
@@ -1272,15 +1281,6 @@ export async function requestPaypalPayout(params: {
   currency?: string;
   reason?: string;
 }) {
-  if (!supabase) throw new Error('Supabase not configured');
-  const idempotencyKey =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random()}`;
-  const { data, error } = await supabase.functions.invoke('request-paypal-payout', {
-    body: params,
-    headers: { 'x-idempotency-key': idempotencyKey },
-  });
-  if (error) throw error;
-  return data;
+  void params;
+  throw new Error('PayPal payouts are out of scope for the KES launch flow.');
 }

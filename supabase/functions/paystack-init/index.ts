@@ -24,6 +24,26 @@ type InitRequest = {
   callback_url?: string;
 };
 
+const ALLOWED_PAYSTACK_CHANNELS = new Set([
+  "card",
+  "mobile_money",
+  "bank_transfer",
+  "ussd",
+]);
+
+function isValidEmail(email: string) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+}
+
+function sanitizeChannels(channels: unknown, fallback: string[]) {
+  if (!Array.isArray(channels)) return fallback;
+  const normalized = channels
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => ALLOWED_PAYSTACK_CHANNELS.has(entry));
+  return normalized.length ? Array.from(new Set(normalized)) : fallback;
+}
+
 function resolveCallbackUrl(req: Request, requestedCallbackUrl?: string | null) {
   const requestOrigin = req.headers.get("origin");
   const trimmed = requestedCallbackUrl?.trim();
@@ -96,8 +116,25 @@ serve(async (req) => {
   if (!body.email || !amountMajor || !body.type) {
     return jsonWithCors({ error: "email, amountMajor, type required" }, 400);
   }
+  if (!isValidEmail(body.email)) {
+    return jsonWithCors({ error: "email must be valid" }, 400);
+  }
   if (!Number.isFinite(amountMajor) || amountMajor <= 0) {
     return jsonWithCors({ error: "amountMajor must be a positive number" }, 400);
+  }
+  if ((body.currency ?? "KES").toUpperCase() !== "KES") {
+    return jsonWithCors({ error: "KES is the only supported checkout currency" }, 400);
+  }
+  if (body.type !== "tip" && body.type !== "wallet_topup") {
+    return jsonWithCors(
+      {
+        error:
+          body.type === "subscription"
+            ? "Direct subscription checkout is disabled. Use wallet balance to subscribe."
+            : "Direct PPV checkout is disabled. Use wallet balance to unlock PPV posts.",
+      },
+      400,
+    );
   }
 
   // Require authenticated + age-confirmed user to create a payment intent
@@ -117,13 +154,11 @@ serve(async (req) => {
       .maybeSingle();
     if (creatorErr) return jsonWithCors({ error: "Creator lookup failed" }, 500);
     if (!creatorRow) return jsonWithCors({ error: "Unknown creator_id" }, 400);
-  }
-
-  if (body.type === "ppv") {
-    return jsonWithCors(
-      { error: "Direct PPV checkout is not supported. Use wallet balance to unlock PPV posts." },
-      400,
-    );
+    if (body.post_id) {
+      return jsonWithCors({ error: "post_id is not supported for direct Paystack checkout" }, 400);
+    }
+  } else if (creatorId || body.post_id) {
+    return jsonWithCors({ error: "Wallet top ups cannot target a creator or post" }, 400);
   }
 
   const amountMinor = Math.round(amountMajor * 100);
@@ -146,7 +181,10 @@ serve(async (req) => {
     currency,
     reference,
     callback_url,
-    channels: body.channels?.length ? body.channels : ["mobile_money"],
+    channels: sanitizeChannels(
+      body.channels,
+      body.type === "wallet_topup" ? ["mobile_money", "card"] : ["mobile_money", "card"],
+    ),
     metadata: {
       type: body.type,
       creator_id: creatorId,

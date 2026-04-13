@@ -90,6 +90,7 @@ const RECENT_CREATORS_STORAGE_KEY = 'fans-only:recent-creators'
 const AGE_CONFIRMATION_CACHE_KEY = 'fans-only:age-confirmed-users'
 const FAN_CREATORS_STORAGE_KEY = 'fans-only:fan-creators'
 const POST_SOCIAL_STORAGE_KEY = 'fans-only:post-social'
+const PAYMENT_RETURN_CACHE_KEY = 'fans-only:payment-return-refs'
 const hasGiftCreatorCheckout = Boolean(FEATURED_CREATOR_ID && DEFAULT_GIFT_AMOUNT_MAJOR > 0)
 const SUPPORTED_MEDIA_ASPECT_RATIOS: Array<{ css: string; value: number }> = [
   { css: '1 / 1', value: 1 },
@@ -131,19 +132,48 @@ type PurchasePromptAction =
       insufficientBalance: boolean
     }
 
-const readPaymentReturnFromUrl = (): { kind: PaymentReturnKind | null; hasReference: boolean } => {
+const readPaymentReturnCache = (): string[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.sessionStorage.getItem(PAYMENT_RETURN_CACHE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? parsed.filter((entry: unknown): entry is string => typeof entry === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
+const persistPaymentReturnReference = (reference: string) => {
+  if (typeof window === 'undefined' || !reference) return
+  const next = Array.from(new Set([reference, ...readPaymentReturnCache()])).slice(0, 20)
+  window.sessionStorage.setItem(PAYMENT_RETURN_CACHE_KEY, JSON.stringify(next))
+}
+
+const readPaymentReturnFromUrl = (): {
+  kind: PaymentReturnKind | null
+  hasReference: boolean
+  reference: string | null
+  alreadyProcessed: boolean
+} => {
   if (typeof window === 'undefined') {
-    return { kind: null, hasReference: false }
+    return { kind: null, hasReference: false, reference: null, alreadyProcessed: false }
   }
 
   const url = new URL(window.location.href)
   const rawKind = url.searchParams.get('payment_return')
   const kind =
     rawKind === 'wallet_topup' || rawKind === 'tip' || rawKind === 'gift' ? rawKind : null
+  const reference = url.searchParams.get('reference') || url.searchParams.get('trxref')
+  const alreadyProcessed = reference ? readPaymentReturnCache().includes(reference) : false
 
   return {
     kind,
-    hasReference: Boolean(url.searchParams.get('reference') || url.searchParams.get('trxref')),
+    hasReference: Boolean(reference),
+    reference,
+    alreadyProcessed,
   }
 }
 
@@ -4531,6 +4561,15 @@ export default function App() {
   useEffect(() => {
     if (!paymentReturn.kind && !paymentReturn.hasReference) return
 
+    if (paymentReturn.reference && paymentReturn.alreadyProcessed) {
+      clearPaymentReturnParams()
+      return
+    }
+
+    if (paymentReturn.reference) {
+      persistPaymentReturnReference(paymentReturn.reference)
+    }
+
     if (paymentReturn.kind === 'wallet_topup' || paymentReturn.kind === 'tip') {
       setPage('wallet')
       setWalletTab('history')
@@ -4544,7 +4583,7 @@ export default function App() {
     }
 
     clearPaymentReturnParams()
-  }, [paymentReturn.hasReference, paymentReturn.kind])
+  }, [paymentReturn.alreadyProcessed, paymentReturn.hasReference, paymentReturn.kind, paymentReturn.reference])
 
   useEffect(() => {
     if (!hasGiftCreatorCheckout && membershipTab === 'Gift Creator') {

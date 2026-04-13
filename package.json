@@ -15,8 +15,9 @@
     "build:apps": "npm run build:landing && npm run build:user && npm run build:creator",
     "build": "npm run install:apps && npm run build:apps && node scripts/assemble-dist.mjs",
     "check:no-mock-runtime": "node scripts/no-mock-runtime.mjs",
+    "payments:check": "node scripts/payment-readiness-smoke.mjs",
     "lint": "npm --prefix landingpage run lint && npm --prefix user-side run lint && npm --prefix creator-side run lint",
-    "test": "npm run install:apps && npm --prefix landingpage run test && npm --prefix user-side run test && npm --prefix creator-side run test",
+    "test": "npm run install:apps && npm --prefix landingpage run test && npm --prefix user-side run test && npm --prefix creator-side run test && npm run payments:check",
     "health": "node scripts/health-check.mjs",
     "release:check": "npm run test && npm run build && npm run health"
   },
