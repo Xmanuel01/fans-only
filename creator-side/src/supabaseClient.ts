@@ -6,7 +6,14 @@ const supabaseAnonKey = env.supabaseAnonKey;
 
 export const supabase =
   isSupabaseConfigured && supabaseUrl && supabaseAnonKey
-    ? createClient(supabaseUrl, supabaseAnonKey)
+    ? createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          flowType: 'pkce',
+          autoRefreshToken: true,
+          persistSession: true,
+          detectSessionInUrl: true,
+        },
+      })
     : null;
 const CREATOR_PROFILE_BUCKET = 'creator-profiles';
 
@@ -33,6 +40,42 @@ const resolveAuthRedirectOrigin = () => {
 const appRedirectUrl = () =>
   new URL(import.meta.env.BASE_URL ?? '/', resolveAuthRedirectOrigin()).toString();
 
+let legacyHashRestorePromise: Promise<Session | null> | null = null;
+
+async function restoreSessionFromLegacyHash(): Promise<Session | null> {
+  if (!supabase || typeof window === 'undefined') return null;
+
+  const rawHash = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  if (!rawHash) return null;
+
+  const params = new URLSearchParams(rawHash);
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+
+  if (!accessToken || !refreshToken) return null;
+
+  try {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error) {
+      console.warn('Supabase legacy hash session restore failed', error);
+      return null;
+    }
+
+    const url = new URL(window.location.href);
+    url.hash = '';
+    window.history.replaceState({}, document.title, url.toString());
+    return data.session ?? null;
+  } catch (error) {
+    console.warn('Supabase legacy hash session restore threw', error);
+    return null;
+  }
+}
+
 export async function getSession(): Promise<Session | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.auth.getSession();
@@ -40,7 +83,17 @@ export async function getSession(): Promise<Session | null> {
     console.warn('supabase session error', error);
     return null;
   }
-  return data.session ?? null;
+  if (data.session) {
+    return data.session;
+  }
+
+  if (!legacyHashRestorePromise) {
+    legacyHashRestorePromise = restoreSessionFromLegacyHash().finally(() => {
+      legacyHashRestorePromise = null;
+    });
+  }
+
+  return await legacyHashRestorePromise;
 }
 
 export async function signOut() {
