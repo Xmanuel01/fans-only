@@ -2806,40 +2806,34 @@ export function MyPayments() {
                 </div>
               </section>
 
-              <aside className="payments-method-card payments-method-card--overview">
-                <div className="payments-method-card__eyebrow">
-                  {livePayoutAccount ? 'Current payout destination' : 'Payout destination'}
-                </div>
-                <h3 className="payments-method-card__title">
-                  {getUnifiedPayoutDestinationLabel(livePayoutAccount)}
-                </h3>
-                <p className="payments-method-card__meta">
-                  {livePayoutAccount
-                    ? getUnifiedPayoutDestinationMeta(livePayoutAccount)
-                    : 'No payout destination is configured on this account yet.'}
-                </p>
-                <div className="payments-method-card__status">
-                  <span
-                    className={`wallet-status wallet-status--${livePayoutAccount ? verificationState : 'inactive'}`}
-                  >
-                    {livePayoutAccount ? getPayoutVerificationLabel(verificationState) : 'Not configured'}
-                  </span>
-                  <span className="my-muted">
-                    {livePayoutAccount
-                      ? `${getPayoutProviderLabel(livePayoutAccount.provider)} rail ready for withdrawals once approved`
-                      : 'Manage payout destination from Banking'}
-                  </span>
-                </div>
-                <div className="payments-method-card__action">
-                  <button
-                    className="wallet-action-button"
-                    type="button"
-                    onClick={() => navigate('/my/banking')}
-                  >
-                    Open Banking
-                  </button>
-                </div>
-              </aside>
+              {livePayoutAccount ? (
+                <aside className="payments-method-card payments-method-card--overview">
+                  <div className="payments-method-card__eyebrow">Current payout destination</div>
+                  <h3 className="payments-method-card__title">
+                    {getUnifiedPayoutDestinationLabel(livePayoutAccount)}
+                  </h3>
+                  <p className="payments-method-card__meta">
+                    {getUnifiedPayoutDestinationMeta(livePayoutAccount)}
+                  </p>
+                  <div className="payments-method-card__status">
+                    <span className={`wallet-status wallet-status--${verificationState}`}>
+                      {getPayoutVerificationLabel(verificationState)}
+                    </span>
+                    <span className="my-muted">
+                      {`${getPayoutProviderLabel(livePayoutAccount.provider)} rail ready for withdrawals once approved`}
+                    </span>
+                  </div>
+                  <div className="payments-method-card__action">
+                    <button
+                      className="wallet-action-button"
+                      type="button"
+                      onClick={() => navigate('/my/banking')}
+                    >
+                      Open Banking
+                    </button>
+                  </div>
+                </aside>
+              ) : null}
 
               <section className="payments-analytics-card">
                 <div className="payments-analytics-card__header">
