@@ -90,7 +90,6 @@ const giftAmountRaw = readOptional(import.meta.env.VITE_GIFT_AMOUNT_MAJOR)
 const giftAmountMajor = giftAmountRaw && Number.isFinite(Number(giftAmountRaw))
   ? Number(giftAmountRaw)
   : null
-const mpesaStkEnabled = import.meta.env.VITE_MPESA_STK_ENABLED === 'true'
 const featureRequestsEnabled = import.meta.env.VITE_FEATURE_REQUESTS_ENABLED === 'true'
 
 export const env = {
@@ -105,7 +104,6 @@ export const env = {
   supportEmail,
   giftCreatorId,
   giftAmountMajor,
-  mpesaStkEnabled,
   featureRequestsEnabled,
   isProd: Boolean(import.meta.env.PROD),
 }

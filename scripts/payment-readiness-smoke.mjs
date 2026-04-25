@@ -22,19 +22,19 @@ const checks = [
     ],
   },
   {
-    file: 'supabase/functions/mpesa-stk-callback/index.ts',
+    file: 'supabase/functions/request-creator-payout/index.ts',
     patterns: [
-      'Non-critical M-PESA callback follow-up failed',
-      'already_processed: true',
-      'wallet_topup_failed notification',
+      '.neq("provider", "paypal")',
+      '["mobile_money", "mpesa"]',
+      'payout_provider: payoutAccount.provider === "mpesa" ? "mobile_money" : payoutAccount.provider',
     ],
   },
   {
-    file: 'supabase/migrations/20260412110000_kes_payment_launch_hardening.sql',
+    file: 'supabase/migrations/20260425123000_paystack_only_runtime.sql',
     patterns: [
-      "check (provider in ('paystack', 'mpesa', 'wallet'))",
-      'subscriptions_payment_unique_idx',
-      'ppv_purchases_payment_unique_idx',
+      "check (provider in ('paystack', 'wallet'))",
+      "set provider = 'paystack'",
+      "check (provider = 'paystack')",
     ],
   },
   {
@@ -57,7 +57,12 @@ const checks = [
       'PAYMENT_RETURN_CACHE_KEY',
       'persistPaymentReturnReference',
       'alreadyProcessed',
+      'initiateHostedCheckout',
     ],
+  },
+  {
+    file: 'supabase/functions/process-payout-queue/index.ts',
+    patterns: ['Queue claim failed', 'mark_payout_result', 'scheduleRetry'],
   },
 ]
 

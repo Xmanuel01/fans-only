@@ -28,8 +28,7 @@ import {
   signOut,
   signInWithProvider,
   submitFeatureRequest,
-  initiatePaystackPayment,
-  initiateMpesaStkPush,
+  initiateHostedCheckout,
   fetchChatMessages,
   fetchChatThreads,
   fetchChatableCreators,
@@ -82,7 +81,6 @@ const DEFAULT_GIFT_AMOUNT_MAJOR =
   typeof env.giftAmountMajor === 'number' && env.giftAmountMajor > 0
     ? env.giftAmountMajor
     : 0
-const MPESA_STK_ENABLED = env.mpesaStkEnabled
 const FEATURE_REQUESTS_ENABLED = env.featureRequestsEnabled
 const BASE_URL = import.meta.env.BASE_URL ?? '/'
 const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`
@@ -2187,19 +2185,15 @@ function BillingHistoryCard({
   walletBalance,
   walletHistory,
   walletTopupAmount,
-  walletTopupPhone,
   topupPending,
   onTopupAmountChange,
-  onTopupPhoneChange,
   onTopup,
 }: {
   walletBalance: WalletBalance | null
   walletHistory: WalletHistoryItem[]
   walletTopupAmount: string
-  walletTopupPhone: string
   topupPending: boolean
   onTopupAmountChange: (value: string) => void
-  onTopupPhoneChange: (value: string) => void
   onTopup: () => void
 }) {
   return (
@@ -2223,19 +2217,6 @@ function BillingHistoryCard({
             onChange={(event) => onTopupAmountChange(event.target.value)}
           />
         </div>
-        {MPESA_STK_ENABLED ? (
-          <div>
-            <label className="input-label">M-PESA phone</label>
-            <input
-              className="text-input"
-              type="tel"
-              inputMode="numeric"
-              placeholder="2547XXXXXXXX"
-              value={walletTopupPhone}
-              onChange={(event) => onTopupPhoneChange(event.target.value)}
-            />
-          </div>
-        ) : null}
         <div className="button-right">
           <button
             className="pill light wallet-action-btn"
@@ -2243,13 +2224,7 @@ function BillingHistoryCard({
             type="button"
             disabled={topupPending}
           >
-            {topupPending
-              ? MPESA_STK_ENABLED
-                ? 'Sending M-PESA prompt...'
-                : 'Starting top up...'
-              : MPESA_STK_ENABLED
-                ? 'Top up via M-PESA'
-                : 'Top up wallet'}
+            {topupPending ? 'Starting top up...' : 'Top up wallet'}
           </button>
         </div>
       </div>
@@ -2286,10 +2261,8 @@ function SettingsPage({
   walletBalance,
   walletHistory,
   walletTopupAmount,
-  walletTopupPhone,
   topupPending,
   onTopupAmountChange,
-  onTopupPhoneChange,
   onTopup,
   subscriptionHistory,
   onOpenCreator,
@@ -2303,10 +2276,8 @@ function SettingsPage({
   walletBalance: WalletBalance | null
   walletHistory: WalletHistoryItem[]
   walletTopupAmount: string
-  walletTopupPhone: string
   topupPending: boolean
   onTopupAmountChange: (value: string) => void
-  onTopupPhoneChange: (value: string) => void
   onTopup: () => void
   subscriptionHistory: SubscriptionHistoryItem[]
   onOpenCreator: (creator: CreatorCard) => void
@@ -2357,10 +2328,8 @@ function SettingsPage({
             walletBalance={walletBalance}
             walletHistory={walletHistory}
             walletTopupAmount={walletTopupAmount}
-            walletTopupPhone={walletTopupPhone}
             topupPending={topupPending}
             onTopupAmountChange={onTopupAmountChange}
-            onTopupPhoneChange={onTopupPhoneChange}
             onTopup={onTopup}
           />
         )}
@@ -2568,11 +2537,9 @@ function WalletPage({
   walletBalance,
   walletHistory,
   walletTopupAmount,
-  walletTopupPhone,
   topupPending,
   preferredCreator,
   onTopupAmountChange,
-  onTopupPhoneChange,
   onTopup,
   subscriptionHistory,
   onOpenCreator,
@@ -2584,11 +2551,9 @@ function WalletPage({
   walletBalance: WalletBalance | null
   walletHistory: WalletHistoryItem[]
   walletTopupAmount: string
-  walletTopupPhone: string
   topupPending: boolean
   preferredCreator: CreatorCard | null
   onTopupAmountChange: (value: string) => void
-  onTopupPhoneChange: (value: string) => void
   onTopup: () => void
   subscriptionHistory: SubscriptionHistoryItem[]
   onOpenCreator: (creator: CreatorCard) => void
@@ -2888,19 +2853,6 @@ function WalletPage({
                 value={walletTopupAmount}
                 onChange={(event) => onTopupAmountChange(event.target.value)}
               />
-              {MPESA_STK_ENABLED ? (
-                <>
-                  <label className="input-label">M-PESA phone</label>
-                  <input
-                    className="text-input"
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="2547XXXXXXXX"
-                    value={walletTopupPhone}
-                    onChange={(event) => onTopupPhoneChange(event.target.value)}
-                  />
-                </>
-              ) : null}
               <div className="wallet-card__actions">
                 <button
                   className="pill light wallet-action-btn"
@@ -2908,13 +2860,7 @@ function WalletPage({
                   onClick={onTopup}
                   disabled={topupPending}
                 >
-                  {topupPending
-                    ? MPESA_STK_ENABLED
-                      ? 'Sending M-PESA prompt...'
-                      : 'Starting top up...'
-                    : MPESA_STK_ENABLED
-                      ? 'Top up via M-PESA'
-                      : 'Top up wallet'}
+                  {topupPending ? 'Starting top up...' : 'Top up wallet'}
                 </button>
               </div>
             </div>
@@ -2923,7 +2869,7 @@ function WalletPage({
               <div className="wallet-receive-note">
                 <strong>How it works</strong>
                 <span>1. Enter an amount.</span>
-                <span>2. Confirm on M-PESA or secure checkout.</span>
+                <span>2. Complete the secure checkout.</span>
                 <span>3. Your balance moves into Available after confirmation.</span>
               </div>
               <div className="wallet-receive-note">
@@ -4421,7 +4367,6 @@ export default function App() {
   const [walletBalance, setWalletBalance] = useState<WalletBalance | null>(null)
   const [walletHistory, setWalletHistory] = useState<WalletHistoryItem[]>([])
   const [walletTopupAmount, setWalletTopupAmount] = useState('1000')
-  const [walletTopupPhone, setWalletTopupPhone] = useState('')
   const [ppvPurchases, setPpvPurchases] = useState<number[]>([])
   const [postSocialById, setPostSocialById] = useState<Record<number, PostSocialEntry>>({})
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
@@ -4882,7 +4827,7 @@ export default function App() {
     try {
       setGiftCheckoutInFlight(true)
       setToast('Preparing secure checkout...')
-      const result = await initiatePaystackPayment({
+      const result = await initiateHostedCheckout({
         email: session.user.email,
         creatorId: FEATURED_CREATOR_ID,
         amountMajor: DEFAULT_GIFT_AMOUNT_MAJOR,
@@ -4891,7 +4836,7 @@ export default function App() {
         metadata: {
           source: 'gift_creator',
         },
-        channels: ['mobile_money'],
+        channels: ['mobile_money', 'card', 'bank_transfer'],
         callbackUrl: buildFanReturnUrl('gift'),
       })
       if (!result.authorization_url) {
@@ -4918,29 +4863,14 @@ export default function App() {
     }
     try {
       setWalletTopupInFlight(true)
-      if (MPESA_STK_ENABLED) {
-        if (!walletTopupPhone.trim()) {
-          setToast('Enter your M-PESA phone number')
-          setWalletTopupInFlight(false)
-          return
-        }
-        setToast('Sending M-PESA prompt...')
-        const result = await initiateMpesaStkPush({
-          phone: walletTopupPhone.trim(),
-          amountMajor,
-        })
-        setToast(result.customerMessage ?? 'M-PESA prompt sent. Complete on your phone.')
-        setWalletTopupInFlight(false)
-        return
-      }
       setToast('Redirecting to secure wallet top up...')
-      const result = await initiatePaystackPayment({
+      const result = await initiateHostedCheckout({
         email: session.user.email,
         amountMajor,
         currency: 'KES',
         type: 'wallet_topup',
         metadata: { source: 'wallet_topup' },
-        channels: ['mobile_money'],
+        channels: ['mobile_money', 'card', 'bank_transfer'],
         callbackUrl: buildFanReturnUrl('wallet_topup'),
       })
       if (!result.authorization_url) {
@@ -4969,14 +4899,14 @@ export default function App() {
     }
     try {
       setToast(`Redirecting to secure checkout for ${creator.display_name}...`)
-      const result = await initiatePaystackPayment({
+      const result = await initiateHostedCheckout({
         email: session.user.email,
         creatorId: creator.id,
         amountMajor,
         currency: 'KES',
         type: 'tip',
         metadata: { source: 'fan_wallet_send' },
-        channels: ['mobile_money', 'card'],
+        channels: ['mobile_money', 'card', 'bank_transfer'],
         callbackUrl: buildFanReturnUrl('tip'),
       })
       if (!result.authorization_url) {
@@ -5767,11 +5697,9 @@ export default function App() {
             walletBalance={walletBalance}
             walletHistory={walletHistory}
             walletTopupAmount={walletTopupAmount}
-            walletTopupPhone={walletTopupPhone}
             topupPending={walletTopupInFlight}
             preferredCreator={preferredGiftCreator}
             onTopupAmountChange={setWalletTopupAmount}
-            onTopupPhoneChange={setWalletTopupPhone}
             onTopup={handleWalletTopup}
             subscriptionHistory={subscriptionHistory}
             onOpenCreator={handleOpenCreatorPage}
@@ -5818,10 +5746,8 @@ export default function App() {
             walletBalance={walletBalance}
             walletHistory={walletHistory}
             walletTopupAmount={walletTopupAmount}
-            walletTopupPhone={walletTopupPhone}
             topupPending={walletTopupInFlight}
             onTopupAmountChange={setWalletTopupAmount}
-            onTopupPhoneChange={setWalletTopupPhone}
             onTopup={handleWalletTopup}
             subscriptionHistory={subscriptionHistory}
             onOpenCreator={handleOpenCreatorPage}

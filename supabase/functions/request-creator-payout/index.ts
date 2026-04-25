@@ -1,4 +1,4 @@
-// Request payout from creator balance to a Paystack-backed recipient via Paystack transfers.
+// Request payout from creator balance to the active payout provider.
 // Env: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -13,7 +13,7 @@ type Body = {
   amountMinor: number;
   currency?: string;
   reason?: string;
-  provider?: "mpesa" | "bank" | "card";
+  provider?: "mobile_money" | "bank" | "card";
 };
 
 serve(async (req) => {
@@ -34,12 +34,15 @@ serve(async (req) => {
     return jsonWithCors({ error: "Invalid JSON" }, 400);
   }
 
-  const requestedProvider = body.provider?.trim?.() as "mpesa" | "bank" | "card" | undefined;
+  const requestedProvider = body.provider?.trim?.() as "mobile_money" | "bank" | "card" | undefined;
   let payoutQuery = supabase
     .from("creator_payout_accounts")
     .select("provider, recipient_code, currency, recipient_active, bank_code, account_number_last4, kyc_status")
-    .eq("creator_id", creatorId);
-  if (requestedProvider) {
+    .eq("creator_id", creatorId)
+    .neq("provider", "paypal");
+  if (requestedProvider === "mobile_money") {
+    payoutQuery = payoutQuery.in("provider", ["mobile_money", "mpesa"]);
+  } else if (requestedProvider) {
     payoutQuery = payoutQuery.eq("provider", requestedProvider);
   }
   const { data: payoutAccount, error: payoutAccountErr } = await payoutQuery.maybeSingle();
@@ -53,10 +56,6 @@ serve(async (req) => {
   if (payoutAccount.kyc_status !== "verified") {
     return jsonWithCors({ error: "Payout destination requires KYC verification" }, 400);
   }
-  if (payoutAccount.provider === "paypal") {
-    return jsonWithCors({ error: "Use PayPal payout endpoint for PayPal payouts" }, 400);
-  }
-
   const currency = (body.currency ?? payoutAccount.currency ?? "KES").toUpperCase();
   if (currency !== "KES") {
     return jsonWithCors({ error: "KES is the only supported payout currency" }, 400);
@@ -91,7 +90,11 @@ serve(async (req) => {
     p_requested_by: creatorId,
     p_idempotency_key: idempotencyKey,
     p_reference: reference,
-    p_metadata: { source: "request-creator-payout", provider: "paystack", payout_provider: payoutAccount.provider },
+    p_metadata: {
+      source: "request-creator-payout",
+      provider: "paystack",
+      payout_provider: payoutAccount.provider === "mpesa" ? "mobile_money" : payoutAccount.provider,
+    },
   });
   if (queueErr) {
     if (queueErr.code === "23505") {

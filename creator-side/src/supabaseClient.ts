@@ -99,15 +99,16 @@ export type PayoutTransfer = {
   failure_reason: string | null;
 };
 
+export type PayoutRail = 'mobile_money' | 'bank' | 'card';
+
 export type PayoutAccount = {
-  provider: "mpesa" | "bank" | "paypal" | "card";
+  provider: PayoutRail;
   currency: string;
   account_name: string;
   account_number_last4: string | null;
   bank_code: string | null;
   bank_name?: string | null;
   recipient_code: string | null;
-  paypal_email?: string | null;
   recipient_type?: string | null;
   msisdn_e164?: string | null;
   recipient_active?: boolean | null;
@@ -119,6 +120,38 @@ export type PayoutAccount = {
   card_exp_year?: number | null;
   paystack_authorization_signature?: string | null;
 };
+
+function normalizePayoutAccount(
+  value:
+    | ({
+        provider: string;
+      } & Record<string, unknown>)
+    | null
+    | undefined,
+): PayoutAccount | null {
+  if (!value) return null;
+  if (value.provider === 'paypal') return null;
+  return {
+    currency: (value.currency as string) ?? 'KES',
+    account_name: (value.account_name as string) ?? '',
+    account_number_last4: (value.account_number_last4 as string | null) ?? null,
+    bank_code: (value.bank_code as string | null) ?? null,
+    bank_name: (value.bank_name as string | null) ?? null,
+    recipient_code: (value.recipient_code as string | null) ?? null,
+    recipient_type: (value.recipient_type as string | null) ?? null,
+    msisdn_e164: (value.msisdn_e164 as string | null) ?? null,
+    recipient_active: (value.recipient_active as boolean | null) ?? null,
+    kyc_status: (value.kyc_status as PayoutAccount['kyc_status']) ?? null,
+    verified_at: (value.verified_at as string | null) ?? null,
+    verification_source: (value.verification_source as string | null) ?? null,
+    card_brand: (value.card_brand as string | null) ?? null,
+    card_exp_month: (value.card_exp_month as number | null) ?? null,
+    card_exp_year: (value.card_exp_year as number | null) ?? null,
+    paystack_authorization_signature:
+      (value.paystack_authorization_signature as string | null) ?? null,
+    provider: value.provider === 'mpesa' ? 'mobile_money' : (value.provider as PayoutRail),
+  };
+}
 
 export type ChatThreadSummary = {
   thread_id: string;
@@ -302,15 +335,15 @@ export async function fetchPayoutAccount(): Promise<PayoutAccount | null> {
   const { data, error } = await supabase
     .from('creator_payout_accounts')
     .select(
-      'provider, currency, account_name, account_number_last4, bank_code, bank_name, recipient_code, paypal_email, recipient_type, msisdn_e164, recipient_active, kyc_status, verified_at, verification_source, card_brand, card_exp_month, card_exp_year, paystack_authorization_signature'
+      'provider, currency, account_name, account_number_last4, bank_code, bank_name, recipient_code, recipient_type, msisdn_e164, recipient_active, kyc_status, verified_at, verification_source, card_brand, card_exp_month, card_exp_year, paystack_authorization_signature'
     )
     .eq('creator_id', userId)
     .maybeSingle();
   if (error) throw error;
-  return data ?? null;
+  return normalizePayoutAccount(data);
 }
 
-export async function upsertMpesaPayoutAccount(params: {
+export async function upsertMobileMoneyPayoutAccount(params: {
   accountNumber: string;
   accountName: string;
   bankCode?: string;
@@ -333,18 +366,6 @@ export async function upsertBankPayoutAccount(params: {
 }) {
   if (!supabase) throw new Error('Supabase not configured');
   const { data, error } = await supabase.functions.invoke('upsert-bank-payout-account', {
-    body: params,
-  });
-  if (error) throw error;
-  return data;
-}
-
-export async function upsertPaypalPayoutAccount(params: {
-  paypalEmail: string;
-  currency?: string;
-}) {
-  if (!supabase) throw new Error('Supabase not configured');
-  const { data, error } = await supabase.functions.invoke('upsert-paypal-payout-account', {
     body: params,
   });
   if (error) throw error;
@@ -1252,7 +1273,7 @@ export async function requestCreatorPayout(params: {
   amountMinor: number;
   currency?: string;
   reason?: string;
-  provider?: 'mpesa' | 'bank' | 'card';
+  provider?: PayoutRail;
 }) {
   if (!supabase) throw new Error('Supabase not configured');
   if (!Number.isFinite(params.amountMinor) || params.amountMinor <= 0) {
@@ -1268,19 +1289,11 @@ export async function requestCreatorPayout(params: {
   const { data, error } = await supabase.functions.invoke('request-creator-payout', {
     body: {
       ...params,
+      provider: params.provider === 'mobile_money' ? 'mobile_money' : params.provider,
       currency: (params.currency ?? 'KES').toUpperCase(),
     },
     headers: { 'x-idempotency-key': idempotencyKey },
   });
   if (error) throw error;
   return data;
-}
-
-export async function requestPaypalPayout(params: {
-  amountMinor: number;
-  currency?: string;
-  reason?: string;
-}) {
-  void params;
-  throw new Error('PayPal payouts are out of scope for the KES launch flow.');
 }

@@ -1,4 +1,4 @@
-// Initialize a Paystack transaction and record a pending payment.
+// Initialize a hosted checkout transaction and record a pending payment.
 // Env required: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 // Optional: PAYSTACK_CALLBACK_URL (falls back to request origin + /paystack/callback).
 // Direct PPV checkout is intentionally unsupported; PPV unlocks use wallet balance.
@@ -155,7 +155,7 @@ serve(async (req) => {
     if (creatorErr) return jsonWithCors({ error: "Creator lookup failed" }, 500);
     if (!creatorRow) return jsonWithCors({ error: "Unknown creator_id" }, 400);
     if (body.post_id) {
-      return jsonWithCors({ error: "post_id is not supported for direct Paystack checkout" }, 400);
+      return jsonWithCors({ error: "post_id is not supported for direct checkout" }, 400);
     }
   } else if (creatorId || body.post_id) {
     return jsonWithCors({ error: "Wallet top ups cannot target a creator or post" }, 400);
@@ -205,7 +205,7 @@ serve(async (req) => {
 
   const initJson = await initRes.json();
   if (!initRes.ok) {
-    return jsonWithCors({ error: "Paystack init failed", details: initJson }, initRes.status);
+    return jsonWithCors({ error: "Checkout initialization failed", details: initJson }, initRes.status);
   }
 
   // Record pending payment (service role context)

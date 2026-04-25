@@ -1,4 +1,4 @@
-// Start a hosted Paystack card authorization flow for creator card payouts.
+// Start a hosted card authorization flow for creator card payouts.
 // Env: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -48,7 +48,7 @@ serve(async (req) => {
     return jsonWithCors({ error: "returnUrl origin mismatch" }, 400);
   }
 
-  callbackUrl.searchParams.set("paystack_card_setup", "1");
+  callbackUrl.searchParams.set("card_setup", "1");
 
   const amountMinor = Math.round(cardSetupAmountMajor * 100);
   if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
@@ -79,7 +79,7 @@ serve(async (req) => {
 
   const initJson = await initRes.json();
   if (!initRes.ok || !initJson?.data?.authorization_url) {
-    return jsonWithCors({ error: "Paystack card setup init failed", details: initJson }, 400);
+    return jsonWithCors({ error: "Card setup init failed", details: initJson }, 400);
   }
 
   return jsonWithCors({

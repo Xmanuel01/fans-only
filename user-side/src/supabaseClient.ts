@@ -692,7 +692,7 @@ export async function submitFeatureRequest(message: string) {
   return data
 }
 
-const PAYSTACK_CHECKOUT_TYPES = new Set<string>(['tip', 'wallet_topup'])
+const HOSTED_CHECKOUT_TYPES = new Set<string>(['tip', 'wallet_topup'])
 
 function assertKesCurrency(currency?: string) {
   const normalized = (currency ?? 'KES').toUpperCase()
@@ -714,7 +714,7 @@ function assertCheckoutEmail(email: string) {
   }
 }
 
-export async function initiatePaystackPayment({
+export async function initiateHostedCheckout({
   email,
   creatorId,
   postId,
@@ -739,7 +739,7 @@ export async function initiatePaystackPayment({
   assertCheckoutEmail(email)
   assertPositiveAmount(amountMajor)
   const normalizedCurrency = assertKesCurrency(currency)
-  if (!PAYSTACK_CHECKOUT_TYPES.has(type)) {
+  if (!HOSTED_CHECKOUT_TYPES.has(type)) {
     throw new Error(
       type === 'subscription'
         ? 'Direct subscription checkout is disabled. Top up your wallet and subscribe from wallet balance.'
@@ -769,22 +769,6 @@ export async function initiatePaystackPayment({
     throw new Error(await describeFunctionInvokeError(error, 'Could not start checkout'))
   }
   return data as { authorization_url?: string; reference?: string }
-}
-
-export async function initiateMpesaStkPush({
-  phone,
-  amountMajor,
-}: {
-  phone: string
-  amountMajor: number
-}): Promise<{ checkoutRequestId?: string; merchantRequestId?: string; customerMessage?: string }> {
-  if (!supabase) throw new Error('Supabase not configured')
-  assertPositiveAmount(amountMajor)
-  const { data, error } = await supabase.functions.invoke('mpesa-stk-init', {
-    body: { phone, amountMajor },
-  })
-  if (error) throw error
-  return data as { checkoutRequestId?: string; merchantRequestId?: string; customerMessage?: string }
 }
 
 export async function fetchRecommendedCreators({

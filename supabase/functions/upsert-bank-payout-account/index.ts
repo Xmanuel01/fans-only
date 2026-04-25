@@ -1,4 +1,4 @@
-// Upsert creator payout destination using Paystack transfer recipient (bank account).
+// Upsert creator payout destination using the active transfer recipient provider (bank account).
 // Env: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -63,7 +63,7 @@ serve(async (req) => {
 
   const recipientJson = await recipientRes.json();
   if (!recipientRes.ok || !recipientJson?.data?.recipient_code) {
-    return jsonWithCors({ error: "Paystack recipient create failed", details: recipientJson }, 400);
+    return jsonWithCors({ error: "Bank payout destination setup failed", details: recipientJson }, 400);
   }
 
   const accountNumberLast4 = accountNumber.slice(-4);

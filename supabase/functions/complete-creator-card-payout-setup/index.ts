@@ -1,4 +1,4 @@
-// Complete a hosted Paystack card authorization flow and save the card payout destination.
+// Complete a hosted card authorization flow and save the card payout destination.
 // Env: PAYSTACK_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -43,7 +43,7 @@ serve(async (req) => {
   const verifyJson = await verifyRes.json();
 
   if (!verifyRes.ok || !verifyJson?.data) {
-    return jsonWithCors({ error: "Paystack transaction verification failed", details: verifyJson }, 400);
+    return jsonWithCors({ error: "Card setup verification failed", details: verifyJson }, 400);
   }
 
   const transaction = verifyJson.data;
@@ -71,7 +71,7 @@ serve(async (req) => {
   if (!authorizationCode || !reusable || !customerEmail) {
     return jsonWithCors({
       error:
-        "Paystack did not return a reusable card authorization for payouts. Use Bank or M-PESA instead.",
+        "The hosted card setup did not return a reusable card authorization. Try another payout method.",
     }, 400);
   }
 
@@ -92,7 +92,7 @@ serve(async (req) => {
   const recipientJson = await recipientRes.json();
   if (!recipientRes.ok || !recipientJson?.data?.recipient_code) {
     return jsonWithCors({
-      error: "Paystack card recipient creation failed. Use Bank or M-PESA instead.",
+      error: "Card payout destination creation failed. Try another payout method.",
       details: recipientJson,
     }, 400);
   }

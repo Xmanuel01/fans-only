@@ -31,10 +31,11 @@ import {
   type CreatorSubscriber,
   type CreatorContentItem,
   type PayoutAccount,
+  type PayoutRail,
   type PayoutSummary,
   type PayoutTransfer,
   upsertBankPayoutAccount,
-  upsertMpesaPayoutAccount,
+  upsertMobileMoneyPayoutAccount,
 } from '../supabaseClient';
 import './MyPages.css';
 
@@ -250,12 +251,12 @@ const parseMajorAmountToMinor = (value: string) => {
   return Math.round(numeric * 100);
 };
 
-type PaymentsRail = 'mpesa' | 'card-bank';
+type PaymentsRail = 'mobile_money' | 'card-bank';
 type CardBankRail = 'card' | 'bank';
 type PaymentsPanel = 'method' | 'request' | 'history';
 
 const normalizePaymentsRail = (value: string | null): PaymentsRail | null => {
-  if (value === 'mpesa' || value === 'card-bank') {
+  if (value === 'mobile_money' || value === 'card-bank') {
     return value;
   }
   return null;
@@ -276,8 +277,8 @@ const normalizePaymentsPanel = (value: string | null): PaymentsPanel | null => {
 };
 
 const getPaymentsRailFromAccount = (account: PayoutAccount | null): PaymentsRail => {
-  if (!account) return 'mpesa';
-  if (account?.provider === 'mpesa') return 'mpesa';
+  if (!account) return 'mobile_money';
+  if (account?.provider === 'mobile_money') return 'mobile_money';
   return 'card-bank';
 };
 
@@ -287,8 +288,8 @@ const getCardBankRailFromAccount = (account: PayoutAccount | null): CardBankRail
 };
 
 const getPayoutProviderLabel = (provider?: PayoutAccount['provider'] | null) => {
-  if (provider === 'mpesa') return 'M-PESA';
-  if (provider === 'bank') return 'Bank';
+  if (provider === 'mobile_money') return 'Mobile money';
+  if (provider === 'bank') return 'Bank account';
   if (provider === 'card') return 'Card';
   return 'No payout method';
 };
@@ -331,7 +332,7 @@ const getPayoutDestinationMeta = (account: PayoutAccount | null) => {
     if (account.bank_code) return `Bank code ${account.bank_code}`;
   }
 
-  if (account.provider === 'mpesa') {
+  if (account.provider === 'mobile_money') {
     return account.account_name || 'Mobile money destination';
   }
 
@@ -353,8 +354,8 @@ const getUnifiedPayoutDestinationLabel = (account: PayoutAccount | null) => {
     return `Bank account ending ${account.account_number_last4}`;
   }
 
-  if (account.provider === 'mpesa' && account.account_number_last4) {
-    return `M-PESA ending ${account.account_number_last4}`;
+  if (account.provider === 'mobile_money' && account.account_number_last4) {
+    return `Mobile money ending ${account.account_number_last4}`;
   }
 
   return `${getPayoutProviderLabel(account.provider)} payout rail`;
@@ -367,7 +368,7 @@ const getUnifiedPayoutDestinationMeta = (account: PayoutAccount | null) => {
     return account.bank_name || (account.bank_code ? `Bank code ${account.bank_code}` : 'Bank payout rail');
   }
 
-  if (account.provider === 'mpesa') {
+  if (account.provider === 'mobile_money') {
     return account.account_name || 'Mobile money payout rail';
   }
 
@@ -381,7 +382,7 @@ const getUnifiedPayoutDestinationMeta = (account: PayoutAccount | null) => {
         `Exp ${String(account.card_exp_month).padStart(2, '0')}/${String(account.card_exp_year).slice(-2)}`,
       );
     }
-    return details.join(' · ') || 'Tokenized securely through Paystack';
+    return details.join(' · ') || 'Stored through secure card setup';
   }
 
   return account.account_name || 'Payout rail';
@@ -2130,7 +2131,7 @@ function LegacyMyPayments() {
     void loadPayments();
   }, []);
 
-  const livePayoutAccount = payoutAccount?.provider === 'paypal' ? null : payoutAccount;
+  const livePayoutAccount = payoutAccount;
   const verificationState = getPayoutVerificationState(livePayoutAccount);
   const amountMinor = parseMajorAmountToMinor(amountMajor);
   const currency = summary?.currency ?? livePayoutAccount?.currency ?? 'KES';
@@ -2197,12 +2198,6 @@ function LegacyMyPayments() {
       }
     >
       <div className="wallet-page wallet-page--payout">
-        {payoutAccount?.provider === 'paypal' ? (
-          <div className="wallet-notice wallet-notice--warning">
-            A previously saved payout method is not supported in the live creator payout workflow.
-            Save M-PESA, Bank, or Card to receive payouts.
-          </div>
-        ) : null}
         {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
         {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
 
@@ -2313,7 +2308,7 @@ function LegacyMyPayments() {
                           ? 'bank'
                           : livePayoutAccount.provider === 'card'
                             ? 'card'
-                            : 'mpesa',
+                            : 'mobile_money',
                     });
 
                     setNoticeText(
@@ -2430,7 +2425,7 @@ export function MyPayments() {
   const requestedPanel = normalizePaymentsPanel(searchParams.get('panel'));
   const cardSetupReference = searchParams.get('reference') ?? searchParams.get('trxref');
   const hasCardSetupCallback =
-    searchParams.get('paystack_card_setup') === '1' && Boolean(cardSetupReference);
+    searchParams.get('card_setup') === '1' && Boolean(cardSetupReference);
   const [filter, setFilter] = useState<'all' | 'in_flight' | 'completed' | 'failed'>('all');
   const [loading, setLoading] = useState(true);
   const [savingMethod, setSavingMethod] = useState(false);
@@ -2442,7 +2437,7 @@ export function MyPayments() {
   const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
   const [transferRows, setTransferRows] = useState<PayoutTransfer[]>([]);
   const [amountMajor, setAmountMajor] = useState('');
-  const [selectedRail, setSelectedRail] = useState<PaymentsRail>('mpesa');
+  const [selectedRail, setSelectedRail] = useState<PaymentsRail>('mobile_money');
   const [selectedCardBankRail, setSelectedCardBankRail] = useState<CardBankRail>('card');
   const [activePanel, setActivePanel] = useState<PaymentsPanel>('method');
   const [mpesaNumber, setMpesaNumber] = useState('');
@@ -2452,7 +2447,7 @@ export function MyPayments() {
   const [bankAccountName, setBankAccountName] = useState('');
   const [bankCode, setBankCode] = useState('');
   const [bankName, setBankName] = useState('');
-  const livePayoutAccount = payoutAccount?.provider === 'paypal' ? null : payoutAccount;
+  const livePayoutAccount = payoutAccount;
 
   const syncPaymentsRoute = (
     nextRail: PaymentsRail,
@@ -2463,7 +2458,7 @@ export function MyPayments() {
     const nextParams = new URLSearchParams(location.search);
     nextParams.delete('reference');
     nextParams.delete('trxref');
-    nextParams.delete('paystack_card_setup');
+    nextParams.delete('card_setup');
     nextParams.set('rail', nextRail);
     if (nextRail === 'card-bank') {
       nextParams.set('subrail', nextSubrail ?? selectedCardBankRail);
@@ -2484,16 +2479,16 @@ export function MyPayments() {
     const nextParams = new URLSearchParams(location.search);
     nextParams.delete('reference');
     nextParams.delete('trxref');
-    nextParams.delete('paystack_card_setup');
+    nextParams.delete('card_setup');
     nextParams.set('panel', panel);
     const nextSearch = nextParams.toString();
     navigate(`/my/payments${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
   };
 
   const hydrateForm = (account: PayoutAccount | null) => {
-    setMpesaNumber(account?.provider === 'mpesa' ? account.msisdn_e164 ?? '' : '');
-    setMpesaName(account?.provider === 'mpesa' ? account.account_name ?? '' : '');
-    setMpesaBankCode(account?.provider === 'mpesa' ? account.bank_code ?? 'MPESA' : 'MPESA');
+    setMpesaNumber(account?.provider === 'mobile_money' ? account.msisdn_e164 ?? '' : '');
+    setMpesaName(account?.provider === 'mobile_money' ? account.account_name ?? '' : '');
+    setMpesaBankCode(account?.provider === 'mobile_money' ? account.bank_code ?? 'MPESA' : 'MPESA');
     setBankAccountNumber('');
     setBankAccountName(account?.provider === 'bank' ? account.account_name ?? '' : '');
     setBankCode(account?.provider === 'bank' ? account.bank_code ?? '' : '');
@@ -2590,7 +2585,7 @@ export function MyPayments() {
           const nextParams = new URLSearchParams(location.search);
           nextParams.delete('reference');
           nextParams.delete('trxref');
-          nextParams.delete('paystack_card_setup');
+          nextParams.delete('card_setup');
           const nextSearch = nextParams.toString();
           navigate(`/my/payments${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
           setLinkingCard(false);
@@ -2605,7 +2600,7 @@ export function MyPayments() {
     };
   }, [cardSetupReference, hasCardSetupCallback, location.search, navigate]);
 
-  const activeSetupProvider: Exclude<PayoutAccount['provider'], 'paypal'> =
+  const activeSetupProvider: PayoutRail =
     selectedRail === 'card-bank' ? selectedCardBankRail : selectedRail;
   const verificationState = getPayoutVerificationState(livePayoutAccount);
   const currentMethodMatchesSelected = livePayoutAccount?.provider === activeSetupProvider;
@@ -2615,14 +2610,14 @@ export function MyPayments() {
     selectedRail === 'card-bank'
       ? selectedCardBankRail === 'card'
         ? 'Card'
-        : 'Bank'
-      : 'M-PESA';
+        : 'Bank account'
+      : 'Mobile money';
   const selectedRailDescription =
-    activeSetupProvider === 'mpesa'
-      ? 'M-PESA payouts run through Paystack once the saved destination is approved.'
+    activeSetupProvider === 'mobile_money'
+      ? 'Mobile money payouts become available after the saved destination is approved.'
       : activeSetupProvider === 'bank'
-        ? 'Bank payouts run through Paystack once the saved destination is approved.'
-        : 'Paystack will open a secure hosted page and return only masked card details.';
+        ? 'Bank payouts become available after the saved destination is approved.'
+        : 'Secure card setup opens a hosted page and returns only masked card details.';
 
   const filteredTransfers = useMemo(() => {
     if (filter === 'all') {
@@ -2676,21 +2671,21 @@ export function MyPayments() {
           currency: 'KES',
         });
         setNoticeText('Bank payout method saved. Verification is pending.');
-      } else if (activeSetupProvider === 'mpesa') {
+      } else if (activeSetupProvider === 'mobile_money') {
         const normalizedAccount = mpesaNumber.replace(/\D/g, '');
         const normalizedName = mpesaName.trim();
         const normalizedBankCode = mpesaBankCode.trim().toUpperCase() || 'MPESA';
         if (!normalizedAccount || !normalizedName) {
-          setErrorText('Enter a valid M-PESA number and account name.');
+          setErrorText('Enter a valid mobile money number and account name.');
           return;
         }
-        await upsertMpesaPayoutAccount({
+        await upsertMobileMoneyPayoutAccount({
           accountNumber: normalizedAccount,
           accountName: normalizedName,
           bankCode: normalizedBankCode,
           currency: 'KES',
         });
-        setNoticeText('M-PESA payout method saved. Verification is pending.');
+        setNoticeText('Mobile money payout method saved. Verification is pending.');
       } else {
         const baseUrl = new URL(import.meta.env.BASE_URL ?? '/creator/', window.location.origin);
         const returnUrl = new URL(
@@ -2698,7 +2693,7 @@ export function MyPayments() {
           baseUrl,
         ).toString();
         setLinkingCard(true);
-        setNoticeText('Redirecting to Paystack for secure card setup...');
+        setNoticeText('Redirecting to secure card setup...');
         const setupResult = await startCreatorCardPayoutSetup({ returnUrl });
         if (!setupResult.authorization_url) {
           throw new Error('Could not start secure card setup.');
@@ -2744,7 +2739,7 @@ export function MyPayments() {
             ? 'bank'
             : livePayoutAccount.provider === 'card'
               ? 'card'
-              : 'mpesa',
+              : 'mobile_money',
       });
 
       setNoticeText('Payout request submitted. We will update the history as the provider responds.');
@@ -2771,12 +2766,6 @@ export function MyPayments() {
       header={null}
     >
       <div className="wallet-page wallet-page--single payments-workspace">
-        {payoutAccount?.provider === 'paypal' ? (
-          <div className="wallet-notice wallet-notice--warning">
-            A previously saved payout method is not supported in the live creator payout workflow.
-            Save M-PESA, Bank, or Card in KES to continue.
-          </div>
-        ) : null}
         {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
         {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
 
@@ -2846,14 +2835,14 @@ export function MyPayments() {
 
           <div className="payments-rail-switch">
             <button
-              className={`payments-rail-switch__button${selectedRail === 'mpesa' ? ' is-active' : ''}`}
+              className={`payments-rail-switch__button${selectedRail === 'mobile_money' ? ' is-active' : ''}`}
               type="button"
               onClick={() => {
-                setSelectedRail('mpesa');
-                syncPaymentsRoute('mpesa');
+                setSelectedRail('mobile_money');
+                syncPaymentsRoute('mobile_money');
               }}
             >
-              M-PESA
+              Mobile money
             </button>
             <button
               className={`payments-rail-switch__button${selectedRail === 'card-bank' ? ' is-active' : ''}`}
@@ -2896,10 +2885,10 @@ export function MyPayments() {
             <div className="payments-setup-form">
               <p className="payments-method-note">{selectedRailDescription}</p>
 
-              {activeSetupProvider === 'mpesa' ? (
+              {activeSetupProvider === 'mobile_money' ? (
                 <div className="payments-form-grid">
                   <label className="create-post__field">
-                    <span>M-PESA number</span>
+                    <span>Mobile money number</span>
                     <input
                       className="my-input"
                       type="tel"
@@ -2921,14 +2910,14 @@ export function MyPayments() {
                     />
                   </label>
                   <label className="create-post__field">
-                    <span>Bank code</span>
+                    <span>Network code</span>
                     <input
                       className="my-input"
                       autoCapitalize="characters"
                       autoComplete="off"
                       value={mpesaBankCode}
                       onChange={(event) => setMpesaBankCode(event.target.value.toUpperCase())}
-                      placeholder="MPESA"
+                      placeholder="Provider code"
                     />
                   </label>
                 </div>
@@ -2982,7 +2971,7 @@ export function MyPayments() {
                 <div className="payments-card-callout">
                   <strong>Secure card setup</strong>
                   <p>
-                    Paystack handles the card on a secure hosted page, then returns only masked card
+                    The card is handled on a secure hosted page, then returns only masked card
                     details and payout references.
                   </p>
                   <p>No raw card number or CVV is stored in this app.</p>
@@ -2998,8 +2987,8 @@ export function MyPayments() {
                 >
                   {activeSetupProvider === 'card'
                     ? linkingCard
-                      ? 'Opening Paystack...'
-                      : 'Continue with Paystack'
+                      ? 'Opening secure setup...'
+                      : 'Continue with secure setup'
                     : savingMethod
                       ? 'Saving...'
                       : 'Save payout method'}
@@ -3796,7 +3785,7 @@ function LegacyMyBanking() {
   const [noticeText, setNoticeText] = useState<string | null>(null);
   const [summary, setSummary] = useState<PayoutSummary | null>(null);
   const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
-  const [payoutMethod, setPayoutMethod] = useState<'mpesa' | 'bank'>('mpesa');
+  const [payoutMethod, setPayoutMethod] = useState<'mobile_money' | 'bank'>('mobile_money');
   const [mpesaNumber, setMpesaNumber] = useState('');
   const [mpesaName, setMpesaName] = useState('');
   const [mpesaBankCode, setMpesaBankCode] = useState('MPESA');
@@ -3806,10 +3795,10 @@ function LegacyMyBanking() {
   const [bankName, setBankName] = useState('');
 
   const hydrateForm = (account: PayoutAccount | null) => {
-    setPayoutMethod(account?.provider === 'bank' ? 'bank' : 'mpesa');
-    setMpesaNumber(account?.provider === 'mpesa' ? account.msisdn_e164 ?? '' : '');
-    setMpesaName(account?.provider === 'mpesa' ? account.account_name ?? '' : '');
-    setMpesaBankCode(account?.provider === 'mpesa' ? account.bank_code ?? 'MPESA' : 'MPESA');
+    setPayoutMethod(account?.provider === 'bank' ? 'bank' : 'mobile_money');
+    setMpesaNumber(account?.provider === 'mobile_money' ? account.msisdn_e164 ?? '' : '');
+    setMpesaName(account?.provider === 'mobile_money' ? account.account_name ?? '' : '');
+    setMpesaBankCode(account?.provider === 'mobile_money' ? account.bank_code ?? 'MPESA' : 'MPESA');
     setBankAccountNumber('');
     setBankAccountName(account?.provider === 'bank' ? account.account_name ?? '' : '');
     setBankCode(account?.provider === 'bank' ? account.bank_code ?? '' : '');
@@ -3856,7 +3845,7 @@ function LegacyMyBanking() {
     };
   }, []);
 
-  const livePayoutAccount = payoutAccount?.provider === 'paypal' ? null : payoutAccount;
+  const livePayoutAccount = payoutAccount;
   const verificationState = getPayoutVerificationState(livePayoutAccount);
   const destinationMeta = getPayoutDestinationMeta(livePayoutAccount);
 
@@ -3887,10 +3876,10 @@ function LegacyMyBanking() {
         const normalizedName = mpesaName.trim();
         const normalizedBankCode = mpesaBankCode.trim().toUpperCase() || 'MPESA';
         if (!normalizedAccount || !normalizedName) {
-          setBankingError('Enter a valid M-PESA number and account name.');
+          setBankingError('Enter a valid mobile money number and account name.');
           return;
         }
-        await upsertMpesaPayoutAccount({
+        await upsertMobileMoneyPayoutAccount({
           accountNumber: normalizedAccount,
           accountName: normalizedName,
           bankCode: normalizedBankCode,
@@ -3933,12 +3922,6 @@ function LegacyMyBanking() {
       <div className="wallet-page wallet-page--single">
         {bankingError ? <div className="wallet-notice wallet-notice--warning">{bankingError}</div> : null}
         {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
-        {payoutAccount?.provider === 'paypal' ? (
-          <div className="wallet-notice wallet-notice--warning">
-            A previously saved payout method is not supported in the live creator payout workflow.
-            Save M-PESA, Bank, or Card to receive payouts.
-          </div>
-        ) : null}
 
         <section className="wallet-panel">
           <div className="wallet-panel__title-row">
@@ -3987,7 +3970,7 @@ function LegacyMyBanking() {
           </div>
 
           <div className="wallet-warning">
-            Saving a destination does not verify it. M-PESA and Bank destinations default to
+            Saving a destination does not verify it. Mobile money and bank destinations default to
             pending until they are manually approved server-side.
           </div>
         </section>
@@ -4005,11 +3988,11 @@ function LegacyMyBanking() {
 
             <div className="wallet-rail-picker">
               <button
-                className={`wallet-rail-picker__button${payoutMethod === 'mpesa' ? ' is-active' : ''}`}
+                className={`wallet-rail-picker__button${payoutMethod === 'mobile_money' ? ' is-active' : ''}`}
                 type="button"
-                onClick={() => setPayoutMethod('mpesa')}
+                onClick={() => setPayoutMethod('mobile_money')}
               >
-                M-PESA
+                Mobile money
               </button>
               <button
                 className={`wallet-rail-picker__button${payoutMethod === 'bank' ? ' is-active' : ''}`}
@@ -4070,7 +4053,7 @@ function LegacyMyBanking() {
               ) : (
                 <>
                   <label className="create-post__field">
-                    <span>M-PESA number</span>
+                    <span>Mobile money number</span>
                     <input
                       className="my-input"
                       type="tel"
@@ -4092,14 +4075,14 @@ function LegacyMyBanking() {
                     />
                   </label>
                   <label className="create-post__field">
-                    <span>Bank code</span>
+                    <span>Network code</span>
                     <input
                       className="my-input"
                       autoCapitalize="characters"
                       autoComplete="off"
                       value={mpesaBankCode}
                       onChange={(event) => setMpesaBankCode(event.target.value.toUpperCase())}
-                      placeholder="MPESA"
+                      placeholder="Provider code"
                     />
                   </label>
                 </>
@@ -4134,7 +4117,7 @@ function LegacyMyBanking() {
             <div className="wallet-support-list">
               <div className="wallet-support-list__item">
                 <strong>1. Save destination</strong>
-                <span>M-PESA and Bank destinations are stored in pending status by default.</span>
+                <span>Mobile money and bank destinations are stored in pending status by default.</span>
               </div>
               <div className="wallet-support-list__item">
                 <strong>2. Manual verification</strong>
