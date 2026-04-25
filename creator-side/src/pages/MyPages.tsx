@@ -2467,6 +2467,123 @@ export function MyPayments() {
     return transferRows.filter((item) => item.status === 'queued' || item.status === 'submitted');
   }, [filter, transferRows]);
 
+  const overviewMetrics = useMemo(() => {
+    const availableMinor = summary?.available_amount_minor ?? 0;
+    const pendingMinor = summary?.pending_amount_minor ?? 0;
+
+    let completedMinor = 0;
+    let inFlightMinor = 0;
+    let failedMinor = 0;
+    let completedCount = 0;
+    let inFlightCount = 0;
+    let failedCount = 0;
+
+    for (const transfer of transferRows) {
+      if (transfer.status === 'success') {
+        completedMinor += transfer.amount_minor;
+        completedCount += 1;
+        continue;
+      }
+      if (transfer.status === 'queued' || transfer.status === 'submitted') {
+        inFlightMinor += transfer.amount_minor;
+        inFlightCount += 1;
+        continue;
+      }
+      failedMinor += transfer.amount_minor;
+      failedCount += 1;
+    }
+
+    const trackedFundsMinor = availableMinor + pendingMinor + completedMinor;
+    const segments = [
+      { label: 'Available', value: availableMinor, color: '#4f8df7' },
+      { label: 'Pending', value: pendingMinor, color: '#8b5cf6' },
+      { label: 'Paid out', value: completedMinor, color: '#22c55e' },
+    ].filter((segment) => segment.value > 0);
+
+    let cursor = 0;
+    const ringGradient =
+      trackedFundsMinor > 0 && segments.length > 0
+        ? `conic-gradient(${segments
+            .map((segment) => {
+              const start = (cursor / trackedFundsMinor) * 100;
+              cursor += segment.value;
+              const end = (cursor / trackedFundsMinor) * 100;
+              return `${segment.color} ${start}% ${end}%`;
+            })
+            .join(', ')})`
+        : 'conic-gradient(from 180deg, rgba(79, 141, 247, 0.18), rgba(79, 141, 247, 0.06))';
+
+    const flowRows = [
+      {
+        label: 'Money out',
+        helper: `${completedCount} completed`,
+        value: completedMinor,
+        formatted: formatMinorCurrency(completedMinor, currency),
+        accentClass: 'is-complete',
+      },
+      {
+        label: 'In flight',
+        helper: `${inFlightCount} pending`,
+        value: inFlightMinor,
+        formatted: formatMinorCurrency(inFlightMinor, currency),
+        accentClass: 'is-pending',
+      },
+      {
+        label: 'Returned',
+        helper: `${failedCount} failed or reversed`,
+        value: failedMinor,
+        formatted: formatMinorCurrency(failedMinor, currency),
+        accentClass: 'is-failed',
+      },
+    ];
+
+    const flowMax = Math.max(...flowRows.map((row) => row.value), 1);
+    const transferResolutionCount = completedCount + failedCount;
+    const successRate =
+      transferResolutionCount > 0
+        ? Math.round((completedCount / transferResolutionCount) * 100)
+        : null;
+
+    const recentSeries = [...transferRows]
+      .sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime())
+      .slice(-6)
+      .map((transfer) => ({
+        id: transfer.id,
+        label: new Date(transfer.created_at).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        }),
+        value: transfer.amount_minor,
+        formatted: formatMinorCurrency(transfer.amount_minor, transfer.currency ?? currency),
+        status: transfer.status,
+      }));
+    const recentMax = Math.max(...recentSeries.map((item) => item.value), 1);
+
+    return {
+      availableMinor,
+      pendingMinor,
+      completedMinor,
+      trackedFundsMinor,
+      completedCount,
+      inFlightCount,
+      failedCount,
+      successRate,
+      ringGradient,
+      ringSegments: segments.map((segment) => ({
+        ...segment,
+        formatted: formatMinorCurrency(segment.value, currency),
+      })),
+      flowRows: flowRows.map((row) => ({
+        ...row,
+        widthPercent: row.value > 0 ? Math.max(10, (row.value / flowMax) * 100) : 0,
+      })),
+      recentSeries: recentSeries.map((item) => ({
+        ...item,
+        heightPercent: item.value > 0 ? Math.max(18, (item.value / recentMax) * 100) : 0,
+      })),
+    };
+  }, [currency, summary, transferRows]);
+
   const requestDisabledText =
     verificationState === 'unconfigured'
       ? 'Set up a payout destination in Banking first.'
@@ -2597,58 +2714,194 @@ export function MyPayments() {
         </section>
 
         {activePanel === 'overview' ? (
-        <section className="wallet-panel wallet-panel--compact payments-method-panel">
-          <div className="wallet-panel__title-row">
-            <div>
-              <h2 className="wallet-panel__title">Overview</h2>
-            </div>
-          </div>
-
-          <div className="payments-setup-grid">
-            <div className="payments-setup-form">
-              <p className="payments-method-note">
-                Review your current payout destination, verification status, and available balance
-                here. Manage destination details from Banking when needed.
-              </p>
-
-              <div className="payments-action-row">
-                <button
-                  className="wallet-action-button"
-                  type="button"
-                  onClick={() => navigate('/my/banking')}
-                >
-                  Open Banking
-                </button>
+          <section className="wallet-panel wallet-panel--compact payments-method-panel">
+            <div className="wallet-panel__title-row">
+              <div>
+                <h2 className="wallet-panel__title">Overview</h2>
               </div>
             </div>
 
-            <aside className="payments-method-card">
-              <div className="payments-method-card__eyebrow">
-                {livePayoutAccount ? 'Current payout destination' : 'Payout destination'}
-              </div>
-              <h3 className="payments-method-card__title">
-                {getUnifiedPayoutDestinationLabel(livePayoutAccount)}
-              </h3>
-              <p className="payments-method-card__meta">
-                {livePayoutAccount
-                  ? getUnifiedPayoutDestinationMeta(livePayoutAccount)
-                  : 'No payout destination is configured on this account yet.'}
-              </p>
-              <div className="payments-method-card__status">
-                <span
-                  className={`wallet-status wallet-status--${livePayoutAccount ? verificationState : 'inactive'}`}
-                >
-                  {livePayoutAccount ? getPayoutVerificationLabel(verificationState) : 'Not configured'}
-                </span>
-                <span className="my-muted">
+            <div className="payments-overview-grid">
+              <section className="payments-analytics-card payments-analytics-card--hero">
+                <div className="payments-analytics-card__eyebrow">Funds position</div>
+                <div className="payments-overview-hero">
+                  <div className="payments-donut-card">
+                    <div
+                      className="payments-donut"
+                      aria-label="Funds position chart"
+                      role="img"
+                      style={{ background: overviewMetrics.ringGradient }}
+                    >
+                      <div className="payments-donut__center">
+                        <strong>{formatMinorCurrency(overviewMetrics.trackedFundsMinor, currency)}</strong>
+                        <span>Tracked funds</span>
+                      </div>
+                    </div>
+
+                    <div className="payments-donut-legend">
+                      {overviewMetrics.ringSegments.length > 0 ? (
+                        overviewMetrics.ringSegments.map((segment) => (
+                          <div className="payments-donut-legend__item" key={segment.label}>
+                            <span
+                              className="payments-donut-legend__swatch"
+                              style={{ backgroundColor: segment.color }}
+                            />
+                            <div className="payments-donut-legend__content">
+                              <strong>{segment.label}</strong>
+                              <span>{segment.formatted}</span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="payments-empty-state">
+                          <strong>No funds tracked yet</strong>
+                          <span>
+                            Balances and payout analytics will appear here as soon as payout activity starts.
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="payments-kpi-grid">
+                    <article className="payments-kpi-card">
+                      <span className="payments-kpi-card__label">Money in platform</span>
+                      <strong className="payments-kpi-card__value">
+                        {formatMinorCurrency(
+                          overviewMetrics.availableMinor + overviewMetrics.pendingMinor,
+                          currency,
+                        )}
+                      </strong>
+                      <span className="payments-kpi-card__meta">
+                        Available plus pending funds still on account
+                      </span>
+                    </article>
+                    <article className="payments-kpi-card">
+                      <span className="payments-kpi-card__label">Money out</span>
+                      <strong className="payments-kpi-card__value">
+                        {formatMinorCurrency(overviewMetrics.completedMinor, currency)}
+                      </strong>
+                      <span className="payments-kpi-card__meta">
+                        {overviewMetrics.completedCount} completed payout
+                        {overviewMetrics.completedCount === 1 ? '' : 's'}
+                      </span>
+                    </article>
+                    <article className="payments-kpi-card">
+                      <span className="payments-kpi-card__label">Transfer success</span>
+                      <strong className="payments-kpi-card__value">
+                        {overviewMetrics.successRate === null ? '--' : `${overviewMetrics.successRate}%`}
+                      </strong>
+                      <span className="payments-kpi-card__meta">
+                        Based on completed versus failed transfer resolutions
+                      </span>
+                    </article>
+                    <article className="payments-kpi-card">
+                      <span className="payments-kpi-card__label">Pending queue</span>
+                      <strong className="payments-kpi-card__value">{overviewMetrics.inFlightCount}</strong>
+                      <span className="payments-kpi-card__meta">
+                        Requests still waiting on provider settlement
+                      </span>
+                    </article>
+                  </div>
+                </div>
+              </section>
+
+              <aside className="payments-method-card payments-method-card--overview">
+                <div className="payments-method-card__eyebrow">
+                  {livePayoutAccount ? 'Current payout destination' : 'Payout destination'}
+                </div>
+                <h3 className="payments-method-card__title">
+                  {getUnifiedPayoutDestinationLabel(livePayoutAccount)}
+                </h3>
+                <p className="payments-method-card__meta">
                   {livePayoutAccount
-                    ? `Using ${getPayoutProviderLabel(livePayoutAccount.provider)} for live payouts`
-                    : 'Manage payout destination from Banking'}
-                </span>
-              </div>
-            </aside>
-          </div>
-        </section>
+                    ? getUnifiedPayoutDestinationMeta(livePayoutAccount)
+                    : 'No payout destination is configured on this account yet.'}
+                </p>
+                <div className="payments-method-card__status">
+                  <span
+                    className={`wallet-status wallet-status--${livePayoutAccount ? verificationState : 'inactive'}`}
+                  >
+                    {livePayoutAccount ? getPayoutVerificationLabel(verificationState) : 'Not configured'}
+                  </span>
+                  <span className="my-muted">
+                    {livePayoutAccount
+                      ? `${getPayoutProviderLabel(livePayoutAccount.provider)} rail ready for withdrawals once approved`
+                      : 'Manage payout destination from Banking'}
+                  </span>
+                </div>
+                <div className="payments-method-card__action">
+                  <button
+                    className="wallet-action-button"
+                    type="button"
+                    onClick={() => navigate('/my/banking')}
+                  >
+                    Open Banking
+                  </button>
+                </div>
+              </aside>
+
+              <section className="payments-analytics-card">
+                <div className="payments-analytics-card__header">
+                  <div>
+                    <h3 className="payments-analytics-card__title">Payout flow</h3>
+                    <p className="payments-analytics-card__copy">
+                      Compare money already paid out, requests still processing, and transfers that returned.
+                    </p>
+                  </div>
+                </div>
+                <div className="payments-flow-list">
+                  {overviewMetrics.flowRows.map((row) => (
+                    <div className="payments-flow-row" key={row.label}>
+                      <div className="payments-flow-row__copy">
+                        <strong>{row.label}</strong>
+                        <span>{row.helper}</span>
+                      </div>
+                      <div className="payments-flow-row__track">
+                        <div
+                          className={`payments-flow-row__fill ${row.accentClass}`}
+                          style={{ width: `${row.widthPercent}%` }}
+                        />
+                      </div>
+                      <div className="payments-flow-row__value">{row.formatted}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="payments-analytics-card">
+                <div className="payments-analytics-card__header">
+                  <div>
+                    <h3 className="payments-analytics-card__title">Recent payout activity</h3>
+                    <p className="payments-analytics-card__copy">
+                      Latest payout requests sized by amount so you can scan recent movement quickly.
+                    </p>
+                  </div>
+                </div>
+                {overviewMetrics.recentSeries.length > 0 ? (
+                  <div className="payments-activity-chart" aria-label="Recent payout activity chart" role="img">
+                    {overviewMetrics.recentSeries.map((item) => (
+                      <div className="payments-activity-chart__item" key={item.id}>
+                        <span className="payments-activity-chart__amount">{item.formatted}</span>
+                        <div className="payments-activity-chart__bar-shell">
+                          <div
+                            className={`payments-activity-chart__bar is-${item.status}`}
+                            style={{ height: `${item.heightPercent}%` }}
+                          />
+                        </div>
+                        <span className="payments-activity-chart__label">{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="payments-empty-state">
+                    <strong>No payout activity yet</strong>
+                    <span>Your first payout request will start populating this activity graph.</span>
+                  </div>
+                )}
+              </section>
+            </div>
+          </section>
 
         ) : null}
 
