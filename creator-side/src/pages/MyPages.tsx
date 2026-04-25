@@ -248,10 +248,10 @@ const parseMajorAmountToMinor = (value: string) => {
   return Math.round(numeric * 100);
 };
 
-type PaymentsPanel = 'overview' | 'request' | 'history';
+type PaymentsPanel = 'overview' | 'history';
 
 const normalizePaymentsPanel = (value: string | null): PaymentsPanel | null => {
-  if (value === 'overview' || value === 'request' || value === 'history') {
+  if (value === 'overview' || value === 'history') {
     return value;
   }
   return null;
@@ -2389,16 +2389,14 @@ export function MyPayments() {
   const navigate = useNavigate();
   const location = useLocation();
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const requestedPanel = normalizePaymentsPanel(searchParams.get('panel'));
+  const requestedPanelParam = searchParams.get('panel');
+  const requestedPanel = normalizePaymentsPanel(requestedPanelParam);
   const [filter, setFilter] = useState<'all' | 'in_flight' | 'completed' | 'failed'>('all');
   const [loading, setLoading] = useState(true);
-  const [requestingPayout, setRequestingPayout] = useState(false);
-  const [noticeText, setNoticeText] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [summary, setSummary] = useState<PayoutSummary | null>(null);
   const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
   const [transferRows, setTransferRows] = useState<PayoutTransfer[]>([]);
-  const [amountMajor, setAmountMajor] = useState('');
   const [activePanel, setActivePanel] = useState<PaymentsPanel>('overview');
   const livePayoutAccount = payoutAccount;
 
@@ -2440,22 +2438,17 @@ export function MyPayments() {
   }, []);
 
   useEffect(() => {
+    if (requestedPanelParam === 'request') {
+      navigate('/my/withdraw', { replace: true });
+      return;
+    }
     if (requestedPanel) {
-      if (requestedPanel === 'request' && !livePayoutAccount) {
-        setActivePanel('overview');
-        return;
-      }
       setActivePanel(requestedPanel);
       return;
     }
-    if (getPayoutVerificationState(livePayoutAccount) === 'verified') {
-      setActivePanel('request');
-      return;
-    }
     setActivePanel('overview');
-  }, [requestedPanel, livePayoutAccount, searchParams]);
+  }, [navigate, requestedPanel, requestedPanelParam]);
   const verificationState = getPayoutVerificationState(livePayoutAccount);
-  const amountMinor = parseMajorAmountToMinor(amountMajor);
   const currency = summary?.currency ?? livePayoutAccount?.currency ?? 'KES';
 
   const filteredTransfers = useMemo(() => {
@@ -2588,70 +2581,6 @@ export function MyPayments() {
     };
   }, [currency, summary, transferRows]);
 
-  const requestDisabledText =
-    verificationState === 'unconfigured'
-      ? 'Set up a payout destination in Banking first.'
-      : verificationState === 'pending'
-        ? 'This payout method is waiting for manual review before withdrawals can be requested.'
-        : verificationState === 'rejected'
-          ? 'This payout method was rejected. Update the details and save it again.'
-          : verificationState === 'inactive'
-            ? 'This payout method is inactive and cannot receive payouts.'
-            : amountMajor.trim().length === 0
-              ? 'Enter the amount you want to withdraw.'
-              : amountMinor === null || amountMinor <= 0
-                ? 'Enter a valid payout amount.'
-                : amountMinor > (summary?.available_amount_minor ?? 0)
-                  ? 'Requested amount exceeds your available balance.'
-                  : null;
-
-  const handleRequestPayout = async () => {
-    if (!summary || amountMinor === null || amountMinor <= 0) {
-      setErrorText('Enter a valid payout amount.');
-      return;
-    }
-    if (amountMinor > summary.available_amount_minor) {
-      setErrorText('Requested amount exceeds your available balance.');
-      return;
-    }
-    if (!livePayoutAccount) {
-      setActivePanel('overview');
-      return;
-    }
-
-    try {
-      setRequestingPayout(true);
-      setErrorText(null);
-      setNoticeText(null);
-
-      await requestCreatorPayout({
-        amountMinor,
-        reason: 'Creator initiated payout',
-        provider:
-          livePayoutAccount.provider === 'bank'
-            ? 'bank'
-            : livePayoutAccount.provider === 'card'
-              ? 'card'
-              : 'mobile_money',
-      });
-
-      setNoticeText('Payout request submitted. We will update the history as the provider responds.');
-      setAmountMajor('');
-      await loadPayments();
-      setActivePanel('history');
-      syncPaymentsPanel('history');
-    } catch (error) {
-      console.error(error);
-      setErrorText(
-        error instanceof Error
-          ? error.message
-          : 'Payout request failed. Confirm your balance and payout destination first.',
-      );
-    } finally {
-      setRequestingPayout(false);
-    }
-  };
-
   return (
     <MyLayout
       title=""
@@ -2659,7 +2588,6 @@ export function MyPayments() {
       header={null}
     >
       <div className="wallet-page wallet-page--single payments-workspace">
-        {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
         {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
 
         <section className="wallet-panel wallet-panel--compact payments-summary-strip">
@@ -2677,18 +2605,6 @@ export function MyPayments() {
                 >
                   Overview
                 </button>
-                {livePayoutAccount ? (
-                  <button
-                    className={`payments-feature-switch__button${activePanel === 'request' ? ' is-active' : ''}`}
-                    type="button"
-                    onClick={() => {
-                      setActivePanel('request');
-                      syncPaymentsPanel('request');
-                    }}
-                  >
-                    Request
-                  </button>
-                ) : null}
                 <button
                   className={`payments-feature-switch__button${activePanel === 'history' ? ' is-active' : ''}`}
                   type="button"
@@ -2700,6 +2616,13 @@ export function MyPayments() {
                   History
                 </button>
               </div>
+              <button
+                className="wallet-action-button payments-summary-strip__cta"
+                type="button"
+                onClick={() => navigate('/my/withdraw')}
+              >
+                Withdraw funds
+              </button>
             </div>
           </div>
 
@@ -2905,50 +2828,6 @@ export function MyPayments() {
 
         ) : null}
 
-        {activePanel === 'request' && livePayoutAccount ? (
-        <section className="wallet-panel wallet-panel--compact payments-request-panel">
-          <div className="wallet-panel__title-row">
-            <div>
-              <h2 className="wallet-panel__title">Request payout</h2>
-            </div>
-          </div>
-
-          <div className="payments-request-grid">
-            <label className="wallet-money-field wallet-money-field--large">
-              <input
-                type="text"
-                inputMode="decimal"
-                value={amountMajor}
-                onChange={(event) => setAmountMajor(event.target.value)}
-                placeholder="0"
-                aria-label="Payout amount"
-              />
-              <span>{currency === 'KES' ? 'KSh' : currency}</span>
-            </label>
-            <button
-              className="wallet-action-button"
-              type="button"
-              disabled={Boolean(requestDisabledText) || requestingPayout}
-              onClick={() => void handleRequestPayout()}
-            >
-              {requestingPayout ? 'Requesting...' : 'Request payout'}
-            </button>
-          </div>
-
-          <div className="payments-request-meta">
-            <div>
-              <strong>Using:</strong> {getUnifiedPayoutDestinationLabel(livePayoutAccount)}
-            </div>
-            <div>
-              <strong>Available:</strong> {formatMinorCurrency(summary?.available_amount_minor, currency)}
-            </div>
-          </div>
-
-          {requestDisabledText ? <div className="wallet-warning">{requestDisabledText}</div> : null}
-        </section>
-
-        ) : null}
-
         {activePanel === 'history' ? (
         <section className="wallet-panel wallet-panel--compact payments-history-panel">
           <div className="payments-history-header">
@@ -3027,6 +2906,335 @@ export function MyPayments() {
 
 export function MyPaymentsAddCard() {
   return <Navigate to="/my/payments?panel=overview" replace />;
+}
+
+export function MyWithdraw() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [requestingPayout, setRequestingPayout] = useState(false);
+  const [noticeText, setNoticeText] = useState<string | null>(null);
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [summary, setSummary] = useState<PayoutSummary | null>(null);
+  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
+  const [transferRows, setTransferRows] = useState<PayoutTransfer[]>([]);
+  const [amountMajor, setAmountMajor] = useState('');
+
+  const loadWithdrawWorkspace = async () => {
+    try {
+      setLoading(true);
+      setErrorText(null);
+      const [nextSummary, nextPayoutAccount, transfers] = await Promise.all([
+        fetchPayoutSummary(),
+        fetchPayoutAccount(),
+        fetchPayoutTransfers(8),
+      ]);
+      setSummary(nextSummary);
+      setPayoutAccount(nextPayoutAccount);
+      setTransferRows(transfers);
+    } catch (error) {
+      console.error(error);
+      setErrorText('Could not load withdraw workspace.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadWithdrawWorkspace();
+  }, []);
+
+  const livePayoutAccount = payoutAccount;
+  const verificationState = getPayoutVerificationState(livePayoutAccount);
+  const currency = summary?.currency ?? livePayoutAccount?.currency ?? 'KES';
+  const amountMinor = parseMajorAmountToMinor(amountMajor);
+  const availableMinor = summary?.available_amount_minor ?? 0;
+  const pendingMinor = summary?.pending_amount_minor ?? 0;
+  const recentTransfers = useMemo(
+    () =>
+      [...transferRows]
+        .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+        .slice(0, 4),
+    [transferRows],
+  );
+
+  const requestDisabledText =
+    verificationState === 'unconfigured'
+      ? 'Complete your payout destination in Banking before requesting a withdrawal.'
+      : verificationState === 'pending'
+        ? 'Your payout destination is still under review.'
+        : verificationState === 'rejected'
+          ? 'Your payout destination was rejected. Update it from Banking first.'
+          : verificationState === 'inactive'
+            ? 'Your payout destination is inactive and cannot receive transfers.'
+            : amountMajor.trim().length === 0
+              ? 'Enter the amount you want to withdraw.'
+              : amountMinor === null || amountMinor <= 0
+                ? 'Enter a valid withdrawal amount.'
+                : amountMinor > availableMinor
+                  ? 'Requested amount exceeds your available balance.'
+                  : null;
+
+  const setWithdrawAmount = (fraction: number) => {
+    if (availableMinor <= 0) return;
+    const nextMinor = Math.max(0, Math.floor(availableMinor * fraction));
+    setAmountMajor((nextMinor / 100).toFixed(nextMinor % 100 === 0 ? 0 : 2));
+  };
+
+  const handleRequestPayout = async () => {
+    if (!summary || amountMinor === null || amountMinor <= 0) {
+      setErrorText('Enter a valid withdrawal amount.');
+      return;
+    }
+    if (amountMinor > availableMinor) {
+      setErrorText('Requested amount exceeds your available balance.');
+      return;
+    }
+    if (!livePayoutAccount) {
+      setErrorText('Complete your payout destination in Banking first.');
+      return;
+    }
+
+    try {
+      setRequestingPayout(true);
+      setErrorText(null);
+      setNoticeText(null);
+
+      await requestCreatorPayout({
+        amountMinor,
+        reason: 'Creator initiated payout',
+        provider:
+          livePayoutAccount.provider === 'bank'
+            ? 'bank'
+            : livePayoutAccount.provider === 'card'
+              ? 'card'
+              : 'mobile_money',
+      });
+
+      setNoticeText('Withdrawal request submitted. We will update the status as settlement progresses.');
+      setAmountMajor('');
+      await loadWithdrawWorkspace();
+    } catch (error) {
+      console.error(error);
+      setErrorText(
+        error instanceof Error
+          ? error.message
+          : 'Withdrawal request failed. Confirm your balance and destination, then try again.',
+      );
+    } finally {
+      setRequestingPayout(false);
+    }
+  };
+
+  return (
+    <MyLayout title="" activeNav="payments" header={null}>
+      <div className="wallet-page wallet-page--single withdraw-workspace">
+        {noticeText ? <div className="wallet-notice">{noticeText}</div> : null}
+        {errorText ? <div className="wallet-notice wallet-notice--warning">{errorText}</div> : null}
+
+        <section className="wallet-panel wallet-panel--compact withdraw-hero">
+          <div className="withdraw-hero__header">
+            <div>
+              <div className="payments-analytics-card__eyebrow">Creator withdraw</div>
+              <h1 className="withdraw-hero__title">Move cleared balance to your payout destination.</h1>
+              <p className="withdraw-hero__copy">
+                Request verified creator withdrawals from one place. The transfer route stays hidden behind
+                secure payout handling, while this screen keeps the amount, readiness, and recent activity
+                clear.
+              </p>
+            </div>
+            <div className="withdraw-hero__actions">
+              <button
+                className="wallet-action-button wallet-action-button--ghost"
+                type="button"
+                onClick={() => navigate('/my/payments')}
+              >
+                Back to payments
+              </button>
+              <button
+                className="wallet-action-button"
+                type="button"
+                onClick={() => navigate('/my/banking')}
+              >
+                Open Banking
+              </button>
+            </div>
+          </div>
+
+          <div className="wallet-balance-grid payments-summary-grid withdraw-summary-grid">
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Available balance</div>
+              <div className="wallet-balance-card__value">{formatMinorCurrency(availableMinor, currency)}</div>
+            </article>
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Pending balance</div>
+              <div className="wallet-balance-card__value">{formatMinorCurrency(pendingMinor, currency)}</div>
+            </article>
+            <article className="wallet-balance-card">
+              <div className="wallet-balance-card__label">Destination status</div>
+              <div className="wallet-balance-card__value wallet-balance-card__value--small">
+                {livePayoutAccount ? getPayoutVerificationLabel(verificationState) : 'Banking required'}
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <div className="withdraw-grid">
+          <section className="wallet-panel wallet-panel--compact withdraw-panel withdraw-panel--main">
+            <div className="wallet-panel__title-row">
+              <div>
+                <h2 className="wallet-panel__title">Withdraw funds</h2>
+                <p className="wallet-panel__subtitle">
+                  Enter an exact amount. Funds move only from your cleared creator balance.
+                </p>
+              </div>
+              {loading ? <span className="wallet-status">Loading...</span> : null}
+            </div>
+
+            <div className="withdraw-amount-shell">
+              <label className="wallet-money-field wallet-money-field--large withdraw-amount-field">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={amountMajor}
+                  onChange={(event) => setAmountMajor(event.target.value)}
+                  placeholder="0"
+                  aria-label="Withdraw amount"
+                />
+                <span>{currency === 'KES' ? 'KSh' : currency}</span>
+              </label>
+
+              <div className="withdraw-quick-actions">
+                <button className="withdraw-chip" type="button" onClick={() => setWithdrawAmount(0.25)}>
+                  25%
+                </button>
+                <button className="withdraw-chip" type="button" onClick={() => setWithdrawAmount(0.5)}>
+                  50%
+                </button>
+                <button className="withdraw-chip" type="button" onClick={() => setWithdrawAmount(1)}>
+                  Max
+                </button>
+              </div>
+            </div>
+
+            <div className="withdraw-guidance-grid">
+              <article className="withdraw-guidance-card">
+                <strong>Destination</strong>
+                <span>
+                  {livePayoutAccount
+                    ? `${getUnifiedPayoutDestinationLabel(livePayoutAccount)}`
+                    : 'No payout destination configured yet.'}
+                </span>
+                <small>
+                  {livePayoutAccount
+                    ? getUnifiedPayoutDestinationMeta(livePayoutAccount)
+                    : 'Save and verify a payout destination from Banking before withdrawing.'}
+                </small>
+              </article>
+              <article className="withdraw-guidance-card">
+                <strong>Available now</strong>
+                <span>{formatMinorCurrency(availableMinor, currency)}</span>
+                <small>Only cleared funds can be moved out. Pending funds stay in platform until settled.</small>
+              </article>
+            </div>
+
+            {requestDisabledText ? <div className="wallet-warning">{requestDisabledText}</div> : null}
+
+            <div className="withdraw-submit-row">
+              <button
+                className="wallet-action-button wallet-action-button--ghost"
+                type="button"
+                onClick={() => navigate('/my/payments?panel=history')}
+              >
+                View history
+              </button>
+              <button
+                className="wallet-action-button withdraw-submit-row__primary"
+                type="button"
+                disabled={Boolean(requestDisabledText) || requestingPayout}
+                onClick={() => void handleRequestPayout()}
+              >
+                {requestingPayout ? 'Submitting request...' : 'Request withdrawal'}
+              </button>
+            </div>
+          </section>
+
+          <aside className="withdraw-side">
+            <section className="wallet-panel wallet-panel--compact withdraw-panel">
+              <div className="wallet-panel__title-row">
+                <div>
+                  <h2 className="wallet-panel__title">Readiness</h2>
+                  <p className="wallet-panel__subtitle">Track what is required before funds can move.</p>
+                </div>
+              </div>
+
+              <div className="withdraw-readiness-list">
+                <div className="withdraw-readiness-item">
+                  <span className="withdraw-readiness-item__label">Destination</span>
+                  <strong>{livePayoutAccount ? getUnifiedPayoutDestinationLabel(livePayoutAccount) : 'Not set'}</strong>
+                </div>
+                <div className="withdraw-readiness-item">
+                  <span className="withdraw-readiness-item__label">Verification</span>
+                  <strong>{livePayoutAccount ? getPayoutVerificationLabel(verificationState) : 'Required'}</strong>
+                </div>
+                <div className="withdraw-readiness-item">
+                  <span className="withdraw-readiness-item__label">Queue exposure</span>
+                  <strong>{formatMinorCurrency(pendingMinor, currency)}</strong>
+                </div>
+              </div>
+
+              <div className="withdraw-timeline">
+                <div className="withdraw-timeline__item is-complete">
+                  <strong>1. Review destination</strong>
+                  <span>Use Banking to confirm the payout route and identity details.</span>
+                </div>
+                <div className={`withdraw-timeline__item${verificationState === 'verified' ? ' is-complete' : ''}`}>
+                  <strong>2. Verification gate</strong>
+                  <span>Only approved destinations can move funds out of your creator balance.</span>
+                </div>
+                <div className="withdraw-timeline__item">
+                  <strong>3. Settlement</strong>
+                  <span>Submitted withdrawals appear in history until they complete or return.</span>
+                </div>
+              </div>
+            </section>
+
+            <section className="wallet-panel wallet-panel--compact withdraw-panel">
+              <div className="wallet-panel__title-row">
+                <div>
+                  <h2 className="wallet-panel__title">Recent withdrawals</h2>
+                  <p className="wallet-panel__subtitle">Latest transfer attempts and their settlement state.</p>
+                </div>
+              </div>
+
+              {recentTransfers.length > 0 ? (
+                <div className="withdraw-activity-list">
+                  {recentTransfers.map((transfer) => (
+                    <div className="withdraw-activity-item" key={transfer.id}>
+                      <div>
+                        <strong>{formatMinorCurrency(transfer.amount_minor, transfer.currency ?? currency)}</strong>
+                        <span>{formatPayoutTransferDate(transfer.created_at)}</span>
+                      </div>
+                      <div className="withdraw-activity-item__status">
+                        <span className={`wallet-status wallet-status--${transfer.status}`}>
+                          {formatPayoutTransferStatus(transfer.status)}
+                        </span>
+                        {transfer.failure_reason ? <small>{transfer.failure_reason}</small> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="payments-empty-state">
+                  <strong>No withdrawals yet</strong>
+                  <span>Your first request will show here once the payout flow starts.</span>
+                </div>
+              )}
+            </section>
+          </aside>
+        </div>
+      </div>
+    </MyLayout>
+  );
 }
 
 export function PostsCreate() {
