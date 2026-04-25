@@ -8,6 +8,7 @@ import { requireCreatorPaymentAccess } from "../_shared/guards.ts";
 
 const PAYSTACK_API = "https://api.paystack.co";
 const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
+const PROVIDER_TIMEOUT_MS = 20_000;
 
 type Body = {
   accountNumber: string;
@@ -16,6 +17,18 @@ type Body = {
   bankName?: string;
   currency?: string;
 };
+
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const payload = await response.json();
+    return { response, payload };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -46,22 +59,36 @@ serve(async (req) => {
     return jsonWithCors({ error: "accountNumber format is invalid" }, 400);
   }
 
-  const recipientRes = await fetch(`${PAYSTACK_API}/transferrecipient`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${secret}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      type: "bank_account",
-      name: accountName,
-      account_number: accountNumber,
-      bank_code: bankCode,
-      currency,
-    }),
-  });
+  let recipientRes: Response;
+  let recipientJson: any;
+  try {
+    const result = await fetchJsonWithTimeout(
+      `${PAYSTACK_API}/transferrecipient`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "bank_account",
+          name: accountName,
+          account_number: accountNumber,
+          bank_code: bankCode,
+          currency,
+        }),
+      },
+      PROVIDER_TIMEOUT_MS,
+    );
+    recipientRes = result.response;
+    recipientJson = result.payload;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return jsonWithCors({ error: "Bank payout setup timed out. Try again in a moment." }, 504);
+    }
+    return jsonWithCors({ error: "Bank payout provider request failed" }, 502);
+  }
 
-  const recipientJson = await recipientRes.json();
   if (!recipientRes.ok || !recipientJson?.data?.recipient_code) {
     return jsonWithCors({ error: "Bank payout destination setup failed", details: recipientJson }, 400);
   }

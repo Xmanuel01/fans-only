@@ -27,6 +27,78 @@ const isMissingRpcError = (error: unknown, functionName: string) => {
   );
 };
 
+async function describeFunctionInvokeError(error: unknown, fallback: string): Promise<string> {
+  if (!error || typeof error !== 'object') {
+    return fallback;
+  }
+
+  const candidate = error as {
+    message?: string;
+    details?: string;
+    context?: {
+      json?: () => Promise<unknown>;
+      text?: () => Promise<string>;
+      status?: number;
+      statusText?: string;
+      clone?: () => {
+        json?: () => Promise<unknown>;
+        text?: () => Promise<string>;
+        status?: number;
+        statusText?: string;
+      };
+    };
+  };
+
+  const response = candidate.context?.clone?.() ?? candidate.context;
+  if (response?.json) {
+    try {
+      const payload = await response.json();
+      if (payload && typeof payload === 'object') {
+        const body = payload as { error?: unknown; details?: unknown; message?: unknown };
+        const directMessage =
+          typeof body.error === 'string'
+            ? body.error
+            : typeof body.message === 'string'
+              ? body.message
+              : null;
+        if (directMessage) {
+          return directMessage;
+        }
+        if (typeof body.details === 'string' && body.details.trim()) {
+          return body.details;
+        }
+      }
+    } catch {
+      // ignore invalid JSON payloads
+    }
+  }
+
+  if (response?.text) {
+    try {
+      const text = await response.text();
+      if (text.trim()) {
+        return text.trim();
+      }
+    } catch {
+      // ignore unreadable bodies
+    }
+  }
+
+  if (typeof candidate.details === 'string' && candidate.details.trim()) {
+    return candidate.details;
+  }
+
+  if (typeof candidate.message === 'string' && candidate.message.trim()) {
+    return candidate.message;
+  }
+
+  if (response?.status && response?.statusText) {
+    return `${fallback} (${response.status} ${response.statusText})`;
+  }
+
+  return fallback;
+}
+
 const FALLBACK_PUBLIC_APP_ORIGIN = 'https://fans-only-olive.vercel.app';
 const resolveAuthRedirectOrigin = () => {
   if (env.publicAppOrigin) {
@@ -406,7 +478,11 @@ export async function upsertMobileMoneyPayoutAccount(params: {
   const { data, error } = await supabase.functions.invoke('upsert-mpesa-payout-account', {
     body: params,
   });
-  if (error) throw error;
+  if (error) {
+    throw new Error(
+      await describeFunctionInvokeError(error, 'Could not save mobile money payout method.'),
+    );
+  }
   return data;
 }
 
@@ -421,7 +497,11 @@ export async function upsertBankPayoutAccount(params: {
   const { data, error } = await supabase.functions.invoke('upsert-bank-payout-account', {
     body: params,
   });
-  if (error) throw error;
+  if (error) {
+    throw new Error(
+      await describeFunctionInvokeError(error, 'Could not save bank payout method.'),
+    );
+  }
   return data;
 }
 
@@ -445,7 +525,9 @@ export async function startCreatorCardPayoutSetup(params: { returnUrl: string })
       returnUrl: params.returnUrl,
     },
   });
-  if (error) throw error;
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not start secure card setup.'));
+  }
   return data as {
     authorization_url?: string;
     reference?: string;
@@ -458,7 +540,11 @@ export async function completeCreatorCardPayoutSetup(params: { reference: string
   const { data, error } = await supabase.functions.invoke('complete-creator-card-payout-setup', {
     body: params,
   });
-  if (error) throw error;
+  if (error) {
+    throw new Error(
+      await describeFunctionInvokeError(error, 'Could not finish secure card setup.'),
+    );
+  }
   return data as {
     ok?: boolean;
     payoutAccount?: PayoutAccount;
