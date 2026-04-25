@@ -2441,6 +2441,10 @@ export function MyPayments() {
 
   useEffect(() => {
     if (requestedPanel) {
+      if (requestedPanel === 'request' && !livePayoutAccount) {
+        setActivePanel('overview');
+        return;
+      }
       setActivePanel(requestedPanel);
       return;
     }
@@ -2673,16 +2677,18 @@ export function MyPayments() {
                 >
                   Overview
                 </button>
-                <button
-                  className={`payments-feature-switch__button${activePanel === 'request' ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() => {
-                    setActivePanel('request');
-                    syncPaymentsPanel('request');
-                  }}
-                >
-                  Request
-                </button>
+                {livePayoutAccount ? (
+                  <button
+                    className={`payments-feature-switch__button${activePanel === 'request' ? ' is-active' : ''}`}
+                    type="button"
+                    onClick={() => {
+                      setActivePanel('request');
+                      syncPaymentsPanel('request');
+                    }}
+                  >
+                    Request
+                  </button>
+                ) : null}
                 <button
                   className={`payments-feature-switch__button${activePanel === 'history' ? ' is-active' : ''}`}
                   type="button"
@@ -2899,7 +2905,7 @@ export function MyPayments() {
 
         ) : null}
 
-        {activePanel === 'request' ? (
+        {activePanel === 'request' && livePayoutAccount ? (
         <section className="wallet-panel wallet-panel--compact payments-request-panel">
           <div className="wallet-panel__title-row">
             <div>
