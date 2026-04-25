@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
-  completeCreatorCardPayoutSetup,
   fetchNotifications,
   fetchChatableMembers,
   fetchChatMessages,
@@ -20,7 +19,6 @@ import {
   markNotificationRead,
   requestCreatorPayout,
   sendChatMessage,
-  startCreatorCardPayoutSetup,
   subscribeToChatMessages,
   subscribeToCreatorChatThreads,
   subscribeToNotifications,
@@ -31,7 +29,6 @@ import {
   type CreatorSubscriber,
   type CreatorContentItem,
   type PayoutAccount,
-  type PayoutRail,
   type PayoutSummary,
   type PayoutTransfer,
   upsertBankPayoutAccount,
@@ -251,40 +248,13 @@ const parseMajorAmountToMinor = (value: string) => {
   return Math.round(numeric * 100);
 };
 
-type PaymentsRail = 'mobile_money' | 'card-bank';
-type CardBankRail = 'card' | 'bank';
-type PaymentsPanel = 'method' | 'request' | 'history';
-
-const normalizePaymentsRail = (value: string | null): PaymentsRail | null => {
-  if (value === 'mobile_money' || value === 'card-bank') {
-    return value;
-  }
-  return null;
-};
-
-const normalizeCardBankRail = (value: string | null): CardBankRail | null => {
-  if (value === 'card' || value === 'bank') {
-    return value;
-  }
-  return null;
-};
+type PaymentsPanel = 'overview' | 'request' | 'history';
 
 const normalizePaymentsPanel = (value: string | null): PaymentsPanel | null => {
-  if (value === 'method' || value === 'request' || value === 'history') {
+  if (value === 'overview' || value === 'request' || value === 'history') {
     return value;
   }
   return null;
-};
-
-const getPaymentsRailFromAccount = (account: PayoutAccount | null): PaymentsRail => {
-  if (!account) return 'mobile_money';
-  if (account?.provider === 'mobile_money') return 'mobile_money';
-  return 'card-bank';
-};
-
-const getCardBankRailFromAccount = (account: PayoutAccount | null): CardBankRail => {
-  if (account?.provider === 'bank') return 'bank';
-  return 'card';
 };
 
 const getPayoutProviderLabel = (provider?: PayoutAccount['provider'] | null) => {
@@ -2412,87 +2382,37 @@ function LegacyMyPayments() {
 }
 
 function LegacyMyPaymentsAddCard() {
-  return <Navigate to="/my/payments?rail=card-bank&subrail=card&setup=1&panel=method" replace />;
+  return <Navigate to="/my/payments?panel=overview" replace />;
 }
 
 export function MyPayments() {
   const navigate = useNavigate();
   const location = useLocation();
-  const cardSetupCallbackRef = useRef<string | null>(null);
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const requestedRail = normalizePaymentsRail(searchParams.get('rail'));
-  const requestedSubrail = normalizeCardBankRail(searchParams.get('subrail'));
   const requestedPanel = normalizePaymentsPanel(searchParams.get('panel'));
-  const cardSetupReference = searchParams.get('reference') ?? searchParams.get('trxref');
-  const hasCardSetupCallback =
-    searchParams.get('card_setup') === '1' && Boolean(cardSetupReference);
   const [filter, setFilter] = useState<'all' | 'in_flight' | 'completed' | 'failed'>('all');
   const [loading, setLoading] = useState(true);
-  const [savingMethod, setSavingMethod] = useState(false);
   const [requestingPayout, setRequestingPayout] = useState(false);
-  const [linkingCard, setLinkingCard] = useState(false);
   const [noticeText, setNoticeText] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [summary, setSummary] = useState<PayoutSummary | null>(null);
   const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
   const [transferRows, setTransferRows] = useState<PayoutTransfer[]>([]);
   const [amountMajor, setAmountMajor] = useState('');
-  const [selectedRail, setSelectedRail] = useState<PaymentsRail>('mobile_money');
-  const [selectedCardBankRail, setSelectedCardBankRail] = useState<CardBankRail>('card');
-  const [activePanel, setActivePanel] = useState<PaymentsPanel>('method');
-  const [mpesaNumber, setMpesaNumber] = useState('');
-  const [mpesaName, setMpesaName] = useState('');
-  const [mpesaBankCode, setMpesaBankCode] = useState('MPESA');
-  const [bankAccountNumber, setBankAccountNumber] = useState('');
-  const [bankAccountName, setBankAccountName] = useState('');
-  const [bankCode, setBankCode] = useState('');
-  const [bankName, setBankName] = useState('');
+  const [activePanel, setActivePanel] = useState<PaymentsPanel>('overview');
   const livePayoutAccount = payoutAccount;
-
-  const syncPaymentsRoute = (
-    nextRail: PaymentsRail,
-    nextSubrail?: CardBankRail,
-    setup = true,
-    panel: PaymentsPanel = 'method',
-  ) => {
-    const nextParams = new URLSearchParams(location.search);
-    nextParams.delete('reference');
-    nextParams.delete('trxref');
-    nextParams.delete('card_setup');
-    nextParams.set('rail', nextRail);
-    if (nextRail === 'card-bank') {
-      nextParams.set('subrail', nextSubrail ?? selectedCardBankRail);
-    } else {
-      nextParams.delete('subrail');
-    }
-    if (setup) {
-      nextParams.set('setup', '1');
-    } else {
-      nextParams.delete('setup');
-    }
-    nextParams.set('panel', panel);
-    const nextSearch = nextParams.toString();
-    navigate(`/my/payments${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
-  };
 
   const syncPaymentsPanel = (panel: PaymentsPanel) => {
     const nextParams = new URLSearchParams(location.search);
     nextParams.delete('reference');
     nextParams.delete('trxref');
     nextParams.delete('card_setup');
+    nextParams.delete('rail');
+    nextParams.delete('subrail');
+    nextParams.delete('setup');
     nextParams.set('panel', panel);
     const nextSearch = nextParams.toString();
     navigate(`/my/payments${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
-  };
-
-  const hydrateForm = (account: PayoutAccount | null) => {
-    setMpesaNumber(account?.provider === 'mobile_money' ? account.msisdn_e164 ?? '' : '');
-    setMpesaName(account?.provider === 'mobile_money' ? account.account_name ?? '' : '');
-    setMpesaBankCode(account?.provider === 'mobile_money' ? account.bank_code ?? 'MPESA' : 'MPESA');
-    setBankAccountNumber('');
-    setBankAccountName(account?.provider === 'bank' ? account.account_name ?? '' : '');
-    setBankCode(account?.provider === 'bank' ? account.bank_code ?? '' : '');
-    setBankName(account?.provider === 'bank' ? account.bank_name ?? '' : '');
   };
 
   const loadPayments = async () => {
@@ -2507,7 +2427,6 @@ export function MyPayments() {
       setSummary(nextSummary);
       setPayoutAccount(nextPayoutAccount);
       setTransferRows(transfers);
-      hydrateForm(nextPayoutAccount);
     } catch (error) {
       console.error(error);
       setErrorText('Could not load payments.');
@@ -2521,103 +2440,19 @@ export function MyPayments() {
   }, []);
 
   useEffect(() => {
-    if (requestedRail) {
-      setSelectedRail(requestedRail);
-      return;
-    }
-    setSelectedRail(getPaymentsRailFromAccount(livePayoutAccount));
-  }, [requestedRail, livePayoutAccount]);
-
-  useEffect(() => {
-    if (requestedSubrail) {
-      setSelectedCardBankRail(requestedSubrail);
-      return;
-    }
-    setSelectedCardBankRail(getCardBankRailFromAccount(livePayoutAccount));
-  }, [requestedSubrail, livePayoutAccount]);
-
-  useEffect(() => {
     if (requestedPanel) {
       setActivePanel(requestedPanel);
-      return;
-    }
-    if (searchParams.get('setup') === '1' || !livePayoutAccount) {
-      setActivePanel('method');
       return;
     }
     if (getPayoutVerificationState(livePayoutAccount) === 'verified') {
       setActivePanel('request');
       return;
     }
-    setActivePanel('method');
+    setActivePanel('overview');
   }, [requestedPanel, livePayoutAccount, searchParams]);
-
-  useEffect(() => {
-    if (!hasCardSetupCallback || !cardSetupReference) {
-      return;
-    }
-    if (cardSetupCallbackRef.current === cardSetupReference) {
-      return;
-    }
-    cardSetupCallbackRef.current = cardSetupReference;
-
-    let cancelled = false;
-
-    const finalizeCardSetup = async () => {
-      try {
-        setLinkingCard(true);
-        setErrorText(null);
-        setNoticeText('Finishing secure card setup...');
-        await completeCreatorCardPayoutSetup({ reference: cardSetupReference });
-        if (cancelled) return;
-        setNoticeText(
-          'Card payout method saved. Verification is still required before payouts can be requested.',
-        );
-        await loadPayments();
-      } catch (error) {
-        console.error(error);
-        if (cancelled) return;
-        setErrorText(
-          error instanceof Error ? error.message : 'Could not finish secure card setup.',
-        );
-      } finally {
-        if (!cancelled) {
-          const nextParams = new URLSearchParams(location.search);
-          nextParams.delete('reference');
-          nextParams.delete('trxref');
-          nextParams.delete('card_setup');
-          const nextSearch = nextParams.toString();
-          navigate(`/my/payments${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
-          setLinkingCard(false);
-        }
-      }
-    };
-
-    void finalizeCardSetup();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [cardSetupReference, hasCardSetupCallback, location.search, navigate]);
-
-  const activeSetupProvider: PayoutRail =
-    selectedRail === 'card-bank' ? selectedCardBankRail : selectedRail;
   const verificationState = getPayoutVerificationState(livePayoutAccount);
-  const currentMethodMatchesSelected = livePayoutAccount?.provider === activeSetupProvider;
   const amountMinor = parseMajorAmountToMinor(amountMajor);
   const currency = summary?.currency ?? livePayoutAccount?.currency ?? 'KES';
-  const selectedRailLabel =
-    selectedRail === 'card-bank'
-      ? selectedCardBankRail === 'card'
-        ? 'Card'
-        : 'Bank account'
-      : 'Mobile money';
-  const selectedRailDescription =
-    activeSetupProvider === 'mobile_money'
-      ? 'Mobile money payouts become available after the saved destination is approved.'
-      : activeSetupProvider === 'bank'
-        ? 'Bank payouts become available after the saved destination is approved.'
-        : 'Secure card setup opens a hosted page and returns only masked card details.';
 
   const filteredTransfers = useMemo(() => {
     if (filter === 'all') {
@@ -2634,7 +2469,7 @@ export function MyPayments() {
 
   const requestDisabledText =
     verificationState === 'unconfigured'
-      ? 'Save a payout method first.'
+      ? 'Set up a payout destination in Banking first.'
       : verificationState === 'pending'
         ? 'This payout method is waiting for manual review before withdrawals can be requested.'
         : verificationState === 'rejected'
@@ -2649,69 +2484,6 @@ export function MyPayments() {
                   ? 'Requested amount exceeds your available balance.'
                   : null;
 
-  const handleSaveMethod = async () => {
-    try {
-      setSavingMethod(true);
-      setErrorText(null);
-      setNoticeText(null);
-
-      if (activeSetupProvider === 'bank') {
-        const normalizedAccount = bankAccountNumber.replace(/\D/g, '');
-        const normalizedName = bankAccountName.trim();
-        const normalizedBankCode = bankCode.trim().toUpperCase();
-        if (!normalizedAccount || !normalizedName || !normalizedBankCode) {
-          setErrorText('Enter a valid account number, account name, and bank code.');
-          return;
-        }
-        await upsertBankPayoutAccount({
-          accountNumber: normalizedAccount,
-          accountName: normalizedName,
-          bankCode: normalizedBankCode,
-          bankName: bankName.trim(),
-          currency: 'KES',
-        });
-        setNoticeText('Bank payout method saved. Verification is pending.');
-      } else if (activeSetupProvider === 'mobile_money') {
-        const normalizedAccount = mpesaNumber.replace(/\D/g, '');
-        const normalizedName = mpesaName.trim();
-        const normalizedBankCode = mpesaBankCode.trim().toUpperCase() || 'MPESA';
-        if (!normalizedAccount || !normalizedName) {
-          setErrorText('Enter a valid mobile money number and account name.');
-          return;
-        }
-        await upsertMobileMoneyPayoutAccount({
-          accountNumber: normalizedAccount,
-          accountName: normalizedName,
-          bankCode: normalizedBankCode,
-          currency: 'KES',
-        });
-        setNoticeText('Mobile money payout method saved. Verification is pending.');
-      } else {
-        const baseUrl = new URL(import.meta.env.BASE_URL ?? '/creator/', window.location.origin);
-        const returnUrl = new URL(
-          'my/payments?rail=card-bank&subrail=card&setup=1',
-          baseUrl,
-        ).toString();
-        setLinkingCard(true);
-        setNoticeText('Redirecting to secure card setup...');
-        const setupResult = await startCreatorCardPayoutSetup({ returnUrl });
-        if (!setupResult.authorization_url) {
-          throw new Error('Could not start secure card setup.');
-        }
-        window.location.assign(setupResult.authorization_url);
-        return;
-      }
-
-      await loadPayments();
-    } catch (error) {
-      console.error(error);
-      setErrorText(error instanceof Error ? error.message : 'Could not save payout method.');
-    } finally {
-      setSavingMethod(false);
-      setLinkingCard(false);
-    }
-  };
-
   const handleRequestPayout = async () => {
     if (!summary || amountMinor === null || amountMinor <= 0) {
       setErrorText('Enter a valid payout amount.');
@@ -2722,7 +2494,7 @@ export function MyPayments() {
       return;
     }
     if (!livePayoutAccount) {
-      setErrorText('Save a payout method first.');
+      setActivePanel('overview');
       return;
     }
 
@@ -2752,7 +2524,7 @@ export function MyPayments() {
       setErrorText(
         error instanceof Error
           ? error.message
-          : 'Payout request failed. Confirm your balance and payout method first.',
+          : 'Payout request failed. Confirm your balance and payout destination first.',
       );
     } finally {
       setRequestingPayout(false);
@@ -2775,14 +2547,14 @@ export function MyPayments() {
               {loading ? <span className="wallet-status">Loading...</span> : null}
               <div className="payments-feature-switch__buttons">
                 <button
-                  className={`payments-feature-switch__button${activePanel === 'method' ? ' is-active' : ''}`}
+                  className={`payments-feature-switch__button${activePanel === 'overview' ? ' is-active' : ''}`}
                   type="button"
                   onClick={() => {
-                    setActivePanel('method');
-                    syncPaymentsPanel('method');
+                    setActivePanel('overview');
+                    syncPaymentsPanel('overview');
                   }}
                 >
-                  Method
+                  Overview
                 </button>
                 <button
                   className={`payments-feature-switch__button${activePanel === 'request' ? ' is-active' : ''}`}
@@ -2824,204 +2596,54 @@ export function MyPayments() {
           </div>
         </section>
 
-        {activePanel === 'method' ? (
+        {activePanel === 'overview' ? (
         <section className="wallet-panel wallet-panel--compact payments-method-panel">
           <div className="wallet-panel__title-row">
             <div>
-              <h2 className="wallet-panel__title">Set up payout method</h2>
+              <h2 className="wallet-panel__title">Overview</h2>
             </div>
-            {searchParams.get('setup') === '1' ? <span className="wallet-status">Setup mode</span> : null}
           </div>
-
-          <div className="payments-rail-switch">
-            <button
-              className={`payments-rail-switch__button${selectedRail === 'mobile_money' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => {
-                setSelectedRail('mobile_money');
-                syncPaymentsRoute('mobile_money');
-              }}
-            >
-              Mobile money
-            </button>
-            <button
-              className={`payments-rail-switch__button${selectedRail === 'card-bank' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => {
-                setSelectedRail('card-bank');
-                syncPaymentsRoute('card-bank', selectedCardBankRail);
-              }}
-            >
-              Card + Bank
-            </button>
-          </div>
-
-          {selectedRail === 'card-bank' ? (
-            <div className="payments-subrail-switch">
-              <button
-                className={`payments-subrail-switch__button${selectedCardBankRail === 'card' ? ' is-active' : ''}`}
-                type="button"
-                onClick={() => {
-                  setSelectedCardBankRail('card');
-                  syncPaymentsRoute('card-bank', 'card');
-                }}
-              >
-                Card
-              </button>
-              <button
-                className={`payments-subrail-switch__button${selectedCardBankRail === 'bank' ? ' is-active' : ''}`}
-                type="button"
-                onClick={() => {
-                  setSelectedCardBankRail('bank');
-                  syncPaymentsRoute('card-bank', 'bank');
-                }}
-              >
-                Bank
-              </button>
-            </div>
-          ) : null}
 
           <div className="payments-setup-grid">
             <div className="payments-setup-form">
-              <p className="payments-method-note">{selectedRailDescription}</p>
-
-              {activeSetupProvider === 'mobile_money' ? (
-                <div className="payments-form-grid">
-                  <label className="create-post__field">
-                    <span>Mobile money number</span>
-                    <input
-                      className="my-input"
-                      type="tel"
-                      inputMode="numeric"
-                      autoComplete="tel"
-                      value={mpesaNumber}
-                      onChange={(event) => setMpesaNumber(event.target.value)}
-                      placeholder="2547XXXXXXXX"
-                    />
-                  </label>
-                  <label className="create-post__field">
-                    <span>Account name</span>
-                    <input
-                      className="my-input"
-                      autoComplete="name"
-                      value={mpesaName}
-                      onChange={(event) => setMpesaName(event.target.value)}
-                      placeholder="Creator full name"
-                    />
-                  </label>
-                  <label className="create-post__field">
-                    <span>Network code</span>
-                    <input
-                      className="my-input"
-                      autoCapitalize="characters"
-                      autoComplete="off"
-                      value={mpesaBankCode}
-                      onChange={(event) => setMpesaBankCode(event.target.value.toUpperCase())}
-                      placeholder="Provider code"
-                    />
-                  </label>
-                </div>
-              ) : activeSetupProvider === 'bank' ? (
-                <div className="payments-form-grid">
-                  <label className="create-post__field">
-                    <span>Account number</span>
-                    <input
-                      className="my-input"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={bankAccountNumber}
-                      onChange={(event) => setBankAccountNumber(event.target.value)}
-                      placeholder="Account number"
-                    />
-                  </label>
-                  <label className="create-post__field">
-                    <span>Account name</span>
-                    <input
-                      className="my-input"
-                      autoComplete="name"
-                      value={bankAccountName}
-                      onChange={(event) => setBankAccountName(event.target.value)}
-                      placeholder="Account holder name"
-                    />
-                  </label>
-                  <label className="create-post__field">
-                    <span>Bank code</span>
-                    <input
-                      className="my-input"
-                      autoCapitalize="characters"
-                      autoComplete="off"
-                      value={bankCode}
-                      onChange={(event) => setBankCode(event.target.value.toUpperCase())}
-                      placeholder="BANK CODE"
-                    />
-                  </label>
-                  <label className="create-post__field">
-                    <span>Bank name (optional)</span>
-                    <input
-                      className="my-input"
-                      autoComplete="organization"
-                      value={bankName}
-                      onChange={(event) => setBankName(event.target.value)}
-                      placeholder="e.g. Equity Bank"
-                    />
-                  </label>
-                </div>
-              ) : (
-                <div className="payments-card-callout">
-                  <strong>Secure card setup</strong>
-                  <p>
-                    The card is handled on a secure hosted page, then returns only masked card
-                    details and payout references.
-                  </p>
-                  <p>No raw card number or CVV is stored in this app.</p>
-                </div>
-              )}
+              <p className="payments-method-note">
+                Review your current payout destination, verification status, and available balance
+                here. Manage destination details from Banking when needed.
+              </p>
 
               <div className="payments-action-row">
                 <button
                   className="wallet-action-button"
                   type="button"
-                  disabled={savingMethod || linkingCard}
-                  onClick={() => void handleSaveMethod()}
+                  onClick={() => navigate('/my/banking')}
                 >
-                  {activeSetupProvider === 'card'
-                    ? linkingCard
-                      ? 'Opening secure setup...'
-                      : 'Continue with secure setup'
-                    : savingMethod
-                      ? 'Saving...'
-                      : 'Save payout method'}
+                  Open Banking
                 </button>
               </div>
             </div>
 
             <aside className="payments-method-card">
               <div className="payments-method-card__eyebrow">
-                {currentMethodMatchesSelected ? 'Current saved method' : `${selectedRailLabel} setup`}
+                {livePayoutAccount ? 'Current payout destination' : 'Payout destination'}
               </div>
               <h3 className="payments-method-card__title">
-                {currentMethodMatchesSelected
-                  ? getUnifiedPayoutDestinationLabel(livePayoutAccount)
-                  : `${selectedRailLabel} not saved yet`}
+                {getUnifiedPayoutDestinationLabel(livePayoutAccount)}
               </h3>
               <p className="payments-method-card__meta">
-                {currentMethodMatchesSelected
+                {livePayoutAccount
                   ? getUnifiedPayoutDestinationMeta(livePayoutAccount)
-                  : 'Save this method to make it your active creator payout destination.'}
+                  : 'No payout destination is configured on this account yet.'}
               </p>
               <div className="payments-method-card__status">
                 <span
-                  className={`wallet-status wallet-status--${
-                    currentMethodMatchesSelected ? verificationState : 'inactive'
-                  }`}
+                  className={`wallet-status wallet-status--${livePayoutAccount ? verificationState : 'inactive'}`}
                 >
-                  {currentMethodMatchesSelected ? getPayoutVerificationLabel(verificationState) : 'Not saved yet'}
+                  {livePayoutAccount ? getPayoutVerificationLabel(verificationState) : 'Not configured'}
                 </span>
                 <span className="my-muted">
-                  {currentMethodMatchesSelected
-                    ? `Using ${getPayoutProviderLabel(livePayoutAccount?.provider)} for live payouts`
-                    : `Selected rail: ${selectedRailLabel}`}
+                  {livePayoutAccount
+                    ? `Using ${getPayoutProviderLabel(livePayoutAccount.provider)} for live payouts`
+                    : 'Manage payout destination from Banking'}
                 </span>
               </div>
             </aside>
@@ -3151,7 +2773,7 @@ export function MyPayments() {
 }
 
 export function MyPaymentsAddCard() {
-  return <Navigate to="/my/payments?rail=card-bank&subrail=card&setup=1&panel=method" replace />;
+  return <Navigate to="/my/payments?panel=overview" replace />;
 }
 
 export function PostsCreate() {
@@ -4136,7 +3758,7 @@ function LegacyMyBanking() {
 }
 
 export function MyBanking() {
-  return <Navigate to="/my/payments?setup=1&panel=method" replace />;
+  return <Navigate to="/my/payments?panel=overview" replace />;
 }
 
 void LegacyMyPayments;
