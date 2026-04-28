@@ -13,11 +13,13 @@ import {
   fetchPayoutTransfers,
   fetchUnreadNotificationCount,
   fetchCreatorStories,
+  listWithdrawalMethods,
   publishCreatorPost,
   markChatThreadRead,
   markAllNotificationsRead,
   markNotificationRead,
   requestCreatorPayout,
+  saveWithdrawalMethod,
   sendChatMessage,
   subscribeToChatMessages,
   subscribeToCreatorChatThreads,
@@ -31,8 +33,10 @@ import {
   type PayoutAccount,
   type PayoutSummary,
   type PayoutTransfer,
+  type WithdrawalMethod,
   upsertBankPayoutAccount,
   upsertMobileMoneyPayoutAccount,
+  verifyCurrentPassword,
 } from '../supabaseClient';
 import './MyPages.css';
 
@@ -357,6 +361,9 @@ const getUnifiedPayoutDestinationMeta = (account: PayoutAccount | null) => {
 
   return account.account_name || 'Payout rail';
 };
+
+void getUnifiedPayoutDestinationLabel;
+void getUnifiedPayoutDestinationMeta;
 
 const formatPayoutTransferStatus = (status: PayoutTransfer['status']) => {
   if (status === 'success') return 'Success';
@@ -2276,9 +2283,7 @@ function LegacyMyPayments() {
                       provider:
                         livePayoutAccount.provider === 'bank'
                           ? 'bank'
-                          : livePayoutAccount.provider === 'card'
-                            ? 'card'
-                            : 'mobile_money',
+                          : 'mobile_money',
                     });
 
                     setNoticeText(
@@ -2448,7 +2453,6 @@ export function MyPayments() {
     }
     setActivePanel('overview');
   }, [navigate, requestedPanel, requestedPanelParam]);
-  const verificationState = getPayoutVerificationState(livePayoutAccount);
   const currency = summary?.currency ?? livePayoutAccount?.currency ?? 'KES';
 
   const filteredTransfers = useMemo(() => {
@@ -2735,34 +2739,30 @@ export function MyPayments() {
                 </div>
               </section>
 
-              {livePayoutAccount ? (
-                <aside className="payments-method-card payments-method-card--overview">
-                  <div className="payments-method-card__eyebrow">Current payout destination</div>
-                  <h3 className="payments-method-card__title">
-                    {getUnifiedPayoutDestinationLabel(livePayoutAccount)}
-                  </h3>
-                  <p className="payments-method-card__meta">
-                    {getUnifiedPayoutDestinationMeta(livePayoutAccount)}
-                  </p>
-                  <div className="payments-method-card__status">
-                    <span className={`wallet-status wallet-status--${verificationState}`}>
-                      {getPayoutVerificationLabel(verificationState)}
-                    </span>
-                    <span className="my-muted">
-                      {`${getPayoutProviderLabel(livePayoutAccount.provider)} rail ready for withdrawals once approved`}
-                    </span>
-                  </div>
-                  <div className="payments-method-card__action">
-                    <button
-                      className="wallet-action-button"
-                      type="button"
-                      onClick={() => navigate('/my/banking')}
-                    >
-                      Open Banking
-                    </button>
-                  </div>
-                </aside>
-              ) : null}
+              <aside className="payments-method-card payments-method-card--overview">
+                <div className="payments-method-card__eyebrow">Withdrawal workflow</div>
+                <h3 className="payments-method-card__title">Bank or mobile money on request</h3>
+                <p className="payments-method-card__meta">
+                  Creators now choose the withdrawal method inside the withdraw flow, confirm with a
+                  password, and receive a five-working-day processing notice before the request moves
+                  into the pending queue.
+                </p>
+                <div className="payments-method-card__status">
+                  <span className="wallet-status wallet-status--submitted">Manual review queue</span>
+                  <span className="my-muted">
+                    Pending requests remain visible in overview and history until operations completes them.
+                  </span>
+                </div>
+                <div className="payments-method-card__action">
+                  <button
+                    className="wallet-action-button"
+                    type="button"
+                    onClick={() => navigate('/my/withdraw')}
+                  >
+                    Open Withdraw
+                  </button>
+                </div>
+              </aside>
 
               <section className="payments-analytics-card">
                 <div className="payments-analytics-card__header">
@@ -2912,25 +2912,41 @@ export function MyWithdraw() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
+  const [verifyingPassword, setVerifyingPassword] = useState(false);
   const [noticeText, setNoticeText] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [summary, setSummary] = useState<PayoutSummary | null>(null);
-  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null);
   const [transferRows, setTransferRows] = useState<PayoutTransfer[]>([]);
   const [amountMajor, setAmountMajor] = useState('');
+  const [selectedMethod, setSelectedMethod] = useState<'mobile_money' | 'bank'>('mobile_money');
+  const [saveDetails, setSaveDetails] = useState(true);
+  const [savedMethods, setSavedMethods] = useState<WithdrawalMethod[]>([]);
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [withdrawPassword, setWithdrawPassword] = useState('');
+  const [mobileMoneyNumber, setMobileMoneyNumber] = useState('');
+  const [mobileMoneyName, setMobileMoneyName] = useState('');
+  const [mobileMoneyNetwork, setMobileMoneyNetwork] = useState('MPESA');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankAccountName, setBankAccountName] = useState('');
+  const [bankCode, setBankCode] = useState('');
+  const [bankName, setBankName] = useState('');
 
   const loadWithdrawWorkspace = async () => {
     try {
       setLoading(true);
       setErrorText(null);
-      const [nextSummary, nextPayoutAccount, transfers] = await Promise.all([
+      const [nextSummary, transfers, methods] = await Promise.all([
         fetchPayoutSummary(),
-        fetchPayoutAccount(),
         fetchPayoutTransfers(8),
+        listWithdrawalMethods().catch((error) => {
+          console.warn('Could not load saved withdrawal methods', error);
+          return [] as WithdrawalMethod[];
+        }),
       ]);
       setSummary(nextSummary);
-      setPayoutAccount(nextPayoutAccount);
       setTransferRows(transfers);
+      setSavedMethods(methods);
     } catch (error) {
       console.error(error);
       setErrorText('Could not load withdraw workspace.');
@@ -2943,12 +2959,11 @@ export function MyWithdraw() {
     void loadWithdrawWorkspace();
   }, []);
 
-  const livePayoutAccount = payoutAccount;
-  const verificationState = getPayoutVerificationState(livePayoutAccount);
-  const currency = summary?.currency ?? livePayoutAccount?.currency ?? 'KES';
+  const currency = summary?.currency ?? 'KES';
   const amountMinor = parseMajorAmountToMinor(amountMajor);
   const availableMinor = summary?.available_amount_minor ?? 0;
   const pendingMinor = summary?.pending_amount_minor ?? 0;
+  const minimumPayoutMinor = 1000 * 100;
   const recentTransfers = useMemo(
     () =>
       [...transferRows]
@@ -2956,23 +2971,75 @@ export function MyWithdraw() {
         .slice(0, 4),
     [transferRows],
   );
+  const selectedSavedMethod = useMemo(
+    () => savedMethods.find((item) => item.method === selectedMethod) ?? null,
+    [savedMethods, selectedMethod],
+  );
+
+  useEffect(() => {
+    if (!selectedSavedMethod) return;
+    if (selectedMethod === 'mobile_money') {
+      setMobileMoneyNumber(selectedSavedMethod.phoneNumber ?? '');
+      setMobileMoneyName(selectedSavedMethod.accountName ?? '');
+      setMobileMoneyNetwork(selectedSavedMethod.bankCode ?? 'MPESA');
+      return;
+    }
+    setBankAccountNumber(selectedSavedMethod.accountNumber ?? '');
+    setBankAccountName(selectedSavedMethod.accountName ?? '');
+    setBankCode(selectedSavedMethod.bankCode ?? '');
+    setBankName(selectedSavedMethod.bankName ?? '');
+  }, [selectedMethod, selectedSavedMethod]);
+
+  const currentMethodDetails =
+    selectedMethod === 'bank'
+      ? {
+          method: 'bank' as const,
+          currency,
+          accountName: bankAccountName.trim(),
+          bankCode: bankCode.trim().toUpperCase(),
+          bankName: bankName.trim(),
+          accountNumber: bankAccountNumber.replace(/\D/g, ''),
+          phoneNumber: null,
+        }
+      : {
+          method: 'mobile_money' as const,
+          currency,
+          accountName: mobileMoneyName.trim(),
+          bankCode: mobileMoneyNetwork.trim().toUpperCase(),
+          bankName: null,
+          accountNumber: null,
+          phoneNumber: mobileMoneyNumber.replace(/\D/g, ''),
+        };
+
+  const detailsReady =
+    selectedMethod === 'bank'
+      ? Boolean(
+          currentMethodDetails.accountName &&
+            currentMethodDetails.bankCode &&
+            currentMethodDetails.accountNumber &&
+            currentMethodDetails.accountNumber.length >= 6,
+        )
+      : Boolean(
+          currentMethodDetails.accountName &&
+            currentMethodDetails.bankCode &&
+            currentMethodDetails.phoneNumber &&
+            currentMethodDetails.phoneNumber.length >= 10,
+        );
 
   const requestDisabledText =
-    verificationState === 'unconfigured'
-      ? 'Complete your payout destination in Banking before requesting a withdrawal.'
-      : verificationState === 'pending'
-        ? 'Your payout destination is still under review.'
-        : verificationState === 'rejected'
-          ? 'Your payout destination was rejected. Update it from Banking first.'
-          : verificationState === 'inactive'
-            ? 'Your payout destination is inactive and cannot receive transfers.'
-            : amountMajor.trim().length === 0
-              ? 'Enter the amount you want to withdraw.'
-              : amountMinor === null || amountMinor <= 0
-                ? 'Enter a valid withdrawal amount.'
-                : amountMinor > availableMinor
-                  ? 'Requested amount exceeds your available balance.'
-                  : null;
+    !detailsReady
+      ? selectedMethod === 'bank'
+        ? 'Enter bank name, bank code, account name, and account number.'
+        : 'Enter mobile money number, account name, and network code.'
+      : amountMajor.trim().length === 0
+        ? 'Enter the amount you want to withdraw.'
+        : amountMinor === null || amountMinor <= 0
+          ? 'Enter a valid withdrawal amount.'
+          : amountMinor < minimumPayoutMinor
+            ? 'The minimum withdrawal amount is KSh 1,000.'
+            : amountMinor > availableMinor
+              ? 'Requested amount exceeds your available balance.'
+              : null;
 
   const setWithdrawAmount = (fraction: number) => {
     if (availableMinor <= 0) return;
@@ -2980,17 +3047,25 @@ export function MyWithdraw() {
     setAmountMajor((nextMinor / 100).toFixed(nextMinor % 100 === 0 ? 0 : 2));
   };
 
-  const handleRequestPayout = async () => {
+  const submitWithdrawalRequest = async () => {
     if (!summary || amountMinor === null || amountMinor <= 0) {
       setErrorText('Enter a valid withdrawal amount.');
+      return;
+    }
+    if (amountMinor < minimumPayoutMinor) {
+      setErrorText('The minimum withdrawal amount is KSh 1,000.');
       return;
     }
     if (amountMinor > availableMinor) {
       setErrorText('Requested amount exceeds your available balance.');
       return;
     }
-    if (!livePayoutAccount) {
-      setErrorText('Complete your payout destination in Banking first.');
+    if (!detailsReady) {
+      setErrorText(
+        selectedMethod === 'bank'
+          ? 'Complete the bank payout details before requesting the withdrawal.'
+          : 'Complete the mobile money details before requesting the withdrawal.',
+      );
       return;
     }
 
@@ -2999,29 +3074,58 @@ export function MyWithdraw() {
       setErrorText(null);
       setNoticeText(null);
 
+      if (saveDetails) {
+        await saveWithdrawalMethod(currentMethodDetails);
+      }
+
       await requestCreatorPayout({
         amountMinor,
-        reason: 'Creator initiated payout',
-        provider:
-          livePayoutAccount.provider === 'bank'
-            ? 'bank'
-            : livePayoutAccount.provider === 'card'
-              ? 'card'
-              : 'mobile_money',
+        reason: 'Creator withdrawal request',
+        provider: selectedMethod,
+        saveDetails,
+        methodDetails: currentMethodDetails,
       });
 
-      setNoticeText('Withdrawal request submitted. We will update the status as settlement progresses.');
+      setNoticeText('Withdrawal request submitted. We will notify you when the payout has been processed.');
       setAmountMajor('');
+      setWithdrawPassword('');
+      setPasswordModalOpen(false);
+      setConfirmationOpen(true);
       await loadWithdrawWorkspace();
     } catch (error) {
       console.error(error);
       setErrorText(
         error instanceof Error
           ? error.message
-          : 'Withdrawal request failed. Confirm your balance and destination, then try again.',
+          : 'Withdrawal request failed. Confirm your balance and withdrawal details, then try again.',
       );
     } finally {
       setRequestingPayout(false);
+    }
+  };
+
+  const handleRequestPayout = async () => {
+    if (requestDisabledText) {
+      setErrorText(requestDisabledText);
+      return;
+    }
+    setErrorText(null);
+    setPasswordModalOpen(true);
+  };
+
+  const handleVerifyAndSubmit = async () => {
+    try {
+      setVerifyingPassword(true);
+      setErrorText(null);
+      await verifyCurrentPassword(withdrawPassword);
+      await submitWithdrawalRequest();
+    } catch (error) {
+      console.error(error);
+      setErrorText(
+        error instanceof Error ? error.message : 'Password verification failed. Please try again.',
+      );
+    } finally {
+      setVerifyingPassword(false);
     }
   };
 
@@ -3050,13 +3154,6 @@ export function MyWithdraw() {
               >
                 Back to payments
               </button>
-              <button
-                className="wallet-action-button"
-                type="button"
-                onClick={() => navigate('/my/banking')}
-              >
-                Open Banking
-              </button>
             </div>
           </div>
 
@@ -3070,9 +3167,9 @@ export function MyWithdraw() {
               <div className="wallet-balance-card__value">{formatMinorCurrency(pendingMinor, currency)}</div>
             </article>
             <article className="wallet-balance-card">
-              <div className="wallet-balance-card__label">Destination status</div>
+              <div className="wallet-balance-card__label">Minimum request</div>
               <div className="wallet-balance-card__value wallet-balance-card__value--small">
-                {livePayoutAccount ? getPayoutVerificationLabel(verificationState) : 'Banking required'}
+                {formatMinorCurrency(minimumPayoutMinor, currency)}
               </div>
             </article>
           </div>
@@ -3080,15 +3177,116 @@ export function MyWithdraw() {
 
         <div className="withdraw-grid">
           <section className="wallet-panel wallet-panel--compact withdraw-panel withdraw-panel--main">
-            <div className="wallet-panel__title-row">
-              <div>
-                <h2 className="wallet-panel__title">Withdraw funds</h2>
-                <p className="wallet-panel__subtitle">
-                  Enter an exact amount. Funds move only from your cleared creator balance.
-                </p>
+              <div className="wallet-panel__title-row">
+                <div>
+                  <h2 className="wallet-panel__title">Withdraw funds</h2>
+                  <p className="wallet-panel__subtitle">
+                    Choose bank or mobile money, confirm with your password, and move only cleared funds.
+                  </p>
+                </div>
+                {loading ? <span className="wallet-status">Loading...</span> : null}
               </div>
-              {loading ? <span className="wallet-status">Loading...</span> : null}
-            </div>
+
+              <div className="payments-rail-switch">
+                <button
+                  className={`payments-rail-switch__button${selectedMethod === 'mobile_money' ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => setSelectedMethod('mobile_money')}
+                >
+                  Mobile money payout
+                </button>
+                <button
+                  className={`payments-rail-switch__button${selectedMethod === 'bank' ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => setSelectedMethod('bank')}
+                >
+                  Bank payout
+                </button>
+              </div>
+
+              <div className="withdraw-guidance-grid">
+                {selectedMethod === 'bank' ? (
+                  <>
+                    <label className="create-post__field">
+                      <span>Bank account name</span>
+                      <input
+                        className="my-input"
+                        value={bankAccountName}
+                        onChange={(event) => setBankAccountName(event.target.value)}
+                        placeholder="Account holder name"
+                      />
+                    </label>
+                    <label className="create-post__field">
+                      <span>Bank account number</span>
+                      <input
+                        className="my-input"
+                        inputMode="numeric"
+                        value={bankAccountNumber}
+                        onChange={(event) => setBankAccountNumber(event.target.value)}
+                        placeholder="Account number"
+                      />
+                    </label>
+                    <label className="create-post__field">
+                      <span>Bank code</span>
+                      <input
+                        className="my-input"
+                        value={bankCode}
+                        onChange={(event) => setBankCode(event.target.value.toUpperCase())}
+                        placeholder="Bank code"
+                      />
+                    </label>
+                    <label className="create-post__field">
+                      <span>Bank name</span>
+                      <input
+                        className="my-input"
+                        value={bankName}
+                        onChange={(event) => setBankName(event.target.value)}
+                        placeholder="Bank name"
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label className="create-post__field">
+                      <span>Mobile money account name</span>
+                      <input
+                        className="my-input"
+                        value={mobileMoneyName}
+                        onChange={(event) => setMobileMoneyName(event.target.value)}
+                        placeholder="Account name"
+                      />
+                    </label>
+                    <label className="create-post__field">
+                      <span>Mobile money number</span>
+                      <input
+                        className="my-input"
+                        inputMode="numeric"
+                        value={mobileMoneyNumber}
+                        onChange={(event) => setMobileMoneyNumber(event.target.value)}
+                        placeholder="2547XXXXXXXX"
+                      />
+                    </label>
+                    <label className="create-post__field">
+                      <span>Network code</span>
+                      <input
+                        className="my-input"
+                        value={mobileMoneyNetwork}
+                        onChange={(event) => setMobileMoneyNetwork(event.target.value.toUpperCase())}
+                        placeholder="MPESA"
+                      />
+                    </label>
+                    <div className="withdraw-guidance-card withdraw-guidance-card--info">
+                      <strong>Saved detail</strong>
+                      <span>
+                        {selectedSavedMethod
+                          ? `Last saved ${selectedSavedMethod.bankCode} ${selectedSavedMethod.phoneNumber ?? ''}`
+                          : 'No saved mobile money details yet'}
+                      </span>
+                      <small>Turn on save details if you want this method prefilled next time.</small>
+                    </div>
+                  </>
+                )}
+              </div>
 
             <div className="withdraw-amount-shell">
               <label className="wallet-money-field wallet-money-field--large withdraw-amount-field">
@@ -3118,24 +3316,29 @@ export function MyWithdraw() {
 
             <div className="withdraw-guidance-grid">
               <article className="withdraw-guidance-card">
-                <strong>Destination</strong>
-                <span>
-                  {livePayoutAccount
-                    ? `${getUnifiedPayoutDestinationLabel(livePayoutAccount)}`
-                    : 'No payout destination configured yet.'}
-                </span>
-                <small>
-                  {livePayoutAccount
-                    ? getUnifiedPayoutDestinationMeta(livePayoutAccount)
-                    : 'Save and verify a payout destination from Banking before withdrawing.'}
-                </small>
-              </article>
-              <article className="withdraw-guidance-card">
                 <strong>Available now</strong>
                 <span>{formatMinorCurrency(availableMinor, currency)}</span>
                 <small>Only cleared funds can be moved out. Pending funds stay in platform until settled.</small>
               </article>
+              <article className="withdraw-guidance-card">
+                <strong>Saved details</strong>
+                <span>{saveDetails ? 'Enabled' : 'One-time use'}</span>
+                <small>
+                  {saveDetails
+                    ? 'The selected payout details will be stored for future requests.'
+                    : 'This request will use the details once without saving them.'}
+                </small>
+              </article>
             </div>
+
+            <label className="withdraw-save-toggle">
+              <input
+                type="checkbox"
+                checked={saveDetails}
+                onChange={(event) => setSaveDetails(event.target.checked)}
+              />
+              <span>Save these withdrawal details for future requests</span>
+            </label>
 
             {requestDisabledText ? <div className="wallet-warning">{requestDisabledText}</div> : null}
 
@@ -3150,7 +3353,7 @@ export function MyWithdraw() {
               <button
                 className="wallet-action-button withdraw-submit-row__primary"
                 type="button"
-                disabled={Boolean(requestDisabledText) || requestingPayout}
+                disabled={Boolean(requestDisabledText) || requestingPayout || verifyingPassword}
                 onClick={() => void handleRequestPayout()}
               >
                 {requestingPayout ? 'Submitting request...' : 'Request withdrawal'}
@@ -3169,12 +3372,12 @@ export function MyWithdraw() {
 
               <div className="withdraw-readiness-list">
                 <div className="withdraw-readiness-item">
-                  <span className="withdraw-readiness-item__label">Destination</span>
-                  <strong>{livePayoutAccount ? getUnifiedPayoutDestinationLabel(livePayoutAccount) : 'Not set'}</strong>
+                  <span className="withdraw-readiness-item__label">Selected method</span>
+                  <strong>{selectedMethod === 'bank' ? 'Bank payout' : 'Mobile money payout'}</strong>
                 </div>
                 <div className="withdraw-readiness-item">
-                  <span className="withdraw-readiness-item__label">Verification</span>
-                  <strong>{livePayoutAccount ? getPayoutVerificationLabel(verificationState) : 'Required'}</strong>
+                  <span className="withdraw-readiness-item__label">Security step</span>
+                  <strong>Password confirmation</strong>
                 </div>
                 <div className="withdraw-readiness-item">
                   <span className="withdraw-readiness-item__label">Queue exposure</span>
@@ -3184,16 +3387,16 @@ export function MyWithdraw() {
 
               <div className="withdraw-timeline">
                 <div className="withdraw-timeline__item is-complete">
-                  <strong>1. Review destination</strong>
-                  <span>Use Banking to confirm the payout route and identity details.</span>
-                </div>
-                <div className={`withdraw-timeline__item${verificationState === 'verified' ? ' is-complete' : ''}`}>
-                  <strong>2. Verification gate</strong>
-                  <span>Only approved destinations can move funds out of your creator balance.</span>
+                  <strong>1. Choose a payout method</strong>
+                  <span>Pick bank or mobile money and enter the exact destination details for this request.</span>
                 </div>
                 <div className="withdraw-timeline__item">
-                  <strong>3. Settlement</strong>
-                  <span>Submitted withdrawals appear in history until they complete or return.</span>
+                  <strong>2. Confirm with password</strong>
+                  <span>Every withdrawal request is confirmed with your password before it enters the queue.</span>
+                </div>
+                <div className="withdraw-timeline__item">
+                  <strong>3. Manual processing</strong>
+                  <span>Operations reviews the request, and you receive updates by notification and email.</span>
                 </div>
               </div>
             </section>
@@ -3232,6 +3435,76 @@ export function MyWithdraw() {
             </section>
           </aside>
         </div>
+
+        {passwordModalOpen ? (
+          <div className="withdraw-modal-backdrop" role="presentation">
+            <div className="withdraw-modal" role="dialog" aria-modal="true" aria-labelledby="withdraw-password-title">
+              <div className="withdraw-modal__eyebrow">Verify request</div>
+              <h2 id="withdraw-password-title" className="withdraw-modal__title">
+                Confirm your password to continue
+              </h2>
+              <p className="withdraw-modal__copy">
+                This extra verification step protects creator withdrawals before the request enters the manual
+                payout queue.
+              </p>
+              <label className="create-post__field">
+                <span>Password</span>
+                <input
+                  className="my-input"
+                  type="password"
+                  value={withdrawPassword}
+                  onChange={(event) => setWithdrawPassword(event.target.value)}
+                  placeholder="Enter your password"
+                />
+              </label>
+              <div className="withdraw-modal__actions">
+                <button
+                  className="wallet-action-button wallet-action-button--ghost"
+                  type="button"
+                  onClick={() => {
+                    setPasswordModalOpen(false);
+                    setWithdrawPassword('');
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="wallet-action-button"
+                  type="button"
+                  disabled={verifyingPassword || requestingPayout}
+                  onClick={() => void handleVerifyAndSubmit()}
+                >
+                  {verifyingPassword ? 'Verifying...' : 'Verify and continue'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {confirmationOpen ? (
+          <div className="withdraw-modal-backdrop" role="presentation">
+            <div className="withdraw-modal withdraw-modal--confirmation" role="dialog" aria-modal="true">
+              <div className="withdraw-modal__eyebrow">Withdrawal queued</div>
+              <h2 className="withdraw-modal__title">Your withdrawal request is now pending.</h2>
+              <p className="withdraw-modal__copy">
+                Processing may take up to 5 working days. You will receive an email and an in-app notification
+                when the request is completed or if it needs attention.
+              </p>
+              <div className="withdraw-modal__actions">
+                <button
+                  className="wallet-action-button"
+                  type="button"
+                  onClick={() => {
+                    setConfirmationOpen(false);
+                    navigate('/my/payments?panel=overview');
+                  }}
+                >
+                  Accept
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </MyLayout>
   );

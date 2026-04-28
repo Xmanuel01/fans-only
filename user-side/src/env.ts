@@ -20,6 +20,21 @@ const readOptional = (value: string | undefined): string | null => {
   return trimmed ? trimmed : null
 }
 
+const readEmailList = (value: string | undefined, name: string): string[] => {
+  const raw = readOptional(value)
+  if (!raw) return []
+  const emails = raw
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean)
+  const invalidEmail = emails.find((entry) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(entry))
+  if (invalidEmail) {
+    invalid.push(name)
+    return []
+  }
+  return Array.from(new Set(emails))
+}
+
 const readEmail = (value: string | undefined, name: string): string | null => {
   const email = readOptional(value)
   if (!email) return null
@@ -69,6 +84,10 @@ const publicAppOrigin = normalizeUrl(
   readOptional(import.meta.env.VITE_PUBLIC_APP_ORIGIN),
   'VITE_PUBLIC_APP_ORIGIN'
 )
+const adminAppUrl =
+  normalizeUrlOrPath(readOptional(import.meta.env.VITE_ADMIN_APP_URL), 'VITE_ADMIN_APP_URL') ??
+  '/creator/admin'
+const adminEmails = readEmailList(import.meta.env.VITE_ADMIN_EMAILS, 'VITE_ADMIN_EMAILS')
 
 const helpCenterUrl = normalizeUrl(
   readOptional(import.meta.env.VITE_HELP_CENTER_URL),
@@ -97,6 +116,8 @@ export const env = {
   supabaseAnonKey,
   creatorAppUrl,
   publicAppOrigin,
+  adminAppUrl,
+  adminEmails,
   helpCenterUrl,
   releaseNotesUrl,
   appDownloadUrl,
@@ -115,6 +136,8 @@ export const envStatus = {
 }
 
 export const isSupabaseConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey)
+export const isAdminEmail = (email: string | null | undefined) =>
+  Boolean(email && env.adminEmails.includes(email.trim().toLowerCase()))
 
 if (envStatus.hasIssues && import.meta.env.DEV) {
   const details = [

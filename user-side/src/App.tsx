@@ -70,7 +70,7 @@ import {
   type WalletHistoryItem,
 } from './supabaseClient'
 import { useMemo } from 'react'
-import { env, envStatus, isSupabaseConfigured } from './env'
+import { env, envStatus, isAdminEmail, isSupabaseConfigured } from './env'
 
 const HELP_CENTER_URL = env.helpCenterUrl
 const RELEASE_NOTES_URL = env.releaseNotesUrl
@@ -82,6 +82,7 @@ const DEFAULT_GIFT_AMOUNT_MAJOR =
     ? env.giftAmountMajor
     : 0
 const FEATURE_REQUESTS_ENABLED = env.featureRequestsEnabled
+const ADMIN_APP_URL = env.adminAppUrl
 const BASE_URL = import.meta.env.BASE_URL ?? '/'
 const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`
 const RECENT_CREATORS_STORAGE_KEY = 'fans-only:recent-creators'
@@ -195,6 +196,11 @@ const persistAgeConfirmationCache = (userId: string) => {
   if (typeof window === 'undefined') return
   const next = Array.from(new Set([userId, ...readAgeConfirmationCache()])).slice(0, 20)
   window.localStorage.setItem(AGE_CONFIRMATION_CACHE_KEY, JSON.stringify(next))
+}
+
+const redirectToAdminApp = () => {
+  if (typeof window === 'undefined') return
+  window.location.assign(ADMIN_APP_URL)
 }
 
 const readFanCreators = (): string[] => {
@@ -4340,6 +4346,7 @@ export default function App() {
   const [ageCheckComplete, setAgeCheckComplete] = useState(false)
   const [ageConfirming, setAgeConfirming] = useState(false)
   const [session, setSession] = useState<any>(null)
+  const [adminRedirecting, setAdminRedirecting] = useState(false)
   const [filter, setFilter] = useState(filters[0])
   const [homeTopicFilter, setHomeTopicFilter] = useState<string | null>(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
@@ -4545,6 +4552,19 @@ export default function App() {
       setSession(s)
     })()
   }, [])
+
+  useEffect(() => {
+    if (!session?.user?.email) {
+      setAdminRedirecting(false)
+      return
+    }
+    if (!isAdminEmail(session.user.email)) {
+      setAdminRedirecting(false)
+      return
+    }
+    setAdminRedirecting(true)
+    redirectToAdminApp()
+  }, [session])
 
   useEffect(() => {
     if (envStatus.hasIssues) return
@@ -5207,6 +5227,18 @@ export default function App() {
 
   if (envStatus.hasIssues) {
     return <ConfigRequired issues={envIssues} />
+  }
+
+  if (adminRedirecting) {
+    return (
+      <div className="auth-shell">
+        <div className="auth-panel">
+          <h1>Opening admin workspace</h1>
+          <p className="auth-lede">Your account has admin access. Redirecting now.</p>
+        </div>
+        <AuthHero />
+      </div>
+    )
   }
 
   if (!session) {

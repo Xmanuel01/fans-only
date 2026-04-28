@@ -24,9 +24,9 @@ const checks = [
   {
     file: 'supabase/functions/request-creator-payout/index.ts',
     patterns: [
-      '.neq("provider", "paypal")',
-      '["mobile_money", "mpesa"]',
-      'payout_provider: payoutAccount.provider === "mpesa" ? "mobile_money" : payoutAccount.provider',
+      'workflow: "manual_review"',
+      'The minimum withdrawal amount is KSh 1,000.',
+      'destination_snapshot',
     ],
   },
   {

@@ -20,6 +20,21 @@ const readOptional = (value: string | undefined): string | null => {
   return trimmed ? trimmed : null;
 };
 
+const readEmailList = (value: string | undefined, name: string): string[] => {
+  const raw = readOptional(value);
+  if (!raw) return [];
+  const emails = raw
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  const invalidEmail = emails.find((entry) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(entry));
+  if (invalidEmail) {
+    invalid.push(name);
+    return [];
+  }
+  return Array.from(new Set(emails));
+};
+
 const normalizeUrl = (value: string | null, name: string): string | null => {
   if (!value) {
     return null;
@@ -75,6 +90,10 @@ const creatorBasePath = normalizeBasePath(
   readOptional(import.meta.env.VITE_CREATOR_BASE_PATH),
   '/creator'
 );
+const adminAppUrl =
+  normalizeUrlOrPath(readOptional(import.meta.env.VITE_ADMIN_APP_URL), 'VITE_ADMIN_APP_URL') ??
+  `${creatorBasePath}/admin`;
+const adminEmails = readEmailList(import.meta.env.VITE_ADMIN_EMAILS, 'VITE_ADMIN_EMAILS');
 
 export const env = {
   supabaseUrl,
@@ -82,6 +101,8 @@ export const env = {
   consumerAppUrl,
   publicAppOrigin,
   creatorBasePath,
+  adminAppUrl,
+  adminEmails,
   isProd: Boolean(import.meta.env.PROD),
 };
 
@@ -93,6 +114,8 @@ export const envStatus = {
 
 export const isSupabaseConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey);
 export const isConsumerAppConfigured = Boolean(env.consumerAppUrl);
+export const isAdminEmail = (email: string | null | undefined) =>
+  Boolean(email && env.adminEmails.includes(email.trim().toLowerCase()));
 
 if (envStatus.hasIssues && import.meta.env.DEV) {
   const details = [

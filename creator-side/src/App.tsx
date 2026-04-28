@@ -4,6 +4,7 @@ import { AuthGate } from './AuthGate';
 import { env } from './env';
 import { ErrorBoundary } from './ErrorBoundary';
 import { HtmlPage, normalizePath, resolveSnapshotFile } from './HtmlPage';
+import AdminPayouts from './pages/AdminPayouts';
 import ProfileAiko from './pages/ProfileAiko';
 import { MyHome } from './pages/MyPages';
 import SettingsProfile from './pages/SettingsProfile';
@@ -32,6 +33,7 @@ import {
 
 const REACT_ROUTES: Record<string, ComponentType> = {
   '/': MyHome,
+  '/admin': AdminPayouts,
   '/my/settings/profile': SettingsProfile,
   '/my/settings': SettingsHome,
   '/my/settings/account': SettingsAccount,

@@ -224,7 +224,40 @@ export type PayoutTransfer = {
   failure_reason: string | null;
 };
 
+export type AdminPayoutReviewStatus = PayoutTransfer['status'];
+
+export type AdminPayoutRequest = {
+  id: number;
+  creatorId: string;
+  creatorEmail: string | null;
+  creatorName: string | null;
+  creatorHandle: string | null;
+  amountMinor: number;
+  currency: string;
+  status: AdminPayoutReviewStatus;
+  reference: string;
+  recipientCode: string;
+  reason: string | null;
+  failureReason: string | null;
+  metadata: Record<string, unknown>;
+  requestedMethod: 'mobile_money' | 'bank' | null;
+  destinationSnapshot: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type PayoutRail = 'mobile_money' | 'bank' | 'card';
+
+export type WithdrawalMethod = {
+  method: 'mobile_money' | 'bank';
+  currency: string;
+  accountName: string;
+  bankCode: string;
+  bankName?: string | null;
+  accountNumber?: string | null;
+  phoneNumber?: string | null;
+  updatedAt?: string | null;
+};
 
 export type PayoutAccount = {
   provider: PayoutRail;
@@ -533,6 +566,87 @@ export async function startCreatorCardPayoutSetup(params: { returnUrl: string })
     reference?: string;
     amount_major?: number;
   };
+}
+
+export async function listWithdrawalMethods(): Promise<WithdrawalMethod[]> {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('list-withdrawal-methods', {
+    method: 'GET',
+  });
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not load saved withdrawal methods.'));
+  }
+  return Array.isArray(data?.methods) ? (data.methods as WithdrawalMethod[]) : [];
+}
+
+export async function fetchAdminPayoutRequests(params?: {
+  status?: AdminPayoutReviewStatus | 'open' | 'all';
+  limit?: number;
+}): Promise<AdminPayoutRequest[]> {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('list-admin-payout-requests', {
+    body: {
+      status: params?.status ?? 'open',
+      limit: params?.limit ?? 80,
+    },
+  });
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not load admin payout requests.'));
+  }
+  return Array.isArray(data?.requests) ? (data.requests as AdminPayoutRequest[]) : [];
+}
+
+export async function reviewAdminPayoutRequest(params: {
+  transferId: number;
+  status: AdminPayoutReviewStatus;
+  reason?: string | null;
+  metadata?: Record<string, unknown> | null;
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('review-payout-request', {
+    body: params,
+  });
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not update withdrawal request.'));
+  }
+  return data;
+}
+
+export async function saveWithdrawalMethod(params: WithdrawalMethod) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('save-withdrawal-method', {
+    body: params,
+  });
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not save withdrawal details.'));
+  }
+  return data;
+}
+
+export async function verifyCurrentPassword(password: string) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const normalizedPassword = password.trim();
+  if (!normalizedPassword) {
+    throw new Error('Enter your password to continue.');
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+  if (userError || !user?.email) {
+    throw new Error('Could not verify your account email for password confirmation.');
+  }
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email: user.email,
+    password: normalizedPassword,
+  });
+  if (error) {
+    throw new Error(
+      'Password verification failed. If you signed in with a social account, add a password before using withdrawals.',
+    );
+  }
 }
 
 export async function completeCreatorCardPayoutSetup(params: { reference: string }) {
@@ -1412,11 +1526,16 @@ export async function requestCreatorPayout(params: {
   amountMinor: number;
   currency?: string;
   reason?: string;
-  provider?: PayoutRail;
+  provider?: Extract<PayoutRail, 'mobile_money' | 'bank'>;
+  saveDetails?: boolean;
+  methodDetails?: WithdrawalMethod;
 }) {
   if (!supabase) throw new Error('Supabase not configured');
   if (!Number.isFinite(params.amountMinor) || params.amountMinor <= 0) {
     throw new Error('Enter a valid payout amount.');
+  }
+  if (params.amountMinor < 1000 * 100) {
+    throw new Error('The minimum withdrawal amount is KSh 1,000.');
   }
   if ((params.currency ?? 'KES').toUpperCase() !== 'KES') {
     throw new Error('KES is the only supported payout currency in this launch flow.');
@@ -1428,11 +1547,13 @@ export async function requestCreatorPayout(params: {
   const { data, error } = await supabase.functions.invoke('request-creator-payout', {
     body: {
       ...params,
-      provider: params.provider === 'mobile_money' ? 'mobile_money' : params.provider,
+      provider: params.provider === 'bank' ? 'bank' : 'mobile_money',
       currency: (params.currency ?? 'KES').toUpperCase(),
     },
     headers: { 'x-idempotency-key': idempotencyKey },
   });
-  if (error) throw error;
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not create the withdrawal request.'));
+  }
   return data;
 }

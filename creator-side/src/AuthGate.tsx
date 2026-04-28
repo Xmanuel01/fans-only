@@ -9,7 +9,7 @@ import {
   signUpWithPassword,
   upsertCreatorProfileSetup,
 } from './supabaseClient';
-import { env, envStatus, isSupabaseConfigured } from './env';
+import { env, envStatus, isAdminEmail, isSupabaseConfigured } from './env';
 import './auth.css';
 
 type GateState = 'unauthenticated' | 'ready' | 'misconfigured';
@@ -121,6 +121,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let unsub = () => {};
 
+    const redirectAdmin = () => {
+      navigate('/admin', { replace: true });
+    };
+
     async function boot() {
       if (envStatus.hasIssues) {
         setState('misconfigured');
@@ -137,6 +141,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       if (!session?.user) {
         setState('unauthenticated');
       } else {
+        if (isAdminEmail(session.user.email)) {
+          setState('ready');
+          redirectAdmin();
+          return;
+        }
         if (shouldShowPostSignupOnboarding(session.user as CreatorAuthUser)) {
           hydratePostSignupDraft(
             session.user as CreatorAuthUser,
@@ -159,6 +168,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
         if (!nextSession?.user) {
           setState('unauthenticated');
+          return;
+        }
+        if (isAdminEmail(nextSession.user.email)) {
+          setState('ready');
+          redirectAdmin();
           return;
         }
         if (shouldShowPostSignupOnboarding(nextSession.user as CreatorAuthUser)) {
