@@ -21,6 +21,22 @@ serve(async (req) => {
   const { creatorId, errorResponse } = await requireCreatorPaymentAccess(supabase, req);
   if (errorResponse) return jsonWithCors(await errorResponse.json(), errorResponse.status);
 
+  const { data: payoutControls } = await supabase
+    .from("creator_payout_controls")
+    .select("payout_changes_locked, payout_changes_lock_reason")
+    .eq("creator_id", creatorId)
+    .maybeSingle();
+  if (payoutControls?.payout_changes_locked) {
+    return jsonWithCors(
+      {
+        error:
+          payoutControls.payout_changes_lock_reason?.trim() ||
+          "Withdrawal details are locked for review. Contact support.",
+      },
+      403,
+    );
+  }
+
   let body: Body = {};
   try {
     if (req.headers.get("content-type")?.includes("application/json")) {

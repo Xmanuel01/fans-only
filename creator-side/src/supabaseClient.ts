@@ -225,6 +225,27 @@ export type PayoutTransfer = {
 };
 
 export type AdminPayoutReviewStatus = PayoutTransfer['status'];
+export type AdminRole = 'viewer' | 'operator' | 'super_admin';
+
+export type AdminPayoutFlagSet = {
+  largeWithdrawal: boolean;
+  rapidRepeat: boolean;
+  newCreator: boolean;
+  recentMethodChange: boolean;
+  manualHold: boolean;
+  payoutChangesLocked: boolean;
+};
+
+export type AdminPayoutSavedMethod = {
+  method: 'mobile_money' | 'bank';
+  currency?: string;
+  accountName: string;
+  bankCode: string | null;
+  bankName: string | null;
+  accountNumberLast4: string | null;
+  phoneNumberLast4: string | null;
+  updatedAt: string | null;
+};
 
 export type AdminPayoutRequest = {
   id: number;
@@ -232,6 +253,8 @@ export type AdminPayoutRequest = {
   creatorEmail: string | null;
   creatorName: string | null;
   creatorHandle: string | null;
+  creatorCreatedAt: string | null;
+  creatorAvatarUrl: string | null;
   amountMinor: number;
   currency: string;
   status: AdminPayoutReviewStatus;
@@ -242,8 +265,72 @@ export type AdminPayoutRequest = {
   metadata: Record<string, unknown>;
   requestedMethod: 'mobile_money' | 'bank' | null;
   destinationSnapshot: Record<string, unknown> | null;
+  manualHold: boolean;
+  holdReason: string | null;
+  externalReference: string | null;
+  proofPath: string | null;
+  settledAt: string | null;
+  payoutChangesLocked: boolean;
+  payoutChangesLockReason: string | null;
+  latestSavedMethod: AdminPayoutSavedMethod | null;
+  flags: AdminPayoutFlagSet;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AdminPayoutNote = {
+  id: number;
+  author_id: string | null;
+  author_email: string;
+  author_role: AdminRole | 'service';
+  body: string;
+  created_at: string;
+};
+
+export type AdminPayoutAuditEvent = {
+  id: number;
+  actor_id: string | null;
+  actor_email: string;
+  actor_role: AdminRole | 'service';
+  action: string;
+  from_status: string | null;
+  to_status: string | null;
+  note: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AdminPayoutNotificationEvent = {
+  id: number;
+  event_kind: 'creator_requested' | 'admin_requested' | 'creator_status' | 'admin_resend';
+  recipient_email: string;
+  channel: 'email';
+  provider: string;
+  status: 'sent' | 'failed' | 'skipped';
+  provider_message_id: string | null;
+  error_message: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AdminPayoutControls = {
+  payoutChangesLocked: boolean;
+  payoutChangesLockReason: string | null;
+  updatedAt: string | null;
+};
+
+export type AdminPayoutDetail = {
+  role: AdminRole;
+  request: AdminPayoutRequest & {
+    creatorSnapshot: Record<string, unknown> | null;
+    proofUrl: string | null;
+    requestedBy: string | null;
+  };
+  savedMethods: AdminPayoutSavedMethod[];
+  controls: AdminPayoutControls;
+  notes: AdminPayoutNote[];
+  auditLog: AdminPayoutAuditEvent[];
+  notifications: AdminPayoutNotificationEvent[];
 };
 
 export type PayoutRail = 'mobile_money' | 'bank' | 'card';
@@ -582,7 +669,7 @@ export async function listWithdrawalMethods(): Promise<WithdrawalMethod[]> {
 export async function fetchAdminPayoutRequests(params?: {
   status?: AdminPayoutReviewStatus | 'open' | 'all';
   limit?: number;
-}): Promise<AdminPayoutRequest[]> {
+}): Promise<{ role: AdminRole; requests: AdminPayoutRequest[] }> {
   if (!supabase) throw new Error('Supabase not configured');
   const { data, error } = await supabase.functions.invoke('list-admin-payout-requests', {
     body: {
@@ -593,7 +680,10 @@ export async function fetchAdminPayoutRequests(params?: {
   if (error) {
     throw new Error(await describeFunctionInvokeError(error, 'Could not load admin payout requests.'));
   }
-  return Array.isArray(data?.requests) ? (data.requests as AdminPayoutRequest[]) : [];
+  return {
+    role: (data?.role as AdminRole) ?? 'viewer',
+    requests: Array.isArray(data?.requests) ? (data.requests as AdminPayoutRequest[]) : [],
+  };
 }
 
 export async function reviewAdminPayoutRequest(params: {
@@ -610,6 +700,77 @@ export async function reviewAdminPayoutRequest(params: {
     throw new Error(await describeFunctionInvokeError(error, 'Could not update withdrawal request.'));
   }
   return data;
+}
+
+export async function fetchAdminPayoutDetail(transferId: number): Promise<AdminPayoutDetail> {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('get-admin-payout-detail', {
+    body: { transferId },
+  });
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not load payout request detail.'));
+  }
+  return data as AdminPayoutDetail;
+}
+
+export async function addAdminPayoutNote(transferId: number, body: string): Promise<AdminPayoutNote> {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('add-admin-payout-note', {
+    body: { transferId, body },
+  });
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not save the admin note.'));
+  }
+  return data.note as AdminPayoutNote;
+}
+
+export async function resendAdminPayoutNotification(params: {
+  transferId: number;
+  eventKind: 'creator_requested' | 'admin_requested' | 'creator_status';
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('resend-payout-notification', {
+    body: params,
+  });
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not resend payout notification.'));
+  }
+  return data;
+}
+
+export async function updateAdminPayoutControls(params: {
+  transferId?: number;
+  creatorId?: string;
+  manualHold?: boolean;
+  holdReason?: string | null;
+  payoutChangesLocked?: boolean;
+  payoutChangesLockReason?: string | null;
+}) {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('update-admin-payout-controls', {
+    body: params,
+  });
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not update payout controls.'));
+  }
+  return data;
+}
+
+export async function uploadAdminPayoutProof(params: {
+  transferId: number;
+  fileName: string;
+  contentType: string;
+  dataBase64: string;
+  externalReference?: string | null;
+}): Promise<{ ok: boolean; proofPath: string; proofUrl: string | null; externalReference: string | null }> {
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.functions.invoke('upload-admin-payout-proof', {
+    body: params,
+  });
+  if (error) {
+    throw new Error(await describeFunctionInvokeError(error, 'Could not upload payout proof.'));
+  }
+  return data as { ok: boolean; proofPath: string; proofUrl: string | null; externalReference: string | null };
 }
 
 export async function saveWithdrawalMethod(params: WithdrawalMethod) {

@@ -3,6 +3,7 @@ import { supabase } from "../_shared/client.ts";
 import { corsHeaders, jsonWithCors } from "../_shared/cors.ts";
 import { requireCreatorPaymentAccess } from "../_shared/guards.ts";
 import { buildPayoutAdminRecipients, sendResendEmail } from "../_shared/email.ts";
+import { recordNotificationEvent, recordPayoutAudit } from "../_shared/admin.ts";
 
 const MIN_PAYOUT_AMOUNT_MINOR = 1000 * 100;
 
@@ -28,6 +29,22 @@ serve(async (req) => {
 
   const { creatorId, errorResponse } = await requireCreatorPaymentAccess(supabase, req);
   if (errorResponse) return jsonWithCors(await errorResponse.json(), errorResponse.status);
+
+  const { data: payoutControls } = await supabase
+    .from("creator_payout_controls")
+    .select("payout_changes_locked, payout_changes_lock_reason")
+    .eq("creator_id", creatorId)
+    .maybeSingle();
+  if (payoutControls?.payout_changes_locked) {
+    return jsonWithCors(
+      {
+        error:
+          payoutControls.payout_changes_lock_reason?.trim() ||
+          "Withdrawal details are locked for review. Contact support.",
+      },
+      403,
+    );
+  }
 
   let body: Body = {};
   try {
@@ -110,6 +127,20 @@ serve(async (req) => {
   const reference = `wd_${creatorId.slice(0, 8)}_${Date.now()}`;
   const reason = body.reason?.trim() || "Creator withdrawal request";
   const recipientCode = `manual_${provider}_${creatorId.slice(0, 8)}`;
+  const creator = await supabase.auth.admin.getUserById(creatorId).catch(() => ({ data: { user: null } }));
+  const { data: creatorRow } = await supabase
+    .from("creators")
+    .select("display_name, handle, created_at")
+    .eq("id", creatorId)
+    .maybeSingle();
+  const creatorEmail = creator.data.user?.email ?? null;
+  const creatorSnapshot = {
+    creatorId,
+    email: creatorEmail,
+    displayName: creatorRow?.display_name ?? null,
+    handle: creatorRow?.handle ?? null,
+    creatorCreatedAt: creatorRow?.created_at ?? null,
+  };
 
   const { data: payoutTransferId, error: queueErr } = await supabase.rpc("request_creator_payout", {
     p_creator_id: creatorId,
@@ -126,6 +157,7 @@ serve(async (req) => {
       workflow: "manual_review",
       requested_method: provider,
       destination_snapshot: buildDestinationSnapshot(provider, resolvedDetails),
+      creator_snapshot: creatorSnapshot,
     },
   });
   if (queueErr) {
@@ -141,7 +173,23 @@ serve(async (req) => {
     return jsonWithCors({ error: "Could not create withdrawal request", details: queueErr.message }, 400);
   }
 
+  await recordPayoutAudit(supabase, {
+    payoutTransferId,
+    actorId: creatorId,
+    actorEmail: creatorEmail ?? "creator@local",
+    actorRole: "service",
+    action: "request_created",
+    toStatus: "queued",
+    note: reason,
+    metadata: {
+      requested_method: provider,
+      destination_snapshot: buildDestinationSnapshot(provider, resolvedDetails),
+      creator_snapshot: creatorSnapshot,
+    },
+  });
+
   await notifyWithdrawalRequested({
+    payoutTransferId,
     creatorId,
     amountMinor,
     currency,
@@ -258,6 +306,7 @@ function buildDestinationSnapshot(
 }
 
 async function notifyWithdrawalRequested(params: {
+  payoutTransferId: number;
   creatorId: string;
   amountMinor: number;
   currency: string;
@@ -279,7 +328,7 @@ async function notifyWithdrawalRequested(params: {
   const amountLabel = formatMinorCurrency(params.amountMinor, params.currency);
 
   if (creatorEmail) {
-    await sendResendEmail({
+    const creatorResult = await sendResendEmail({
       to: creatorEmail,
       subject: "Withdrawal request received",
       html: `<p>Your withdrawal request for <strong>${amountLabel}</strong> has been received.</p>
@@ -288,10 +337,20 @@ async function notifyWithdrawalRequested(params: {
 <p>Processing can take up to 5 working days. We will notify you again when it is completed.</p>`,
       text: `Your withdrawal request for ${amountLabel} has been received.\nDestination: ${destinationText}\nReference: ${params.reference}\nProcessing can take up to 5 working days.`,
     });
+    await recordNotificationEvent(supabase!, {
+      payoutTransferId: params.payoutTransferId,
+      eventKind: "creator_requested",
+      recipientEmail: creatorEmail,
+      status: creatorResult.skipped ? "skipped" : creatorResult.ok ? "sent" : "failed",
+      errorMessage: creatorResult.ok ? null : creatorResult.body ?? null,
+      metadata: {
+        reference: params.reference,
+      },
+    });
   }
 
   if (adminRecipients.length > 0) {
-    await sendResendEmail({
+    const adminResult = await sendResendEmail({
       to: adminRecipients,
       subject: "New creator withdrawal request",
       html: `<p>A creator submitted a withdrawal request.</p>
@@ -301,6 +360,20 @@ async function notifyWithdrawalRequested(params: {
 <p>Reference: ${params.reference}</p>`,
       text: `New creator withdrawal request\nAmount: ${amountLabel}\nMethod: ${params.provider === "bank" ? "Bank payout" : "Mobile money payout"}\nDestination: ${destinationText}\nReference: ${params.reference}`,
     });
+    await Promise.all(
+      adminRecipients.map((email) =>
+        recordNotificationEvent(supabase!, {
+          payoutTransferId: params.payoutTransferId,
+          eventKind: "admin_requested",
+          recipientEmail: email,
+          status: adminResult.skipped ? "skipped" : adminResult.ok ? "sent" : "failed",
+          errorMessage: adminResult.ok ? null : adminResult.body ?? null,
+          metadata: {
+            reference: params.reference,
+          },
+        }),
+      ),
+    );
   }
 }
 

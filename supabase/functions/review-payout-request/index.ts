@@ -3,6 +3,7 @@ import { supabase } from "../_shared/client.ts";
 import { corsHeaders, jsonWithCors } from "../_shared/cors.ts";
 import { sendResendEmail } from "../_shared/email.ts";
 import { requireAdminAccess } from "../_shared/guards.ts";
+import { recordNotificationEvent, recordPayoutAudit } from "../_shared/admin.ts";
 
 type Body = {
   transferId?: number;
@@ -22,8 +23,24 @@ serve(async (req) => {
   const headerToken = req.headers.get("x-operator-token")?.trim() ?? "";
   const suppliedToken = headerToken || bearerToken;
   const operatorAuthorized = Boolean(operatorToken && suppliedToken && suppliedToken === operatorToken);
+  let actingAdmin:
+    | {
+        userId: string;
+        email: string;
+        role: "viewer" | "operator" | "super_admin";
+      }
+    | undefined;
   if (!operatorAuthorized) {
-    const { errorResponse } = await requireAdminAccess(supabase, req);
+    const access = await requireAdminAccess(supabase, req, {
+      minimumRole: "operator",
+      requireRecentSignInMinutes: 30,
+    });
+    actingAdmin = {
+      userId: access.userId,
+      email: access.email,
+      role: access.role,
+    };
+    const { errorResponse } = access;
     if (errorResponse) {
       return jsonWithCors(JSON.parse(await errorResponse.text()), errorResponse.status);
     }
@@ -45,14 +62,20 @@ serve(async (req) => {
   if (!body.status || !["submitted", "success", "failed", "reversed"].includes(body.status)) {
     return jsonWithCors({ error: "status must be submitted, success, failed, or reversed" }, 400);
   }
+  if (!operatorAuthorized && actingAdmin?.role === "operator" && !["submitted", "success"].includes(body.status)) {
+    return jsonWithCors({ error: "Operators can only mark withdrawals as processing or paid." }, 403);
+  }
 
   const { data: transfer, error: transferErr } = await supabase
     .from("payout_transfers")
-    .select("id, creator_id, amount_minor, currency, reference, metadata, failure_reason")
+    .select("id, creator_id, amount_minor, currency, reference, metadata, failure_reason, status, manual_hold")
     .eq("id", transferId)
     .maybeSingle();
   if (transferErr || !transfer) {
     return jsonWithCors({ error: "Payout transfer not found" }, 404);
+  }
+  if (!operatorAuthorized && transfer.manual_hold && actingAdmin?.role !== "super_admin") {
+    return jsonWithCors({ error: "This withdrawal is on manual hold. A super admin must clear it first." }, 403);
   }
 
   const { error: markErr } = await supabase.rpc("mark_payout_result", {
@@ -68,7 +91,56 @@ serve(async (req) => {
     return jsonWithCors({ error: "Could not update payout request", details: markErr.message }, 400);
   }
 
+  const metadataUpdate =
+    body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+      ? body.metadata
+      : {};
+  const directUpdate: Record<string, unknown> = {
+    last_reviewed_at: new Date().toISOString(),
+  };
+  if (actingAdmin?.userId) {
+    directUpdate.last_reviewed_by = actingAdmin.userId;
+  }
+  if (body.status === "success") {
+    directUpdate.settled_at = new Date().toISOString();
+  }
+  if (typeof metadataUpdate.external_reference === "string") {
+    directUpdate.external_reference = metadataUpdate.external_reference;
+  }
+  if (typeof metadataUpdate.proof_path === "string") {
+    directUpdate.proof_path = metadataUpdate.proof_path;
+  }
+  if (Object.keys(directUpdate).length) {
+    await supabase.from("payout_transfers").update(directUpdate).eq("id", transferId);
+  }
+
+  if (actingAdmin) {
+    await recordPayoutAudit(supabase, {
+      payoutTransferId: transferId,
+      actorId: actingAdmin.userId,
+      actorEmail: actingAdmin.email,
+      actorRole: actingAdmin.role,
+      action: "status_changed",
+      fromStatus: transfer.status,
+      toStatus: body.status,
+      note: body.reason ?? null,
+      metadata: metadataUpdate,
+    });
+  } else {
+    await recordPayoutAudit(supabase, {
+      payoutTransferId: transferId,
+      actorEmail: "service@local",
+      actorRole: "service",
+      action: "status_changed",
+      fromStatus: transfer.status,
+      toStatus: body.status,
+      note: body.reason ?? null,
+      metadata: metadataUpdate,
+    });
+  }
+
   await notifyCreatorStatus({
+    transferId,
     creatorId: transfer.creator_id,
     amountMinor: transfer.amount_minor,
     currency: transfer.currency,
@@ -81,6 +153,7 @@ serve(async (req) => {
 });
 
 async function notifyCreatorStatus(params: {
+  transferId: number;
   creatorId: string;
   amountMinor: number;
   currency: string;
@@ -111,7 +184,7 @@ async function notifyCreatorStatus(params: {
           ? "Your withdrawal request could not be completed."
           : "Your withdrawal amount has been returned to your available balance.";
 
-  await sendResendEmail({
+  const result = await sendResendEmail({
     to: creatorEmail,
     subject,
     html: `<p>${statusCopy}</p>
@@ -119,6 +192,17 @@ async function notifyCreatorStatus(params: {
 <p>Reference: ${params.reference}</p>
 ${params.reason ? `<p>Reason: ${params.reason}</p>` : ""}`,
     text: `${statusCopy}\nAmount: ${amountLabel}\nReference: ${params.reference}${params.reason ? `\nReason: ${params.reason}` : ""}`,
+  });
+  await recordNotificationEvent(supabase!, {
+    payoutTransferId: params.transferId,
+    eventKind: "creator_status",
+    recipientEmail: creatorEmail,
+    status: result.skipped ? "skipped" : result.ok ? "sent" : "failed",
+    errorMessage: result.ok ? null : result.body ?? null,
+    metadata: {
+      status: params.status,
+      reference: params.reference,
+    },
   });
 }
 

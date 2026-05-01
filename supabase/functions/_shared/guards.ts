@@ -1,13 +1,35 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.46.1";
 
-const adminEmails = Array.from(
-  new Set(
-    (Deno.env.get("ADMIN_EMAILS") ?? "")
-      .split(",")
-      .map((entry) => entry.trim().toLowerCase())
-      .filter(Boolean),
-  ),
-);
+export type AdminRole = "viewer" | "operator" | "super_admin";
+
+const parseEmailList = (key: string) =>
+  Array.from(
+    new Set(
+      (Deno.env.get(key) ?? "")
+        .split(",")
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+
+const adminEmails = parseEmailList("ADMIN_EMAILS");
+const viewerEmails = parseEmailList("ADMIN_VIEWER_EMAILS");
+const operatorEmails = parseEmailList("ADMIN_OPERATOR_EMAILS");
+const superAdminEmails = parseEmailList("ADMIN_SUPER_ADMIN_EMAILS");
+
+const roleRank: Record<AdminRole, number> = {
+  viewer: 1,
+  operator: 2,
+  super_admin: 3,
+};
+
+const resolveAdminRole = (email: string): AdminRole | null => {
+  if (superAdminEmails.includes(email)) return "super_admin";
+  if (operatorEmails.includes(email)) return "operator";
+  if (viewerEmails.includes(email)) return "viewer";
+  if (adminEmails.includes(email)) return "operator";
+  return null;
+};
 
 /**
  * Verifies the bearer token, returns user id, and checks profiles.age_confirmed_at.
@@ -97,13 +119,18 @@ export async function requireCreatorPaymentAccess(
 export async function requireAdminAccess(
   supabase: SupabaseClient,
   req: Request,
-): Promise<{ userId: string; email: string; errorResponse?: Response }> {
+  options?: {
+    minimumRole?: AdminRole;
+    requireRecentSignInMinutes?: number;
+  },
+): Promise<{ userId: string; email: string; role: AdminRole; errorResponse?: Response }> {
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.replace("Bearer ", "");
   if (!token) {
     return {
       userId: "",
       email: "",
+      role: "viewer",
       errorResponse: json({ error: "Missing bearer token" }, 401),
     };
   }
@@ -115,27 +142,57 @@ export async function requireAdminAccess(
     return {
       userId: "",
       email: "",
+      role: "viewer",
       errorResponse: json({ error: "Invalid token" }, 401),
     };
   }
 
-  if (!adminEmails.length) {
+  if (!adminEmails.length && !viewerEmails.length && !operatorEmails.length && !superAdminEmails.length) {
     return {
       userId: "",
       email,
+      role: "viewer",
       errorResponse: json({ error: "ADMIN_EMAILS missing" }, 500),
     };
   }
 
-  if (!adminEmails.includes(email)) {
+  const role = resolveAdminRole(email);
+  if (!role) {
     return {
       userId: "",
       email,
+      role: "viewer",
       errorResponse: json({ error: "Admin access required" }, 403),
     };
   }
 
-  return { userId: user.id, email };
+  if (options?.minimumRole && roleRank[role] < roleRank[options.minimumRole]) {
+    return {
+      userId: "",
+      email,
+      role,
+      errorResponse: json({ error: "Insufficient admin permissions" }, 403),
+    };
+  }
+
+  const requireRecentSignInMinutes = options?.requireRecentSignInMinutes ?? 0;
+  if (requireRecentSignInMinutes > 0) {
+    const lastSignInAt = user.last_sign_in_at ? new Date(user.last_sign_in_at).getTime() : NaN;
+    const cutoff = Date.now() - requireRecentSignInMinutes * 60 * 1000;
+    if (!Number.isFinite(lastSignInAt) || lastSignInAt < cutoff) {
+      return {
+        userId: "",
+        email,
+        role,
+        errorResponse: json(
+          { error: "Recent sign-in required. Sign in again before changing payout state." },
+          403,
+        ),
+      };
+    }
+  }
+
+  return { userId: user.id, email, role };
 }
 
 function json(data: unknown, status = 200) {
