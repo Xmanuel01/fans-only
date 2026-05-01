@@ -145,6 +145,7 @@
 .admin-hero-grid {
   grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
   margin-bottom: 18px;
+  align-items: stretch;
 }
 
 .admin-summary-grid {
@@ -154,6 +155,7 @@
 
 .admin-metrics {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
 }
 
 .admin-donut-card,
@@ -210,6 +212,10 @@
 
 .admin-card-topline strong {
   color: #dfe9f8;
+}
+
+.admin-card-topline {
+  align-items: flex-start;
 }
 
 .admin-donut-layout {
@@ -269,6 +275,8 @@
 
 .admin-segment-legend {
   flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 10px;
 }
 
 .admin-segment-legend span {
@@ -301,6 +309,8 @@
 .admin-metric-card {
   display: grid;
   gap: 8px;
+  align-content: start;
+  min-height: 148px;
 }
 
 .admin-metric-card strong {
@@ -333,6 +343,7 @@
 .admin-toolbar__filters {
   flex-wrap: wrap;
   margin-bottom: 14px;
+  align-items: center;
 }
 
 .admin-toolbar__search {
@@ -353,12 +364,14 @@
 
 .admin-toolbar__row {
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .admin-toolbar__row input,
 .admin-toolbar__row select {
   min-width: 140px;
   flex: 1 1 140px;
+  min-height: 62px;
 }
 
 .admin-filter-chip,
@@ -372,6 +385,10 @@
   padding: 10px 16px;
   font-weight: 700;
   cursor: pointer;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .admin-filter-chip.is-active,
@@ -530,6 +547,33 @@
 .admin-panel-header__detail-meta {
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.admin-window-switch {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.admin-window-chip {
+  min-width: 68px;
+}
+
+.admin-panel-header {
+  align-items: flex-start;
+}
+
+.admin-panel-header__actions {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+  align-content: start;
+}
+
+.admin-panel-header__actions .admin-ghost-button,
+.admin-panel-header__actions .admin-primary-button {
+  min-width: 184px;
 }
 
 .admin-detail-grid--top {
