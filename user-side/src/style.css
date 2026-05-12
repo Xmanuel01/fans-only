@@ -5070,6 +5070,11 @@ body {
   color: #e8edf5;
 }
 
+.auth-label input.auth-input-error {
+  border-color: #ff7c86;
+  box-shadow: 0 0 0 1px rgba(255, 124, 134, 0.18);
+}
+
 .auth-btn {
   width: 100%;
   padding: 12px 14px;
@@ -5087,9 +5092,30 @@ body {
   color: white;
 }
 
+.auth-link-btn {
+  border: none;
+  background: transparent;
+  color: #8fb7ff;
+  font-weight: 700;
+  padding: 4px 0 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.auth-link-btn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
 .auth-error {
   margin-top: 8px;
   color: #ff9f9f;
+  font-weight: 600;
+}
+
+.auth-notice {
+  margin-top: 8px;
+  color: #9ad7b1;
   font-weight: 600;
 }
 

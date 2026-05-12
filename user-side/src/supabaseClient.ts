@@ -719,6 +719,27 @@ export async function signUpWithPassword(email: string, password: string) {
   return data
 }
 
+export async function sendPasswordResetEmail(email: string) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const redirectTo = new URL(appRedirectUrl())
+  redirectTo.searchParams.set('auth_action', 'reset-password')
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: redirectTo.toString(),
+  })
+  if (error) throw new Error(formatAuthError(error, 'Could not send password reset email right now.'))
+}
+
+export async function updatePassword(password: string) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const normalized = password.trim()
+  if (normalized.length < 8) {
+    throw new Error('Use at least 8 characters for your new password.')
+  }
+  const { data, error } = await supabase.auth.updateUser({ password: normalized })
+  if (error) throw new Error(formatAuthError(error, 'Could not update password right now.'))
+  return data
+}
+
 export async function signOut() {
   if (!supabase) return
   const { error } = await supabase.auth.signOut()

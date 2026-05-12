@@ -7,6 +7,8 @@ import {
   signOut,
   signInWithPassword,
   signUpWithPassword,
+  sendPasswordResetEmail,
+  updatePassword,
   upsertCreatorProfileSetup,
 } from './supabaseClient';
 import { env, envStatus, isAdminEmail, isSupabaseConfigured } from './env';
@@ -43,6 +45,20 @@ const BASE_URL = import.meta.env.BASE_URL ?? '/';
 const assetUrl = (path: string) => `${BASE_URL}${path.replace(/^\/+/, '')}`;
 const isExternalUrl = (value: string | null) => Boolean(value && /^https?:\/\//i.test(value));
 const CONSUMER_IS_EXTERNAL = isExternalUrl(CONSUMER_APP_URL);
+const isPasswordRecoveryIntent = () => {
+  if (typeof window === 'undefined') return false;
+  const url = new URL(window.location.href);
+  return url.searchParams.get('auth_action') === 'reset-password';
+};
+const clearPasswordRecoveryIntent = () => {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('auth_action');
+  url.searchParams.delete('code');
+  url.searchParams.delete('type');
+  url.searchParams.delete('redirect_to');
+  window.history.replaceState({}, document.title, url.toString());
+};
 const ONBOARDING_INTRO_WINDOW_MS = 10 * 60 * 1000;
 const MIN_SUBSCRIPTION_PRICE_KES = 50;
 const DEFAULT_SUBSCRIPTION_PRICE_KES = '500';
@@ -108,8 +124,29 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<'idle' | 'signing-in' | 'error'>('idle');
+  const [notice, setNotice] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ email?: boolean; password?: boolean; confirmPassword?: boolean }>({});
+  const [passwordRecoveryMode, setPasswordRecoveryMode] = useState(() => isPasswordRecoveryIntent());
+  const [status, setStatus] = useState<
+    'idle' | 'signing-in' | 'sending-reset' | 'updating-password' | 'error'
+  >('idle');
+
+  const validateSignInFields = () => {
+    const nextErrors = {
+      email: !email.trim(),
+      password: !password.trim(),
+    };
+    setFieldErrors(nextErrors);
+    if (nextErrors.email || nextErrors.password) {
+      setError('Enter your email and password to sign in.');
+      setNotice(null);
+      setStatus('error');
+      return false;
+    }
+    return true;
+  };
   const [referralCode, setReferralCode] = useState('');
   const [countryCode, setCountryCode] = useState('KE');
   const [contentType, setContentType] = useState<CreatorContentType>('adult');
@@ -138,9 +175,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       }
 
       const session = await getSession();
+      setPasswordRecoveryMode(isPasswordRecoveryIntent());
       if (!session?.user) {
         setState('unauthenticated');
       } else {
+        if (isPasswordRecoveryIntent()) {
+          setState('unauthenticated');
+          return;
+        }
         if (isAdminEmail(session.user.email)) {
           setState('ready');
           redirectAdmin();
@@ -167,6 +209,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         data: { subscription },
       } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
         if (!nextSession?.user) {
+          setState('unauthenticated');
+          return;
+        }
+        if (isPasswordRecoveryIntent()) {
+          setPasswordRecoveryMode(true);
           setState('unauthenticated');
           return;
         }
@@ -270,85 +317,204 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <h1>Welcome back</h1>
-          <p className="auth-lede">Sign in to your account</p>
+          <h1>{passwordRecoveryMode ? 'Reset password' : 'Welcome back'}</h1>
+          <p className="auth-lede">
+            {passwordRecoveryMode
+              ? 'Create a new password for your account to finish recovery.'
+              : 'Sign in to your account'}
+          </p>
 
           <div className="auth-card">
-            <div className="oauth-group">
-              <button className="oauth-btn" onClick={() => signInWithOAuth('google')}>
-                Continue with Google
-              </button>
-            </div>
-            <div className="divider-row">
-              <span className="line" />
-              <span className="or">or</span>
-              <span className="line" />
-            </div>
+            {!passwordRecoveryMode ? (
+              <>
+                <div className="oauth-group">
+                  <button className="oauth-btn" onClick={() => signInWithOAuth('google')}>
+                    Continue with Google
+                  </button>
+                </div>
+                <div className="divider-row">
+                  <span className="line" />
+                  <span className="or">or</span>
+                  <span className="line" />
+                </div>
+              </>
+            ) : null}
             <label className="auth-label">
               Email
-              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" />
+              <input
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (fieldErrors.email) {
+                    setFieldErrors((current) => ({ ...current, email: false }));
+                  }
+                }}
+                placeholder="you@example.com"
+                type="email"
+                className={fieldErrors.email ? 'auth-input-error' : undefined}
+              />
             </label>
             <label className="auth-label">
-              Password
-              <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="********" type="password" />
+              {passwordRecoveryMode ? 'New password' : 'Password'}
+              <input
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (fieldErrors.password) {
+                    setFieldErrors((current) => ({ ...current, password: false }));
+                  }
+                }}
+                placeholder="********"
+                type="password"
+                className={fieldErrors.password ? 'auth-input-error' : undefined}
+              />
             </label>
+            {passwordRecoveryMode ? (
+              <label className="auth-label">
+                Confirm new password
+                <input
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    if (fieldErrors.confirmPassword) {
+                      setFieldErrors((current) => ({ ...current, confirmPassword: false }));
+                    }
+                  }}
+                  placeholder="********"
+                  type="password"
+                  className={fieldErrors.confirmPassword ? 'auth-input-error' : undefined}
+                />
+              </label>
+            ) : null}
             <div className="auth-actions">
-              <button
-                className="primary-btn"
-                onClick={async () => {
-                  if (!email || !password) return;
-                  setStatus('signing-in');
-                  setError(null);
-                  try {
-                    await signInWithPassword(email, password);
-                  } catch (err) {
-                    console.error(err);
-                    setError('Could not sign in. Check your credentials.');
-                    setStatus('error');
-                  } finally {
-                    setStatus('idle');
-                  }
-                }}
-                disabled={status === 'signing-in'}
-              >
-                {status === 'signing-in' ? 'Signing in...' : 'Sign in'}
-              </button>
-              <button
-                className="ghost-btn"
-                onClick={async () => {
-                  if (!email || !password) return;
-                  setStatus('signing-in');
-                  setError(null);
-                  try {
-                    await signUpWithPassword(email, password);
-                  } catch (err) {
-                    console.error(err);
-                    setError('Could not create account. Try different credentials.');
-                    setStatus('error');
-                  } finally {
-                    setStatus('idle');
-                  }
-                }}
-                disabled={status === 'signing-in'}
-              >
-                Create account
-              </button>
+              {!passwordRecoveryMode ? (
+                <>
+                  <button
+                    className="primary-btn"
+                    onClick={async () => {
+                      if (!validateSignInFields()) return;
+                      setStatus('signing-in');
+                      setError(null);
+                      setNotice(null);
+                      try {
+                        await signInWithPassword(email, password);
+                      } catch (err: any) {
+                        console.error(err);
+                        setError(err?.message || 'Could not sign in. Check your credentials.');
+                        setStatus('error');
+                      } finally {
+                        setStatus('idle');
+                      }
+                    }}
+                    disabled={status === 'signing-in'}
+                  >
+                    {status === 'signing-in' ? 'Signing in...' : 'Sign in'}
+                  </button>
+                  <button
+                    className="ghost-btn"
+                    onClick={async () => {
+                      if (!email || !password) return;
+                      setStatus('signing-in');
+                      setError(null);
+                      setNotice(null);
+                      try {
+                        await signUpWithPassword(email, password);
+                      } catch (err: any) {
+                        console.error(err);
+                        setError(err?.message || 'Could not create account. Try different credentials.');
+                        setStatus('error');
+                      } finally {
+                        setStatus('idle');
+                      }
+                    }}
+                    disabled={status === 'signing-in'}
+                  >
+                    Create account
+                  </button>
+                  <button
+                    className="auth-link-btn"
+                    onClick={async () => {
+                      if (!email) {
+                        setError('Enter your email first so we know where to send the reset link.');
+                        return;
+                      }
+                      setStatus('sending-reset');
+                      setError(null);
+                      setNotice(null);
+                      try {
+                        await sendPasswordResetEmail(email);
+                        setNotice('Password reset link sent. Check your email and open the link here to continue.');
+                      } catch (err: any) {
+                        console.error(err);
+                        setError(err?.message || 'Could not send password reset email right now.');
+                        setStatus('error');
+                      } finally {
+                        setStatus('idle');
+                      }
+                    }}
+                    disabled={status === 'sending-reset'}
+                  >
+                    {status === 'sending-reset' ? 'Sending reset link...' : 'Forgot password?'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="primary-btn"
+                  onClick={async () => {
+                    if (!password || !confirmPassword) {
+                      setError('Enter and confirm your new password.');
+                      return;
+                    }
+                    if (password !== confirmPassword) {
+                      setError('Your new passwords do not match.');
+                      return;
+                    }
+                    setStatus('updating-password');
+                    setError(null);
+                    setNotice(null);
+                    try {
+                      await updatePassword(password);
+                      clearPasswordRecoveryIntent();
+                      setPassword('');
+                      setConfirmPassword('');
+                      setPasswordRecoveryMode(false);
+                      setNotice('Password updated. Use your new password to sign in.');
+                    } catch (err: any) {
+                      console.error(err);
+                      setError(err?.message || 'Could not update password right now.');
+                      setStatus('error');
+                    } finally {
+                      setStatus('idle');
+                    }
+                  }}
+                  disabled={status === 'updating-password'}
+                >
+                  {status === 'updating-password' ? 'Updating password...' : 'Save new password'}
+                </button>
+              )}
             </div>
             {error && <div className="auth-error">{error}</div>}
+            {notice && <div className="auth-notice">{notice}</div>}
             <p className="auth-lede">
-              Use your email and password to access your account. Need a profile first? Go to{' '}
-              {CONSUMER_APP_URL ? (
-                <a
-                  href={CONSUMER_APP_URL}
-                  target={CONSUMER_IS_EXTERNAL ? '_blank' : undefined}
-                  rel={CONSUMER_IS_EXTERNAL ? 'noreferrer' : undefined}
-                >
-                  the consumer app
-                </a>
+              {passwordRecoveryMode ? (
+                'Use a password with at least 8 characters, then sign back in if your session does not appear immediately.'
               ) : (
-                <span>the consumer app</span>
-              )}{' '}
-              and choose "Become a creator."
+                <>
+                  Use your email and password to access your account. Need a profile first? Go to{' '}
+                  {CONSUMER_APP_URL ? (
+                    <a
+                      href={CONSUMER_APP_URL}
+                      target={CONSUMER_IS_EXTERNAL ? '_blank' : undefined}
+                      rel={CONSUMER_IS_EXTERNAL ? 'noreferrer' : undefined}
+                    >
+                      the consumer app
+                    </a>
+                  ) : (
+                    <span>the consumer app</span>
+                  )}{' '}
+                  and choose "Become a creator."
+                </>
+              )}
             </p>
           </div>
         </div>

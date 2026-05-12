@@ -56,6 +56,8 @@ import {
   updateNotificationPreferences,
   signInWithPassword,
   signUpWithPassword,
+  sendPasswordResetEmail,
+  updatePassword,
   type AppNotification,
   type ChatMessage,
   type ChatThreadSummary,
@@ -91,6 +93,20 @@ const FAN_CREATORS_STORAGE_KEY = 'fans-only:fan-creators'
 const POST_SOCIAL_STORAGE_KEY = 'fans-only:post-social'
 const PAYMENT_RETURN_CACHE_KEY = 'fans-only:payment-return-refs'
 const hasGiftCreatorCheckout = Boolean(FEATURED_CREATOR_ID && DEFAULT_GIFT_AMOUNT_MAJOR > 0)
+const isPasswordRecoveryIntent = () => {
+  if (typeof window === 'undefined') return false
+  const url = new URL(window.location.href)
+  return url.searchParams.get('auth_action') === 'reset-password'
+}
+const clearPasswordRecoveryIntent = () => {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('auth_action')
+  url.searchParams.delete('code')
+  url.searchParams.delete('type')
+  url.searchParams.delete('redirect_to')
+  window.history.replaceState({}, document.title, url.toString())
+}
 const SUPPORTED_MEDIA_ASPECT_RATIOS: Array<{ css: string; value: number }> = [
   { css: '1 / 1', value: 1 },
   { css: '4 / 5', value: 4 / 5 },
@@ -427,18 +443,43 @@ const getWalletEntryTone = (entryType: WalletHistoryItem['entry_type']) =>
 
 function AuthPrompt({
   onAuthSuccess,
+  recoveryMode,
+  onPasswordResetComplete,
 }: {
   onAuthSuccess: (mode: 'sign_in' | 'sign_up', session: any | null) => void
+  recoveryMode: boolean
+  onPasswordResetComplete: () => void
 }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [status, setStatus] = useState<'idle' | 'signing-in' | 'error'>('idle')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [status, setStatus] = useState<
+    'idle' | 'signing-in' | 'sending-reset' | 'updating-password' | 'error'
+  >('idle')
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<{ email?: boolean; password?: boolean; confirmPassword?: boolean }>({})
+
+  const validateSignInFields = () => {
+    const nextErrors = {
+      email: !email.trim(),
+      password: !password.trim(),
+    }
+    setFieldErrors(nextErrors)
+    if (nextErrors.email || nextErrors.password) {
+      setError('Enter your email and password to sign in.')
+      setNotice(null)
+      setStatus('error')
+      return false
+    }
+    return true
+  }
 
   const handleSignIn = async () => {
-    if (!email || !password) return
+    if (!validateSignInFields()) return
     setStatus('signing-in')
     setError(null)
+    setNotice(null)
     try {
       const data = await signInWithPassword(email, password)
       onAuthSuccess('sign_in', data?.session ?? null)
@@ -454,6 +495,7 @@ function AuthPrompt({
     if (!email || !password) return
     setStatus('signing-in')
     setError(null)
+    setNotice(null)
     try {
       const data = await signUpWithPassword(email, password)
       onAuthSuccess('sign_up', data?.session ?? null)
@@ -461,6 +503,52 @@ function AuthPrompt({
     } catch (err: any) {
       console.error(err)
       setError(err?.message || 'Could not create account. Try a different email or password.')
+      setStatus('error')
+    }
+  }
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError('Enter your email first so we know where to send the reset link.')
+      return
+    }
+    setStatus('sending-reset')
+    setError(null)
+    setNotice(null)
+    try {
+      await sendPasswordResetEmail(email)
+      setNotice('Password reset link sent. Check your email and open the link here to continue.')
+      setStatus('idle')
+    } catch (err: any) {
+      console.error(err)
+      setError(err?.message || 'Could not send password reset email right now.')
+      setStatus('error')
+    }
+  }
+
+  const handlePasswordReset = async () => {
+    if (!password || !confirmPassword) {
+      setError('Enter and confirm your new password.')
+      return
+    }
+    if (password !== confirmPassword) {
+      setError('Your new passwords do not match.')
+      return
+    }
+    setStatus('updating-password')
+    setError(null)
+    setNotice(null)
+    try {
+      await updatePassword(password)
+      clearPasswordRecoveryIntent()
+      setPassword('')
+      setConfirmPassword('')
+      setNotice('Password updated. Use your new password to sign in.')
+      setStatus('idle')
+      onPasswordResetComplete()
+    } catch (err: any) {
+      console.error(err)
+      setError(err?.message || 'Could not update password right now.')
       setStatus('error')
     }
   }
@@ -473,60 +561,121 @@ function AuthPrompt({
           <span className="brand-tagline">Lace and pleasure Haven</span>
         </div>
       </div>
-      <h1>Welcome back</h1>
-      <p className="auth-lede">Sign in to your account</p>
+      <h1>{recoveryMode ? 'Reset password' : 'Welcome back'}</h1>
+      <p className="auth-lede">
+        {recoveryMode
+          ? 'Create a new password for your account to finish recovery.'
+          : 'Sign in to your account'}
+      </p>
 
-      <div className="oauth-group">
-        <button
-          className="oauth-btn"
-          onClick={async () => {
-            try {
-              await signInWithProvider('google')
-            } catch (err: any) {
-              console.error(err)
-              setError(err?.message || 'Google sign-in failed')
-            }
-          }}
-        >
-          Continue with Google
-        </button>
-      </div>
+      {!recoveryMode ? (
+        <>
+          <div className="oauth-group">
+            <button
+              className="oauth-btn"
+              onClick={async () => {
+                try {
+                  await signInWithProvider('google')
+                } catch (err: any) {
+                  console.error(err)
+                  setError(err?.message || 'Google sign-in failed')
+                }
+              }}
+            >
+              Continue with Google
+            </button>
+          </div>
 
-      <div className="divider-row">
-        <span className="line" />
-        <span className="or">or</span>
-        <span className="line" />
-      </div>
+          <div className="divider-row">
+            <span className="line" />
+            <span className="or">or</span>
+            <span className="line" />
+          </div>
+        </>
+      ) : null}
 
       <label className="auth-label">
         Email
         <input
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value)
+            if (fieldErrors.email) {
+              setFieldErrors((current) => ({ ...current, email: false }))
+            }
+          }}
           type="email"
           placeholder="you@example.com"
+          className={fieldErrors.email ? 'auth-input-error' : undefined}
         />
       </label>
       <label className="auth-label">
-        Password
+        {recoveryMode ? 'New password' : 'Password'}
         <input
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value)
+            if (fieldErrors.password) {
+              setFieldErrors((current) => ({ ...current, password: false }))
+            }
+          }}
           type="password"
           placeholder="********"
+          className={fieldErrors.password ? 'auth-input-error' : undefined}
         />
       </label>
-      <button className="auth-btn primary" onClick={handleSignIn} disabled={status === 'signing-in'}>
-        {status === 'signing-in' ? 'Signing in...' : 'Sign in'}
-      </button>
-      <button className="auth-btn ghost" onClick={handleSignUp} disabled={status === 'signing-in'}>
-        Create account
-      </button>
+      {recoveryMode ? (
+        <label className="auth-label">
+          Confirm new password
+          <input
+            value={confirmPassword}
+            onChange={(e) => {
+              setConfirmPassword(e.target.value)
+              if (fieldErrors.confirmPassword) {
+                setFieldErrors((current) => ({ ...current, confirmPassword: false }))
+              }
+            }}
+            type="password"
+            placeholder="********"
+            className={fieldErrors.confirmPassword ? 'auth-input-error' : undefined}
+          />
+        </label>
+      ) : null}
+      {!recoveryMode ? (
+        <>
+          <button className="auth-btn primary" onClick={handleSignIn} disabled={status === 'signing-in'}>
+            {status === 'signing-in' ? 'Signing in...' : 'Sign in'}
+          </button>
+          <button className="auth-btn ghost" onClick={handleSignUp} disabled={status === 'signing-in'}>
+            Create account
+          </button>
+          <button className="auth-link-btn" onClick={handleForgotPassword} disabled={status === 'sending-reset'}>
+            {status === 'sending-reset' ? 'Sending reset link...' : 'Forgot password?'}
+          </button>
+        </>
+      ) : (
+        <button
+          className="auth-btn primary"
+          onClick={handlePasswordReset}
+          disabled={status === 'updating-password'}
+        >
+          {status === 'updating-password' ? 'Updating password...' : 'Save new password'}
+        </button>
+      )}
       {error && <div className="auth-error">{error}</div>}
+      {notice && <div className="auth-notice">{notice}</div>}
 
       <ul className="auth-notes">
-        <li>Use your email and password to access your account.</li>
-        <li>After sign-in, return here to view content.</li>
+        <li>
+          {recoveryMode
+            ? 'Use a password with at least 8 characters.'
+            : 'Use your email and password to access your account.'}
+        </li>
+        <li>
+          {recoveryMode
+            ? 'After saving the new password, sign in again if your session does not appear immediately.'
+            : 'After sign-in, return here to view content.'}
+        </li>
       </ul>
     </div>
   )
@@ -4346,6 +4495,7 @@ export default function App() {
   const [ageCheckComplete, setAgeCheckComplete] = useState(false)
   const [ageConfirming, setAgeConfirming] = useState(false)
   const [session, setSession] = useState<any>(null)
+  const [passwordRecoveryMode, setPasswordRecoveryMode] = useState(() => isPasswordRecoveryIntent())
   const [adminRedirecting, setAdminRedirecting] = useState(false)
   const [filter, setFilter] = useState(filters[0])
   const [homeTopicFilter, setHomeTopicFilter] = useState<string | null>(null)
@@ -4544,6 +4694,10 @@ export default function App() {
   }, [hasGiftCreatorCheckout, membershipTab])
 
   useEffect(() => {
+    setPasswordRecoveryMode(isPasswordRecoveryIntent())
+  }, [])
+
+  useEffect(() => {
     if (envStatus.hasIssues) {
       return
     }
@@ -4554,6 +4708,10 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (passwordRecoveryMode) {
+      setAdminRedirecting(false)
+      return
+    }
     if (!session?.user?.email) {
       setAdminRedirecting(false)
       return
@@ -4564,7 +4722,7 @@ export default function App() {
     }
     setAdminRedirecting(true)
     redirectToAdminApp()
-  }, [session])
+  }, [passwordRecoveryMode, session])
 
   useEffect(() => {
     if (envStatus.hasIssues) return
@@ -5229,7 +5387,7 @@ export default function App() {
     return <ConfigRequired issues={envIssues} />
   }
 
-  if (adminRedirecting) {
+  if (adminRedirecting && !passwordRecoveryMode) {
     return (
       <div className="auth-shell">
         <div className="auth-panel">
@@ -5241,10 +5399,15 @@ export default function App() {
     )
   }
 
-  if (!session) {
+  if (!session || passwordRecoveryMode) {
     return (
       <div className="auth-shell">
         <AuthPrompt
+          recoveryMode={passwordRecoveryMode}
+          onPasswordResetComplete={() => {
+            setPasswordRecoveryMode(false)
+            setToast('Password updated successfully')
+          }}
           onAuthSuccess={(mode, authSession) => {
             if (authSession) {
               setSession(authSession)
