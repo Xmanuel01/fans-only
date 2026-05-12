@@ -9,11 +9,11 @@ describe("landing app routes", () => {
     expect(screen.getByRole("link", { name: "SpicyX" })).toHaveAttribute("href", "/app/");
     expect(screen.getAllByRole("link", { name: /explore creators/i })[0]).toHaveAttribute(
       "href",
-      "/user/"
+      "/user/?prompt=login"
     );
     expect(screen.getAllByRole("link", { name: /become a creator/i })[0]).toHaveAttribute(
       "href",
-      "/creator/"
+      "/creator/?prompt=login"
     );
   });
 

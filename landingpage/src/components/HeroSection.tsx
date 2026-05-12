@@ -8,6 +8,8 @@ const heroSignals = [
   { icon: BadgeDollarSign, label: "KES-ready monetization" },
   { icon: MessageCircleMore, label: "Direct premium fan access" },
 ];
+const FAN_LOGIN_URL = "/user/?prompt=login";
+const CREATOR_LOGIN_URL = "/creator/?prompt=login";
 
 const HeroSection = () => {
   return (
@@ -34,12 +36,12 @@ const HeroSection = () => {
 
             <div className="mt-8 flex flex-col gap-4 sm:flex-row">
               <Button variant="hero" size="lg" className="rounded-full px-8 py-6 text-base" asChild>
-                <a href="/creator/">
+                <a href={CREATOR_LOGIN_URL}>
                   Become a Creator <ArrowRight className="h-5 w-5" />
                 </a>
               </Button>
               <Button variant="hero-outline" size="lg" className="rounded-full px-8 py-6 text-base" asChild>
-                <a href="/user/">Explore Creators</a>
+                <a href={FAN_LOGIN_URL}>Explore Creators</a>
               </Button>
             </div>
 

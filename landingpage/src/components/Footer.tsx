@@ -1,5 +1,8 @@
 import BrandLogo from "@/components/BrandLogo";
 
+const FAN_LOGIN_URL = "/user/?prompt=login";
+const CREATOR_LOGIN_URL = "/creator/?prompt=login";
+
 const Footer = () => {
   return (
     <footer className="border-t border-border/60 bg-[#090c14] py-12">
@@ -17,10 +20,10 @@ const Footer = () => {
             <a className="landing-footer-link" href="/app/">
               Home
             </a>
-            <a className="landing-footer-link" href="/user/">
+            <a className="landing-footer-link" href={FAN_LOGIN_URL}>
               Explore creators
             </a>
-            <a className="landing-footer-link" href="/creator/">
+            <a className="landing-footer-link" href={CREATOR_LOGIN_URL}>
               Become a creator
             </a>
           </div>

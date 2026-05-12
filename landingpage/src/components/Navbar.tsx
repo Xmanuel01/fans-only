@@ -4,6 +4,9 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import BrandLogo from "@/components/BrandLogo";
 
+const FAN_LOGIN_URL = "/user/?prompt=login";
+const CREATOR_LOGIN_URL = "/creator/?prompt=login";
+
 const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -28,10 +31,10 @@ const Navbar = () => {
 
         <div className="hidden items-center gap-3 md:flex">
           <Button variant="hero-outline" size="sm" asChild className="rounded-full px-5">
-            <a href="/user/">Explore Creators</a>
+            <a href={FAN_LOGIN_URL}>Explore Creators</a>
           </Button>
           <Button variant="hero" size="sm" asChild className="rounded-full px-5">
-            <a href="/creator/">Become a Creator</a>
+            <a href={CREATOR_LOGIN_URL}>Become a Creator</a>
           </Button>
         </div>
 
@@ -67,10 +70,10 @@ const Navbar = () => {
                 Launch flow
               </a>
               <Button variant="hero-outline" size="sm" asChild className="mt-2 w-full rounded-full">
-                <a href="/user/">Explore Creators</a>
+                <a href={FAN_LOGIN_URL}>Explore Creators</a>
               </Button>
               <Button variant="hero" size="sm" asChild className="w-full rounded-full">
-                <a href="/creator/">Become a Creator</a>
+                <a href={CREATOR_LOGIN_URL}>Become a Creator</a>
               </Button>
             </div>
           </motion.div>

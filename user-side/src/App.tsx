@@ -98,6 +98,11 @@ const isPasswordRecoveryIntent = () => {
   const url = new URL(window.location.href)
   return url.searchParams.get('auth_action') === 'reset-password'
 }
+const isForcedLoginIntent = () => {
+  if (typeof window === 'undefined') return false
+  const url = new URL(window.location.href)
+  return url.searchParams.get('prompt') === 'login'
+}
 const clearPasswordRecoveryIntent = () => {
   if (typeof window === 'undefined') return
   const url = new URL(window.location.href)
@@ -105,6 +110,12 @@ const clearPasswordRecoveryIntent = () => {
   url.searchParams.delete('code')
   url.searchParams.delete('type')
   url.searchParams.delete('redirect_to')
+  window.history.replaceState({}, document.title, url.toString())
+}
+const clearForcedLoginIntent = () => {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('prompt')
   window.history.replaceState({}, document.title, url.toString())
 }
 const SUPPORTED_MEDIA_ASPECT_RATIOS: Array<{ css: string; value: number }> = [
@@ -4702,6 +4713,12 @@ export default function App() {
       return
     }
     ;(async () => {
+      if (isForcedLoginIntent() && !isPasswordRecoveryIntent()) {
+        await signOut()
+        clearForcedLoginIntent()
+        setSession(null)
+        return
+      }
       const s = await getCurrentSession()
       setSession(s)
     })()

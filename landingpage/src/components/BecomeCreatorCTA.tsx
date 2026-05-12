@@ -19,6 +19,8 @@ const creatorPoints = [
     desc: "Save a payout destination, pass manual ops review, and keep transfers aligned to a real launch workflow.",
   },
 ];
+const FAN_LOGIN_URL = "/user/?prompt=login";
+const CREATOR_LOGIN_URL = "/creator/?prompt=login";
 
 const BecomeCreatorCTA = () => {
   return (
@@ -68,12 +70,12 @@ const BecomeCreatorCTA = () => {
 
               <div className="mt-8 space-y-3">
                 <Button variant="hero" size="lg" className="w-full rounded-full py-6 text-base" asChild>
-                  <a href="/creator/">
+                  <a href={CREATOR_LOGIN_URL}>
                     Become a Creator <ArrowRight className="h-5 w-5" />
                   </a>
                 </Button>
                 <Button variant="hero-outline" size="lg" className="w-full rounded-full py-6 text-base" asChild>
-                  <a href="/user/">Explore Creators</a>
+                  <a href={FAN_LOGIN_URL}>Explore Creators</a>
                 </Button>
               </div>
             </div>
