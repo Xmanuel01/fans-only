@@ -113,8 +113,19 @@ type StoryItem = {
   isLive?: boolean;
 };
 
+type CreatorHomeCache = {
+  feedPosts: HomePost[];
+  stories: StoryItem[];
+  audienceSummary: { active: number; expired: number };
+};
+
 const CREATOR_DRAFT_STORAGE_KEY = 'creator-post-draft-v1';
 const CREATOR_PROFILE_CACHE_KEY = 'creator-profile-cache-v1';
+const CREATOR_HOME_CACHE_KEY = 'creator-home-cache-v1';
+const CREATOR_DRAFT_ATTACHMENT_DB = 'creator-post-draft-assets-v1';
+const CREATOR_DRAFT_ATTACHMENT_STORE = 'draft-assets';
+const CREATOR_DRAFT_ATTACHMENT_KEY = 'current';
+const CREATOR_PUBLISH_TIMEOUT_MS = 45000;
 
 const ensureHandle = (value: string | null | undefined) => {
   if (!value) return '';
@@ -501,6 +512,171 @@ const clearCreatorDraft = () => {
   }
 };
 
+const readCreatorHomeCache = (): CreatorHomeCache | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(CREATOR_HOME_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CreatorHomeCache>;
+
+    return {
+      feedPosts: Array.isArray(parsed.feedPosts) ? parsed.feedPosts : EMPTY_POSTS,
+      stories: Array.isArray(parsed.stories) ? parsed.stories : EMPTY_STORIES,
+      audienceSummary:
+        parsed.audienceSummary &&
+        typeof parsed.audienceSummary === 'object' &&
+        typeof parsed.audienceSummary.active === 'number' &&
+        typeof parsed.audienceSummary.expired === 'number'
+          ? parsed.audienceSummary
+          : { active: 0, expired: 0 },
+    };
+  } catch (error) {
+    console.warn('Could not restore creator home cache', error);
+    return null;
+  }
+};
+
+const writeCreatorHomeCache = (cache: CreatorHomeCache) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(CREATOR_HOME_CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    console.warn('Could not save creator home cache', error);
+  }
+};
+
+const openCreatorDraftAttachmentDb = () =>
+  new Promise<IDBDatabase | null>((resolve) => {
+    if (typeof window === 'undefined' || !('indexedDB' in window)) {
+      resolve(null);
+      return;
+    }
+
+    const request = window.indexedDB.open(CREATOR_DRAFT_ATTACHMENT_DB, 1);
+    request.onerror = () => {
+      console.warn('Could not open creator draft attachment store', request.error);
+      resolve(null);
+    };
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(CREATOR_DRAFT_ATTACHMENT_STORE)) {
+        database.createObjectStore(CREATOR_DRAFT_ATTACHMENT_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+  });
+
+const writeCreatorDraftAttachments = async (files: File[]) => {
+  const database = await openCreatorDraftAttachmentDb();
+  if (!database) return;
+
+  await new Promise<void>((resolve) => {
+    const transaction = database.transaction(CREATOR_DRAFT_ATTACHMENT_STORE, 'readwrite');
+    const store = transaction.objectStore(CREATOR_DRAFT_ATTACHMENT_STORE);
+    const payload = files.map((file) => ({
+      name: file.name,
+      type: file.type,
+      lastModified: file.lastModified,
+      file,
+    }));
+    store.put(payload, CREATOR_DRAFT_ATTACHMENT_KEY);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => {
+      console.warn('Could not save creator draft attachments', transaction.error);
+      resolve();
+    };
+  });
+
+  database.close();
+};
+
+const readCreatorDraftAttachments = async (): Promise<File[]> => {
+  const database = await openCreatorDraftAttachmentDb();
+  if (!database) return [];
+
+  const payload = await new Promise<unknown>((resolve) => {
+    const transaction = database.transaction(CREATOR_DRAFT_ATTACHMENT_STORE, 'readonly');
+    const store = transaction.objectStore(CREATOR_DRAFT_ATTACHMENT_STORE);
+    const request = store.get(CREATOR_DRAFT_ATTACHMENT_KEY);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => {
+      console.warn('Could not restore creator draft attachments', request.error);
+      resolve(null);
+    };
+  });
+
+  database.close();
+
+  if (!Array.isArray(payload)) return [];
+
+  return payload
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const candidate = entry as {
+        name?: unknown;
+        type?: unknown;
+        lastModified?: unknown;
+        file?: unknown;
+      };
+
+      if (candidate.file instanceof File) {
+        return candidate.file;
+      }
+
+      if (!(candidate.file instanceof Blob) || typeof candidate.name !== 'string') {
+        return null;
+      }
+
+      return new File([candidate.file], candidate.name, {
+        type: typeof candidate.type === 'string' ? candidate.type : candidate.file.type,
+        lastModified:
+          typeof candidate.lastModified === 'number'
+            ? candidate.lastModified
+            : Date.now(),
+      });
+    })
+    .filter((file): file is File => file instanceof File);
+};
+
+const clearCreatorDraftAttachments = async () => {
+  const database = await openCreatorDraftAttachmentDb();
+  if (!database) return;
+
+  await new Promise<void>((resolve) => {
+    const transaction = database.transaction(CREATOR_DRAFT_ATTACHMENT_STORE, 'readwrite');
+    const store = transaction.objectStore(CREATOR_DRAFT_ATTACHMENT_STORE);
+    store.delete(CREATOR_DRAFT_ATTACHMENT_KEY);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => {
+      console.warn('Could not clear creator draft attachments', transaction.error);
+      resolve();
+    };
+  });
+
+  database.close();
+};
+
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string) => {
+  if (typeof window === 'undefined') {
+    return await promise;
+  }
+
+  return await new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise
+      .then((value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+};
+
 const formatNotificationDate = (value: string) => {
   const timestamp = new Date(value).getTime();
   if (!Number.isFinite(timestamp)) return 'Just now';
@@ -625,12 +801,26 @@ const EMPTY_POSTS: HomePost[] = [];
 const EMPTY_STORIES: StoryItem[] = [];
 
 export function MyHome() {
+  const initialHomeCache = useRef<CreatorHomeCache | null>(readCreatorHomeCache());
   const [activeFilter, setActiveFilter] = useState<'all' | 'photos' | 'videos' | 'texts'>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [feedPosts, setFeedPosts] = useState<HomePost[]>(EMPTY_POSTS);
-  const [stories, setStories] = useState<StoryItem[]>(EMPTY_STORIES);
-  const [audienceSummary, setAudienceSummary] = useState({ active: 0, expired: 0 });
-  const [loadingContent, setLoadingContent] = useState(true);
+  const [feedPosts, setFeedPosts] = useState<HomePost[]>(
+    () => initialHomeCache.current?.feedPosts ?? EMPTY_POSTS
+  );
+  const [stories, setStories] = useState<StoryItem[]>(
+    () => initialHomeCache.current?.stories ?? EMPTY_STORIES
+  );
+  const [audienceSummary, setAudienceSummary] = useState(
+    () => initialHomeCache.current?.audienceSummary ?? { active: 0, expired: 0 }
+  );
+  const [loadingContent, setLoadingContent] = useState(
+    () =>
+      !initialHomeCache.current ||
+      (!initialHomeCache.current.feedPosts.length &&
+        !initialHomeCache.current.stories.length &&
+        initialHomeCache.current.audienceSummary.active === 0 &&
+        initialHomeCache.current.audienceSummary.expired === 0)
+  );
   const [contentError, setContentError] = useState('');
   const [activeStory, setActiveStory] = useState<StoryItem | null>(null);
   const storiesScrollerRef = useRef<HTMLDivElement | null>(null);
@@ -645,35 +835,91 @@ export function MyHome() {
     let cancelled = false;
 
     const loadCreatorContent = async () => {
-      setLoadingContent(true);
+      const hasVisibleCache =
+        feedPosts.length > 0 ||
+        stories.length > 0 ||
+        audienceSummary.active > 0 ||
+        audienceSummary.expired > 0;
+
+      if (!hasVisibleCache) {
+        setLoadingContent(true);
+      }
       setContentError('');
 
       try {
-        const [postsData, storiesData, subscribers] = await Promise.all([
-          fetchCreatorFeedPosts(24),
-          fetchCreatorStories(18),
-          fetchCreatorSubscribers('all'),
+        const [postsResult, storiesResult, subscribersResult] = await Promise.allSettled([
+          withTimeout(
+            fetchCreatorFeedPosts(24),
+            15000,
+            'Timed out while loading your latest posts.'
+          ),
+          withTimeout(
+            fetchCreatorStories(18),
+            15000,
+            'Timed out while loading your live stories.'
+          ),
+          withTimeout(
+            fetchCreatorSubscribers('all'),
+            15000,
+            'Timed out while loading your subscriber summary.'
+          ),
         ]);
 
         if (cancelled) {
           return;
         }
 
-        setFeedPosts(postsData.map(mapCreatorPostToHomePost));
-        setStories(storiesData.map(mapCreatorStoryToStoryItem));
-        setAudienceSummary({
-          active: subscribers.filter(isActiveSubscriber).length,
-          expired: subscribers.filter((entry) => !isActiveSubscriber(entry)).length,
+        const nextFeedPosts =
+          postsResult.status === 'fulfilled'
+            ? postsResult.value.map(mapCreatorPostToHomePost)
+            : feedPosts;
+        const nextStories =
+          storiesResult.status === 'fulfilled'
+            ? storiesResult.value.map(mapCreatorStoryToStoryItem)
+            : stories;
+        const nextAudienceSummary =
+          subscribersResult.status === 'fulfilled'
+            ? {
+                active: subscribersResult.value.filter(isActiveSubscriber).length,
+                expired: subscribersResult.value.filter((entry) => !isActiveSubscriber(entry)).length,
+              }
+            : audienceSummary;
+
+        setFeedPosts(nextFeedPosts);
+        setStories(nextStories);
+        setAudienceSummary(nextAudienceSummary);
+        writeCreatorHomeCache({
+          feedPosts: nextFeedPosts,
+          stories: nextStories,
+          audienceSummary: nextAudienceSummary,
         });
+
+        const failureCount = [postsResult, storiesResult, subscribersResult].filter(
+          (result) => result.status === 'rejected'
+        ).length;
+
+        if (failureCount) {
+          setContentError(
+            failureCount === 3
+              ? 'Could not refresh your latest posts and stories right now.'
+              : 'Some dashboard sections are showing saved data while the latest refresh completes.'
+          );
+        }
       } catch (error) {
         console.error(error);
         if (cancelled) {
           return;
         }
-        setFeedPosts([]);
-        setStories([]);
-        setAudienceSummary({ active: 0, expired: 0 });
-        setContentError('Could not load your latest posts and stories.');
+        if (!hasVisibleCache) {
+          setFeedPosts([]);
+          setStories([]);
+          setAudienceSummary({ active: 0, expired: 0 });
+        }
+        setContentError(
+          hasVisibleCache
+            ? 'Could not refresh your dashboard right now. Showing the last saved view.'
+            : 'Could not load your latest posts and stories.'
+        );
       } finally {
         if (!cancelled) {
           setLoadingContent(false);
@@ -3526,11 +3772,13 @@ export function PostsCreate() {
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduleAt, setScheduleAt] = useState('');
   const [pollEnabled, setPollEnabled] = useState(false);
+  const [pollEditorOpen, setPollEditorOpen] = useState(false);
   const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
   const [notice, setNotice] = useState('');
   const [publishing, setPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const noticeTimer = useRef<number | null>(null);
+  const restoreDraftNoticeShown = useRef(false);
 
   const remaining = 1000 - content.length;
   const hasContent = content.trim().length > 0 || attachments.length > 0;
@@ -3552,22 +3800,48 @@ export function PostsCreate() {
   const creatorDisplayName = composerProfile.name || 'Creator';
 
   useEffect(() => {
-    const restored = readCreatorDraft();
-    if (!restored) {
-      return;
-    }
+    let cancelled = false;
 
-    setContent(restored.content);
-    setAudience(restored.audience);
-    setPostType(restored.postType);
-    setContentRating(restored.contentRating);
-    setStoryDurationHours(restored.storyDurationHours);
-    setIsPaid(restored.isPaid);
-    setPrice(restored.price);
-    setIsScheduled(restored.isScheduled);
-    setScheduleAt(restored.scheduleAt);
-    setPollEnabled(restored.pollEnabled);
-    setPollOptions(restored.pollOptions.length >= 2 ? restored.pollOptions : ['', '']);
+    const restoreDraft = async () => {
+      const restored = readCreatorDraft();
+      const restoredAttachments = await readCreatorDraftAttachments();
+      if (cancelled) {
+        return;
+      }
+
+      if (restored) {
+        setContent(restored.content);
+        setAudience(restored.audience);
+        setPostType(restored.postType);
+        setContentRating(restored.contentRating);
+        setStoryDurationHours(restored.storyDurationHours);
+        setIsPaid(restored.isPaid);
+        setPrice(restored.price);
+        setIsScheduled(restored.isScheduled);
+        setScheduleAt(restored.scheduleAt);
+        setPollEnabled(restored.pollEnabled);
+        setPollEditorOpen(false);
+        setPollOptions(restored.pollOptions.length >= 2 ? restored.pollOptions : ['', '']);
+      }
+
+      if (restoredAttachments.length) {
+        setAttachments(restoredAttachments);
+      }
+
+      if (!restoreDraftNoticeShown.current && (restored || restoredAttachments.length)) {
+        restoreDraftNoticeShown.current = true;
+        showNotice(
+          restoredAttachments.length
+            ? 'Draft restored with attachments.'
+            : 'Draft restored.'
+        );
+      }
+    };
+
+    void restoreDraft();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -3578,6 +3852,7 @@ export function PostsCreate() {
     setIsScheduled(false);
     setScheduleAt('');
     setPollEnabled(false);
+    setPollEditorOpen(false);
     setPollOptions(['', '']);
   }, [postType]);
 
@@ -3660,9 +3935,62 @@ export function PostsCreate() {
     setIsScheduled(DEFAULT_CREATOR_DRAFT.isScheduled);
     setScheduleAt(DEFAULT_CREATOR_DRAFT.scheduleAt);
     setPollEnabled(DEFAULT_CREATOR_DRAFT.pollEnabled);
+    setPollEditorOpen(false);
     setPollOptions(DEFAULT_CREATOR_DRAFT.pollOptions);
     clearCreatorDraft();
+    void clearCreatorDraftAttachments();
   };
+
+  useEffect(() => {
+    if (publishing) {
+      return;
+    }
+
+    const draftPayload = {
+      content,
+      audience,
+      postType,
+      contentRating,
+      storyDurationHours,
+      isPaid,
+      price,
+      isScheduled,
+      scheduleAt,
+      pollEnabled,
+      pollOptions,
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      if (hasDraftData) {
+        writeCreatorDraft(draftPayload);
+      } else {
+        clearCreatorDraft();
+      }
+
+      if (attachments.length) {
+        void writeCreatorDraftAttachments(attachments);
+      } else {
+        void clearCreatorDraftAttachments();
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    attachments,
+    audience,
+    content,
+    contentRating,
+    hasDraftData,
+    isPaid,
+    isScheduled,
+    pollEnabled,
+    pollOptions,
+    postType,
+    price,
+    publishing,
+    scheduleAt,
+    storyDurationHours,
+  ]);
 
   const handleSaveDraft = () => {
     if (!hasDraftData) {
@@ -3685,29 +4013,18 @@ export function PostsCreate() {
       pollOptions,
     };
 
-    if (
-      content.trim().length > 0 ||
-      isPaid ||
-      price.trim().length > 0 ||
-      audience !== DEFAULT_CREATOR_DRAFT.audience ||
-      postType !== DEFAULT_CREATOR_DRAFT.postType ||
-      contentRating !== DEFAULT_CREATOR_DRAFT.contentRating ||
-      storyDurationHours !== DEFAULT_CREATOR_DRAFT.storyDurationHours ||
-      isScheduled ||
-      scheduleAt.trim().length > 0 ||
-      pollEnabled ||
-      validPollOptions.some((option) => option.length > 0)
-    ) {
+    if (hasDraftData) {
       writeCreatorDraft(draftPayload);
     } else {
       clearCreatorDraft();
     }
+    if (attachments.length) {
+      void writeCreatorDraftAttachments(attachments);
+    } else {
+      void clearCreatorDraftAttachments();
+    }
 
-    showNotice(
-      attachments.length
-        ? 'Draft saved. Reattach media files before publishing.'
-        : 'Draft saved.'
-    );
+    showNotice(attachments.length ? 'Draft saved with attachments.' : 'Draft saved.');
   };
 
   const handlePublish = async () => {
@@ -3760,17 +4077,21 @@ export function PostsCreate() {
 
     try {
       setPublishing(true);
-      await publishCreatorPost({
-        title,
-        body: trimmed || null,
-        visibility,
-        price_cents: isPaid ? Math.round(priceValue * 100) : 0,
-        currency: 'KES',
-        content_rating: contentRating,
-        post_type: postType,
-        expires_at: expiresAt,
-        files: attachments,
-      });
+      await withTimeout(
+        publishCreatorPost({
+          title,
+          body: trimmed || null,
+          visibility,
+          price_cents: isPaid ? Math.round(priceValue * 100) : 0,
+          currency: 'KES',
+          content_rating: contentRating,
+          post_type: postType,
+          expires_at: expiresAt,
+          files: attachments,
+        }),
+        CREATOR_PUBLISH_TIMEOUT_MS,
+        'Publishing is taking too long. Your draft is still saved. Refresh Home before trying again.'
+      );
 
       resetComposer();
       showNotice(postType === 'story' ? 'Story published.' : 'Post published.');
@@ -3806,13 +4127,24 @@ export function PostsCreate() {
   };
 
   const togglePoll = () => {
-    setPollEnabled((prev) => {
-      const next = !prev;
-      if (!next) {
-        setPollOptions(['', '']);
-      }
-      return next;
-    });
+    setPollEditorOpen((prev) => !prev);
+  };
+
+  const handleSavePoll = () => {
+    if (validPollOptions.length < 2) {
+      showNotice('Add at least two poll options before saving the poll.');
+      return;
+    }
+    setPollEnabled(true);
+    setPollEditorOpen(false);
+    showNotice('Poll saved to this draft.');
+  };
+
+  const handleDiscardPoll = () => {
+    setPollEnabled(false);
+    setPollEditorOpen(false);
+    setPollOptions(['', '']);
+    showNotice('Poll removed from this draft.');
   };
 
   const updatePollOption = (index: number, value: string) => {
@@ -3913,12 +4245,12 @@ export function PostsCreate() {
               </button>
               {postType === 'post' ? (
                 <button
-                  className={`create-post__tool${pollEnabled ? ' is-active' : ''}`}
+                  className={`create-post__tool${pollEnabled || pollEditorOpen ? ' is-active' : ''}`}
                   type="button"
                   onClick={togglePoll}
                 >
                   <PollIcon />
-                  Poll
+                  {pollEnabled ? 'Edit poll' : 'Poll'}
                 </button>
               ) : null}
               <span className={`create-post__count${remaining < 50 ? ' is-low' : ''}`}>
@@ -3926,9 +4258,12 @@ export function PostsCreate() {
               </span>
             </div>
 
-            {pollEnabled ? (
+            {pollEditorOpen ? (
               <div className="create-post__poll">
-                <div className="create-post__poll-title">Poll options</div>
+                <div className="create-post__poll-title">
+                  Poll options
+                  {pollEnabled ? <span className="create-post__poll-status">Saved</span> : null}
+                </div>
                 {pollOptions.map((option, index) => (
                   <input
                     key={`poll-${index}`}
@@ -3944,6 +4279,14 @@ export function PostsCreate() {
                     Add another option
                   </button>
                 ) : null}
+                <div className="create-post__poll-actions">
+                  <button className="create-post__ghost create-post__poll-button" type="button" onClick={handleDiscardPoll}>
+                    Remove poll
+                  </button>
+                  <button className="create-post__primary create-post__poll-button" type="button" onClick={handleSavePoll}>
+                    Save poll
+                  </button>
+                </div>
               </div>
             ) : null}
 

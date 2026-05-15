@@ -5770,6 +5770,24 @@ button,
   font-weight: 600;
   font-size: 13px;
   color: #526170;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.create-post__poll-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  border: 1px solid rgba(72, 110, 165, 0.3);
+  background: rgba(37, 57, 86, 0.45);
+  color: #a9c4e6;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .create-post__link {
@@ -5792,6 +5810,17 @@ button,
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.create-post__poll-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.create-post__poll-button {
+  min-width: 132px;
 }
 
 .create-post__attachments {
