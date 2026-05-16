@@ -5650,8 +5650,37 @@ body {
 }
 
 @media (max-width: 640px) {
+  .main-area:has(.home-feed-layout) {
+    padding: 0 0 144px;
+  }
+
   .main-area {
     padding: 18px 14px 144px;
+  }
+
+  .home-feed {
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    background:
+      linear-gradient(180deg, rgba(8, 14, 23, 0.98), rgba(7, 12, 21, 0.98)),
+      #0a0f16;
+  }
+
+  .home-feed-layout {
+    gap: 0;
+  }
+
+  .home-feed-main {
+    padding-bottom: 12px;
+  }
+
+  .home-stories {
+    padding: 10px 0 6px;
+  }
+
+  .home-stories__scroller {
+    padding: 0 12px 4px;
   }
 
   .home-stories__track {
@@ -5690,16 +5719,24 @@ body {
 
   .home-feed__posts {
     gap: 12px;
-    padding: 10px 0 4px;
+    padding: 8px 0 0;
   }
 
   .home-post {
-    border-radius: 18px;
+    width: 100%;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    border-color: rgba(38, 49, 65, 0.9);
+    background:
+      linear-gradient(180deg, rgba(11, 18, 28, 0.98), rgba(10, 16, 25, 0.98)),
+      #0d141f;
+    box-shadow: none;
   }
 
   .home-post__header {
     gap: 8px;
-    padding: 12px 12px 10px;
+    padding: 14px 14px 10px;
   }
 
   .home-post__author {
@@ -5720,7 +5757,7 @@ body {
   }
 
   .home-post__body {
-    padding: 0 12px 8px;
+    padding: 0 14px 8px;
   }
 
   .home-post__caption {
@@ -5741,7 +5778,7 @@ body {
 
   .home-post__social {
     gap: 16px;
-    padding: 9px 12px 6px;
+    padding: 10px 14px 6px;
   }
 
   .home-post__social-btn {
@@ -5750,7 +5787,7 @@ body {
   }
 
   .home-post__comments {
-    padding: 0 12px 10px;
+    padding: 0 14px 10px;
   }
 
   .home-post__comment-input {
@@ -5764,7 +5801,7 @@ body {
 
   .home-post__footer {
     align-items: center;
-    padding: 10px 12px 14px;
+    padding: 10px 14px 16px;
     font-size: 12px;
   }
 
