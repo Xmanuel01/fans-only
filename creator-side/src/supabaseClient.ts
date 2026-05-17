@@ -1638,6 +1638,12 @@ export async function publishCreatorPost(params: {
 
     return post;
   } catch (error) {
+    if (
+      error instanceof Error &&
+      /requested file could not be read|permission problems|not be read/i.test(error.message)
+    ) {
+      throw new Error('This file is no longer readable on your device. Re-add the media and try again.');
+    }
     if (uploadedPaths.length) {
       const { error: cleanupStorageError } = await supabase.storage
         .from('creator-media')

@@ -572,19 +572,36 @@ const openCreatorDraftAttachmentDb = () =>
     request.onsuccess = () => resolve(request.result);
   });
 
+const createStableDraftAttachment = async (file: File) => {
+  const bytes = await file.arrayBuffer();
+  const type = file.type || 'application/octet-stream';
+  return new File([bytes], file.name, {
+    type,
+    lastModified: file.lastModified || Date.now(),
+  });
+};
+
 const writeCreatorDraftAttachments = async (files: File[]) => {
   const database = await openCreatorDraftAttachmentDb();
   if (!database) return;
 
+  const payload = await Promise.all(
+    files.map(async (file) => {
+      const bytes = await file.arrayBuffer();
+      return {
+        name: file.name,
+        type: file.type,
+        lastModified: file.lastModified,
+        data: new Blob([bytes], {
+          type: file.type || 'application/octet-stream',
+        }),
+      };
+    })
+  );
+
   await new Promise<void>((resolve) => {
     const transaction = database.transaction(CREATOR_DRAFT_ATTACHMENT_STORE, 'readwrite');
     const store = transaction.objectStore(CREATOR_DRAFT_ATTACHMENT_STORE);
-    const payload = files.map((file) => ({
-      name: file.name,
-      type: file.type,
-      lastModified: file.lastModified,
-      file,
-    }));
     store.put(payload, CREATOR_DRAFT_ATTACHMENT_KEY);
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => {
@@ -622,19 +639,15 @@ const readCreatorDraftAttachments = async (): Promise<File[]> => {
         name?: unknown;
         type?: unknown;
         lastModified?: unknown;
-        file?: unknown;
+        data?: unknown;
       };
 
-      if (candidate.file instanceof File) {
-        return candidate.file;
-      }
-
-      if (!(candidate.file instanceof Blob) || typeof candidate.name !== 'string') {
+      if (!(candidate.data instanceof Blob) || typeof candidate.name !== 'string') {
         return null;
       }
 
-      return new File([candidate.file], candidate.name, {
-        type: typeof candidate.type === 'string' ? candidate.type : candidate.file.type,
+      return new File([candidate.data], candidate.name, {
+        type: typeof candidate.type === 'string' ? candidate.type : candidate.data.type,
         lastModified:
           typeof candidate.lastModified === 'number'
             ? candidate.lastModified
@@ -3975,13 +3988,20 @@ export function PostsCreate() {
     noticeTimer.current = window.setTimeout(() => setNotice(''), 2400);
   };
 
-  const handleFiles = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleFiles = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
     if (!files.length) {
       return;
     }
-    setAttachments((prev) => [...prev, ...files]);
-    event.target.value = '';
+
+    try {
+      const stableFiles = await Promise.all(files.map((file) => createStableDraftAttachment(file)));
+      setAttachments((prev) => [...prev, ...stableFiles]);
+    } catch (error) {
+      console.error(error);
+      showNotice('We could not keep a stable copy of that file. Please pick it again.');
+    }
   };
 
   const removeAttachment = (index: number) => {
