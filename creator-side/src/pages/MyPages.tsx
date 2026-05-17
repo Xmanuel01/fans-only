@@ -93,6 +93,7 @@ type HomePost = {
   video?: {
     src: string;
     poster: string;
+    mimeType?: string | null;
   };
   footerPrimary: string;
   footerSecondary: string;
@@ -105,6 +106,7 @@ type StoryItem = {
   image: string;
   previewUrl: string;
   previewType: 'image' | 'video' | 'text';
+  previewMimeType?: string | null;
   caption: string;
   expiresLabel: string;
   publishedLabel: string;
@@ -249,7 +251,10 @@ const normalizeHomePost = (post: CreatorContentItem): HomePost => {
     caption: post.body?.trim() || post.title || (post.post_type === 'story' ? 'Story' : 'Post'),
     type,
     media: !isVideo && primaryMedia?.url ? [primaryMedia.url] : undefined,
-    video: isVideo && primaryMedia?.url ? { src: primaryMedia.url, poster: '' } : undefined,
+    video:
+      isVideo && primaryMedia?.url
+        ? { src: primaryMedia.url, poster: '', mimeType: primaryMedia.mime_type ?? null }
+        : undefined,
     footerPrimary: describeVisibility(post).replace('Â·', '-'),
     footerSecondary: `${post.content_rating.toUpperCase()} - ${formatRelativeTime(post.created_at)}`,
   };
@@ -425,6 +430,7 @@ const mapCreatorStoryToStoryItem = (story: CreatorContentItem): StoryItem => {
     image: story.creator?.avatar_url ?? primaryMedia?.url ?? '',
     previewUrl: primaryMedia?.url ?? '',
     previewType,
+    previewMimeType: primaryMedia?.mime_type ?? null,
     caption: story.body?.trim() || story.title || 'Story',
     expiresLabel: formatExpiryLabel(story.expires_at),
     publishedLabel: formatRelativeTime(story.created_at),
@@ -1147,8 +1153,15 @@ export function MyHome() {
                     >
                       <span className="home-story__preview" aria-hidden="true">
                         {story.previewType === 'video' && story.previewUrl ? (
-                          <video muted playsInline preload="metadata">
-                            <source src={story.previewUrl} />
+                          <video
+                            muted
+                            playsInline
+                            preload="metadata"
+                            src={story.previewUrl}
+                          >
+                            {story.previewMimeType ? (
+                              <source src={story.previewUrl} type={story.previewMimeType} />
+                            ) : null}
                           </video>
                         ) : story.previewType === 'image' && story.previewUrl ? (
                           <img src={story.previewUrl} alt="" />
@@ -1253,8 +1266,17 @@ export function MyHome() {
               ) : null}
 
               {post.type === 'video' && post.video ? (
-                <video className="home-post__media" controls preload="metadata" poster={post.video.poster}>
-                  <source src={post.video.src} type="video/mp4" />
+                <video
+                  className="home-post__media"
+                  controls
+                  preload="metadata"
+                  playsInline
+                  poster={post.video.poster}
+                  src={post.video.src}
+                >
+                  {post.video.mimeType ? (
+                    <source src={post.video.src} type={post.video.mimeType} />
+                  ) : null}
                 </video>
               ) : null}
 
@@ -1323,8 +1345,17 @@ export function MyHome() {
                 </div>
                 <div className="home-story-modal__media">
                   {activeStory.previewType === 'video' && activeStory.previewUrl ? (
-                    <video controls autoPlay muted playsInline preload="metadata">
-                      <source src={activeStory.previewUrl} />
+                    <video
+                      controls
+                      autoPlay
+                      muted
+                      playsInline
+                      preload="metadata"
+                      src={activeStory.previewUrl}
+                    >
+                      {activeStory.previewMimeType ? (
+                        <source src={activeStory.previewUrl} type={activeStory.previewMimeType} />
+                      ) : null}
                     </video>
                   ) : activeStory.previewType === 'image' && activeStory.previewUrl ? (
                     <img src={activeStory.previewUrl} alt={activeStory.caption} />
@@ -3840,7 +3871,13 @@ export function PostsCreate() {
     scheduleAt.trim().length > 0 ||
     pollEnabled ||
     validPollOptions.some((option) => option.length > 0);
-  const canPublish = hasContent && (!isPaid || price.trim().length > 0) && !publishing;
+  const publishBlockReason = isScheduled
+    ? 'Scheduling is still saved to drafts only. Turn it off before publishing this post.'
+    : pollEnabled
+      ? 'Polls are saved to drafts only right now. Remove the poll before publishing this post.'
+      : '';
+  const canPublish =
+    hasContent && (!isPaid || price.trim().length > 0) && !publishing && !publishBlockReason;
   const creatorDisplayName = composerProfile.name || 'Creator';
 
   useEffect(() => {
@@ -4103,12 +4140,9 @@ export function PostsCreate() {
         showNotice('Pick a future publish time.');
         return;
       }
-
-      showNotice('Scheduling is back in the editor. Connect backend scheduling before publishing it live.');
-      return;
     }
-    if (pollEnabled) {
-      showNotice('Poll builder restored. Connect poll storage before publishing it live.');
+    if (publishBlockReason) {
+      showNotice(publishBlockReason);
       return;
     }
 
@@ -4200,7 +4234,7 @@ export function PostsCreate() {
   };
 
   return (
-    <MyLayout title="Create post" header={null}>
+    <MyLayout title="Create post" header={null} contentClassName="create-post-page">
       <div className="create-post">
         <div className="create-post__header">
           <div className="create-post__title">
@@ -4242,6 +4276,12 @@ export function PostsCreate() {
             </button>
           </div>
         </div>
+
+        {publishBlockReason ? (
+          <div className="create-post__status-hint" role="status" aria-live="polite">
+            {publishBlockReason}
+          </div>
+        ) : null}
 
         {notice ? <div className="create-post__notice">{notice}</div> : null}
 

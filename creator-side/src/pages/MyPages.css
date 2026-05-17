@@ -1388,6 +1388,10 @@ button,
     padding-bottom: 132px;
   }
 
+  .my-main__content.create-post-page {
+    padding-bottom: 138px;
+  }
+
   .my-main__grid.home-feed-grid {
     gap: 18px;
   }
@@ -5928,13 +5932,24 @@ button,
 }
 
 .create-post__notice {
-  background: #e8f6ff;
-  border: 1px solid #96d6f3;
+  background: linear-gradient(180deg, rgba(18, 32, 54, 0.96), rgba(14, 24, 40, 0.98));
+  border: 1px solid rgba(78, 126, 210, 0.34);
   border-radius: 12px;
   padding: 10px 12px;
-  color: #007fb4;
+  color: #9cc8ff;
   font-size: 13px;
   font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.create-post__status-hint {
+  border-radius: 14px;
+  border: 1px solid rgba(89, 123, 176, 0.24);
+  background: linear-gradient(180deg, rgba(12, 20, 32, 0.96), rgba(9, 16, 26, 0.98));
+  color: #8fb3df;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .create-post__grid {
@@ -6413,6 +6428,10 @@ button,
   .my-main__content:not(.home-feed-page),
   .my-main__grid:not(.home-feed-grid) {
     padding-inline: 14px;
+  }
+
+  .my-main__content.create-post-page {
+    padding-bottom: 142px;
   }
 
   .my-main__grid.home-feed-grid {
