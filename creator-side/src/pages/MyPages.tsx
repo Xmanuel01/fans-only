@@ -729,6 +729,18 @@ const getCreatorNotificationTitle = (item: AppNotification) => {
   if (item.type === 'ppv_purchase') {
     return `${payload.buyer_name ?? 'A fan'} unlocked ${payload.post_title ?? 'a post'}`;
   }
+  if (item.type === 'post_liked') {
+    return `${payload.actor_name ?? 'A fan'} liked your post`;
+  }
+  if (item.type === 'post_commented') {
+    return `${payload.actor_name ?? 'A fan'} commented on your post`;
+  }
+  if (item.type === 'story_liked') {
+    return `${payload.actor_name ?? 'A fan'} liked your story`;
+  }
+  if (item.type === 'story_commented') {
+    return `${payload.actor_name ?? 'A fan'} replied to your story`;
+  }
   if (item.type === 'new_subscription') {
     return `${payload.subscriber_name ?? 'A fan'} subscribed`;
   }
@@ -751,6 +763,19 @@ const getCreatorNotificationDetail = (item: AppNotification) => {
   }
   if (item.type === 'new_tip' || item.type === 'ppv_purchase') {
     return `Amount: ${formatMinorCurrency(payload.amount_cents ?? 0, payload.currency ?? 'KES')}`;
+  }
+  if (item.type === 'post_liked' || item.type === 'story_liked') {
+    return payload.post_title
+      ? `"${String(payload.post_title).slice(0, 80)}"`
+      : 'Open content to see the engaged post.';
+  }
+  if (item.type === 'post_commented' || item.type === 'story_commented') {
+    if (payload.comment_body) {
+      return String(payload.comment_body);
+    }
+    return payload.post_title
+      ? `On "${String(payload.post_title).slice(0, 80)}"`
+      : 'Open content to review the reply.';
   }
   if (item.type === 'new_subscription' || item.type === 'subscription_renewed') {
     return payload.current_period_end

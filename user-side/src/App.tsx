@@ -47,6 +47,7 @@ import {
   markChatThreadRead,
   markAllNotificationsRead,
   markNotificationRead,
+  notifyCreatorPostEngagement,
   purchasePpv,
   purchaseSubscription,
   sendChatMessage,
@@ -4605,9 +4606,12 @@ export default function App() {
       return
     }
 
+    let shouldNotifyCreator = false
+
     setPostSocialById((prev) => {
       const current = prev[postId] ?? { likedByUserIds: [], comments: [] }
       const liked = current.likedByUserIds.includes(sessionIdentity.userId)
+      shouldNotifyCreator = !liked
       const likedByUserIds = liked
         ? current.likedByUserIds.filter((id) => id !== sessionIdentity.userId)
         : [...current.likedByUserIds, sessionIdentity.userId]
@@ -4620,6 +4624,12 @@ export default function App() {
         },
       }
     })
+
+    if (shouldNotifyCreator) {
+      void notifyCreatorPostEngagement({ postId, event: 'like' }).catch((error) => {
+        console.warn('Could not notify creator about post like', error)
+      })
+    }
   }
 
   const handleAddPostComment = (postId: number, body: string) => {
@@ -4648,6 +4658,14 @@ export default function App() {
           ],
         },
       }
+    })
+
+    void notifyCreatorPostEngagement({
+      postId,
+      event: 'comment',
+      commentBody: trimmed,
+    }).catch((error) => {
+      console.warn('Could not notify creator about post comment', error)
     })
   }
 

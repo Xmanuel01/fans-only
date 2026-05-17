@@ -1321,6 +1321,24 @@ export async function purchaseSubscription(
   return row ?? null
 }
 
+export async function notifyCreatorPostEngagement(input: {
+  postId: number
+  event: 'like' | 'comment'
+  commentBody?: string
+}) {
+  if (!supabase) return
+
+  const { error } = await supabase.rpc('notify_creator_post_engagement', {
+    p_post_id: input.postId,
+    p_event: input.event,
+    p_comment_body: input.commentBody ?? null,
+  })
+
+  if (error && !isMissingRpcError(error, 'notify_creator_post_engagement')) {
+    throw error
+  }
+}
+
 export async function fetchFeedPosts(limit = 20): Promise<FeedPost[]> {
   if (!supabase) return []
   const { data, error } = await supabase
