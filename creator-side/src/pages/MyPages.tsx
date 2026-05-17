@@ -486,10 +486,8 @@ const readCreatorDraft = (): CreatorPostDraft | null => {
       price: typeof parsed.price === 'string' ? parsed.price : '',
       isScheduled: Boolean(parsed.isScheduled),
       scheduleAt: typeof parsed.scheduleAt === 'string' ? parsed.scheduleAt : '',
-      pollEnabled: Boolean(parsed.pollEnabled),
-      pollOptions: Array.isArray(parsed.pollOptions)
-        ? parsed.pollOptions.filter((option): option is string => typeof option === 'string').slice(0, 6)
-        : DEFAULT_CREATOR_DRAFT.pollOptions,
+      pollEnabled: false,
+      pollOptions: DEFAULT_CREATOR_DRAFT.pollOptions,
       content: typeof parsed.content === 'string' ? parsed.content : '',
     };
   } catch (error) {
@@ -3846,9 +3844,6 @@ export function PostsCreate() {
   const [storyDurationHours, setStoryDurationHours] = useState('24');
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduleAt, setScheduleAt] = useState('');
-  const [pollEnabled, setPollEnabled] = useState(false);
-  const [pollEditorOpen, setPollEditorOpen] = useState(false);
-  const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
   const [notice, setNotice] = useState('');
   const [publishing, setPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -3857,7 +3852,6 @@ export function PostsCreate() {
 
   const remaining = 1000 - content.length;
   const hasContent = content.trim().length > 0 || attachments.length > 0;
-  const validPollOptions = pollOptions.map((option) => option.trim()).filter(Boolean);
   const hasDraftData =
     content.trim().length > 0 ||
     attachments.length > 0 ||
@@ -3868,14 +3862,10 @@ export function PostsCreate() {
     contentRating !== DEFAULT_CREATOR_DRAFT.contentRating ||
     storyDurationHours !== DEFAULT_CREATOR_DRAFT.storyDurationHours ||
     isScheduled ||
-    scheduleAt.trim().length > 0 ||
-    pollEnabled ||
-    validPollOptions.some((option) => option.length > 0);
+    scheduleAt.trim().length > 0;
   const publishBlockReason = isScheduled
     ? 'Scheduling is still saved to drafts only. Turn it off before publishing this post.'
-    : pollEnabled
-      ? 'Polls are saved to drafts only right now. Remove the poll before publishing this post.'
-      : '';
+    : '';
   const canPublish =
     hasContent && (!isPaid || price.trim().length > 0) && !publishing && !publishBlockReason;
   const creatorDisplayName = composerProfile.name || 'Creator';
@@ -3900,9 +3890,6 @@ export function PostsCreate() {
         setPrice(restored.price);
         setIsScheduled(restored.isScheduled);
         setScheduleAt(restored.scheduleAt);
-        setPollEnabled(restored.pollEnabled);
-        setPollEditorOpen(false);
-        setPollOptions(restored.pollOptions.length >= 2 ? restored.pollOptions : ['', '']);
       }
 
       if (restoredAttachments.length) {
@@ -3932,9 +3919,6 @@ export function PostsCreate() {
 
     setIsScheduled(false);
     setScheduleAt('');
-    setPollEnabled(false);
-    setPollEditorOpen(false);
-    setPollOptions(['', '']);
   }, [postType]);
 
   useEffect(() => {
@@ -4015,9 +3999,6 @@ export function PostsCreate() {
     setStoryDurationHours(DEFAULT_CREATOR_DRAFT.storyDurationHours);
     setIsScheduled(DEFAULT_CREATOR_DRAFT.isScheduled);
     setScheduleAt(DEFAULT_CREATOR_DRAFT.scheduleAt);
-    setPollEnabled(DEFAULT_CREATOR_DRAFT.pollEnabled);
-    setPollEditorOpen(false);
-    setPollOptions(DEFAULT_CREATOR_DRAFT.pollOptions);
     clearCreatorDraft();
     void clearCreatorDraftAttachments();
   };
@@ -4037,8 +4018,8 @@ export function PostsCreate() {
       price,
       isScheduled,
       scheduleAt,
-      pollEnabled,
-      pollOptions,
+      pollEnabled: false,
+      pollOptions: ['', ''],
     };
 
     const timeoutId = window.setTimeout(() => {
@@ -4064,8 +4045,6 @@ export function PostsCreate() {
     hasDraftData,
     isPaid,
     isScheduled,
-    pollEnabled,
-    pollOptions,
     postType,
     price,
     publishing,
@@ -4090,8 +4069,8 @@ export function PostsCreate() {
       price,
       isScheduled,
       scheduleAt,
-      pollEnabled,
-      pollOptions,
+      pollEnabled: false,
+      pollOptions: ['', ''],
     };
 
     if (hasDraftData) {
@@ -4123,10 +4102,6 @@ export function PostsCreate() {
     const durationHours = Math.round(Number(storyDurationHours) || 24);
     if (postType === 'story' && (!Number.isFinite(durationHours) || durationHours < 1 || durationHours > 72)) {
       showNotice('Story duration must be between 1 and 72 hours.');
-      return;
-    }
-    if (pollEnabled && validPollOptions.length < 2) {
-      showNotice('Add at least two poll options.');
       return;
     }
     if (isScheduled) {
@@ -4202,35 +4177,6 @@ export function PostsCreate() {
       }
       return next;
     });
-  };
-
-  const togglePoll = () => {
-    setPollEditorOpen((prev) => !prev);
-  };
-
-  const handleSavePoll = () => {
-    if (validPollOptions.length < 2) {
-      showNotice('Add at least two poll options before saving the poll.');
-      return;
-    }
-    setPollEnabled(true);
-    setPollEditorOpen(false);
-    showNotice('Poll saved to this draft.');
-  };
-
-  const handleDiscardPoll = () => {
-    setPollEnabled(false);
-    setPollEditorOpen(false);
-    setPollOptions(['', '']);
-    showNotice('Poll removed from this draft.');
-  };
-
-  const updatePollOption = (index: number, value: string) => {
-    setPollOptions((prev) => prev.map((item, itemIndex) => (itemIndex === index ? value : item)));
-  };
-
-  const addPollOption = () => {
-    setPollOptions((prev) => [...prev, ''].slice(0, 6));
   };
 
   return (
@@ -4327,52 +4273,10 @@ export function PostsCreate() {
                 <CameraMiniIcon />
                 Add media
               </button>
-              {postType === 'post' ? (
-                <button
-                  className={`create-post__tool${pollEnabled || pollEditorOpen ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={togglePoll}
-                >
-                  <PollIcon />
-                  {pollEnabled ? 'Edit poll' : 'Poll'}
-                </button>
-              ) : null}
               <span className={`create-post__count${remaining < 50 ? ' is-low' : ''}`}>
                 {remaining}
               </span>
             </div>
-
-            {pollEditorOpen ? (
-              <div className="create-post__poll">
-                <div className="create-post__poll-title">
-                  Poll options
-                  {pollEnabled ? <span className="create-post__poll-status">Saved</span> : null}
-                </div>
-                {pollOptions.map((option, index) => (
-                  <input
-                    key={`poll-${index}`}
-                    className="my-input"
-                    placeholder={`Option ${index + 1}`}
-                    value={option}
-                    onChange={(event) => updatePollOption(index, event.target.value)}
-                  />
-                ))}
-                {pollOptions.length < 6 ? (
-                  <button className="create-post__link" type="button" onClick={addPollOption}>
-                    <PlusIcon />
-                    Add another option
-                  </button>
-                ) : null}
-                <div className="create-post__poll-actions">
-                  <button className="create-post__ghost create-post__poll-button" type="button" onClick={handleDiscardPoll}>
-                    Remove poll
-                  </button>
-                  <button className="create-post__primary create-post__poll-button" type="button" onClick={handleSavePoll}>
-                    Save poll
-                  </button>
-                </div>
-              </div>
-            ) : null}
 
             <div className="create-post__attachments">
               {attachments.length ? (
@@ -4540,12 +4444,6 @@ export function PostsCreate() {
                 <span>Content rating</span>
                 <strong>{contentRating.toUpperCase()}</strong>
               </div>
-              {pollEnabled ? (
-                <div className="create-post__summary-row">
-                  <span>Poll options</span>
-                  <strong>{validPollOptions.length}</strong>
-                </div>
-              ) : null}
               {isScheduled ? (
                 <div className="create-post__summary-row">
                   <span>Scheduled</span>
@@ -5665,19 +5563,6 @@ function SearchIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="11" cy="11" r="6" />
       <path d="M16 16l5 5" />
-    </svg>
-  );
-}
-
-function PollIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6 7h12" />
-      <path d="M6 12h8" />
-      <path d="M6 17h10" />
-      <circle cx="4" cy="7" r="1" />
-      <circle cx="4" cy="12" r="1" />
-      <circle cx="4" cy="17" r="1" />
     </svg>
   );
 }

@@ -336,6 +336,24 @@ export type FeedPost = {
   media: FeedMedia[]
 }
 
+function inferFeedMediaMimeType(mimeType: string | null | undefined, fileNameOrPath: string | null | undefined) {
+  const normalizedMimeType = typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : ''
+  if (normalizedMimeType) return normalizedMimeType
+
+  const normalizedPath = typeof fileNameOrPath === 'string' ? fileNameOrPath.trim().toLowerCase() : ''
+  if (!normalizedPath) return null
+
+  if (normalizedPath.endsWith('.mp4')) return 'video/mp4'
+  if (normalizedPath.endsWith('.mov')) return 'video/quicktime'
+  if (normalizedPath.endsWith('.webm')) return 'video/webm'
+  if (normalizedPath.endsWith('.m4v')) return 'video/x-m4v'
+  if (normalizedPath.endsWith('.jpg') || normalizedPath.endsWith('.jpeg')) return 'image/jpeg'
+  if (normalizedPath.endsWith('.png')) return 'image/png'
+  if (normalizedPath.endsWith('.webp')) return 'image/webp'
+
+  return null
+}
+
 function mapRowMediaAssets(row: any, signedMap: Map<string, string>): FeedMedia[] {
   const uniqueMedia = new Map<number, FeedMedia>()
 
@@ -347,7 +365,7 @@ function mapRowMediaAssets(row: any, signedMap: Map<string, string>): FeedMedia[
     uniqueMedia.set(assetId, {
       id: assetId,
       url: storagePath ? signedMap.get(storagePath) ?? '' : '',
-      mime_type: asset.mime_type ?? null,
+      mime_type: inferFeedMediaMimeType(asset.mime_type ?? null, storagePath),
       width: asset.width ?? null,
       height: asset.height ?? null,
     })

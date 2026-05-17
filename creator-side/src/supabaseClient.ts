@@ -1405,6 +1405,28 @@ const CREATOR_CONTENT_SELECT = [
   'media_assets(id, storage_path, mime_type, width, height)',
 ].join(',');
 
+const inferCreatorMediaMimeType = (mimeType: string | null | undefined, fileNameOrPath: string | null | undefined) => {
+  const normalizedMimeType = typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : '';
+  if (normalizedMimeType) {
+    return normalizedMimeType;
+  }
+
+  const normalizedPath = typeof fileNameOrPath === 'string' ? fileNameOrPath.trim().toLowerCase() : '';
+  if (!normalizedPath) {
+    return null;
+  }
+
+  if (normalizedPath.endsWith('.mp4')) return 'video/mp4';
+  if (normalizedPath.endsWith('.mov')) return 'video/quicktime';
+  if (normalizedPath.endsWith('.webm')) return 'video/webm';
+  if (normalizedPath.endsWith('.m4v')) return 'video/x-m4v';
+  if (normalizedPath.endsWith('.jpg') || normalizedPath.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalizedPath.endsWith('.png')) return 'image/png';
+  if (normalizedPath.endsWith('.webp')) return 'image/webp';
+
+  return null;
+};
+
 async function createSignedMediaMap(rows: any[]) {
   if (!supabase) return new Map<string, string>();
 
@@ -1462,7 +1484,7 @@ function mapCreatorContentRows(rows: any[], signedMap: Map<string, string>): Cre
       return {
         id: asset.id,
         url: storagePath ? signedMap.get(storagePath) ?? '' : '',
-        mime_type: asset.mime_type ?? null,
+        mime_type: inferCreatorMediaMimeType(asset.mime_type ?? null, storagePath),
         width: asset.width ?? null,
         height: asset.height ?? null,
       };
@@ -1587,10 +1609,14 @@ export async function publishCreatorPost(params: {
     for (const file of files) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const path = `${userId}/${post.id}/${crypto.randomUUID?.() ?? Date.now()}-${safeName}`;
+      const resolvedMimeType = inferCreatorMediaMimeType(file.type || null, file.name);
+      const uploadPayload = new Blob([await file.arrayBuffer()], {
+        type: resolvedMimeType ?? file.type ?? 'application/octet-stream',
+      });
       const { error: uploadError } = await supabase.storage
         .from('creator-media')
-        .upload(path, file, {
-          contentType: file.type || undefined,
+        .upload(path, uploadPayload, {
+          contentType: resolvedMimeType ?? undefined,
           upsert: false,
         });
       if (uploadError) throw uploadError;
@@ -1598,7 +1624,7 @@ export async function publishCreatorPost(params: {
       uploads.push({
         post_id: post.id,
         storage_path: path,
-        mime_type: file.type || null,
+        mime_type: resolvedMimeType,
         width: null,
         height: null,
         size_bytes: file.size,
@@ -1632,6 +1658,9 @@ export async function publishCreatorPost(params: {
       }
     }
 
+    if (error instanceof TypeError && /fetch/i.test(error.message)) {
+      throw new Error('Upload failed. Check your connection and try the video again.');
+    }
     throw error;
   }
 }
