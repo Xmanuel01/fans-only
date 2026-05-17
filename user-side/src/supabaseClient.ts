@@ -535,7 +535,38 @@ function persistNotificationPreferencesFallback(userId: string, value: Notificat
 const AGE_EVENT_RATE_LIMIT_MS = 10_000
 let lastAgeEventTs = 0
 
-let legacyHashRestorePromise: Promise<Session | null> | null = null
+let authCallbackRestorePromise: Promise<Session | null> | null = null
+
+function clearAuthCallbackUrlArtifacts() {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.hash = ''
+  url.searchParams.delete('code')
+  url.searchParams.delete('state')
+  window.history.replaceState({}, document.title, url.toString())
+}
+
+async function restoreSessionFromAuthCode(): Promise<Session | null> {
+  if (!supabase || typeof window === 'undefined') return null
+
+  const url = new URL(window.location.href)
+  const authCode = url.searchParams.get('code')
+  if (!authCode) return null
+
+  try {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(authCode)
+    if (error) {
+      console.warn('Supabase auth-code session restore failed', error)
+      return null
+    }
+
+    clearAuthCallbackUrlArtifacts()
+    return data.session ?? null
+  } catch (error) {
+    console.warn('Supabase auth-code session restore threw', error)
+    return null
+  }
+}
 
 async function restoreSessionFromLegacyHash(): Promise<Session | null> {
   if (!supabase || typeof window === 'undefined') return null
@@ -561,9 +592,7 @@ async function restoreSessionFromLegacyHash(): Promise<Session | null> {
       return null
     }
 
-    const url = new URL(window.location.href)
-    url.hash = ''
-    window.history.replaceState({}, document.title, url.toString())
+    clearAuthCallbackUrlArtifacts()
     return data.session ?? null
   } catch (error) {
     console.warn('Supabase legacy hash session restore threw', error)
@@ -586,13 +615,19 @@ export async function getCurrentSession(): Promise<Session | null> {
     return data.session
   }
 
-  if (!legacyHashRestorePromise) {
-    legacyHashRestorePromise = restoreSessionFromLegacyHash().finally(() => {
-      legacyHashRestorePromise = null
+  if (!authCallbackRestorePromise) {
+    authCallbackRestorePromise = (async () => {
+      const codeSession = await restoreSessionFromAuthCode()
+      if (codeSession) {
+        return codeSession
+      }
+      return await restoreSessionFromLegacyHash()
+    })().finally(() => {
+      authCallbackRestorePromise = null
     })
   }
 
-  return await legacyHashRestorePromise
+  return await authCallbackRestorePromise
 }
 
 export async function fetchAgeConfirmation(): Promise<boolean | null> {
