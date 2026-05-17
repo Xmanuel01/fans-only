@@ -1120,15 +1120,34 @@ export function MyHome() {
                       aria-label={`Open ${story.name} story`}
                       onClick={() => setActiveStory(story)}
                     >
-                      <span className="home-story__ring">
-                        {story.image ? (
-                          <img src={story.image} alt={story.name} />
+                      <span className="home-story__preview" aria-hidden="true">
+                        {story.previewType === 'video' && story.previewUrl ? (
+                          <video muted playsInline preload="metadata">
+                            <source src={story.previewUrl} />
+                          </video>
+                        ) : story.previewType === 'image' && story.previewUrl ? (
+                          <img src={story.previewUrl} alt="" />
                         ) : (
-                          <span className="home-story__placeholder" aria-hidden="true">
-                            {story.name.charAt(0).toUpperCase()}
-                          </span>
+                          <span className="home-story__fallback-surface" />
                         )}
                       </span>
+                      <span className="home-story__shade" aria-hidden="true" />
+                      <span className="home-story__avatar">
+                        <span className="home-story__ring">
+                          {story.image ? (
+                            <img src={story.image} alt={story.name} />
+                          ) : (
+                            <span className="home-story__placeholder" aria-hidden="true">
+                              {story.name.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                      {story.previewType !== 'text' ? (
+                        <span className="home-story__media-badge">
+                          {story.previewType === 'video' ? 'Video' : 'Photo'}
+                        </span>
+                      ) : null}
                       <span className="home-story__name">{story.name}</span>
                       {story.isLive ? <span className="home-story__live">Live</span> : null}
                     </button>
@@ -5078,10 +5097,12 @@ function MyLayout({
   contentClassName,
   children,
 }: MyLayoutProps) {
+  const navigate = useNavigate();
   const [navProfile, setNavProfile] = useState<CreatorNavProfile>(() =>
     readCachedCreatorProfile()
   );
   const [isNavPanelOpen, setIsNavPanelOpen] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [navBalanceLabel, setNavBalanceLabel] = useState('KES 0');
 
@@ -5183,6 +5204,14 @@ function MyLayout({
 
   const navInitial = navProfile.name.trim().charAt(0).toUpperCase() || 'C';
   const closeNavPanel = () => setIsNavPanelOpen(false);
+  const closeMobileNav = () => setIsMobileNavOpen(false);
+  const goTo = (href: string) => {
+    closeNavPanel();
+    closeMobileNav();
+    navigate(href);
+  };
+  const isPaymentsActive =
+    activeNav === 'payments' || activeNav === 'profile' || activeNav === 'more';
 
   return (
     <div className="my-shell">
@@ -5334,6 +5363,123 @@ function MyLayout({
           </div>
         )}
       </main>
+
+      <div className="my-mobile-nav-shell">
+        <div
+          className={`my-mobile-nav-backdrop ${isMobileNavOpen ? 'open' : ''}`}
+          onClick={closeMobileNav}
+        />
+        <div className="my-mobile-nav-bar" role="navigation" aria-label="Creator mobile navigation">
+          <button
+            className={`my-mobile-nav-item ${activeNav === 'home' ? 'active' : ''}`}
+            type="button"
+            onClick={() => goTo('/')}
+            aria-pressed={activeNav === 'home'}
+          >
+            <span className="my-mobile-nav-item__icon-wrap">
+              <HomeIcon />
+            </span>
+            <span>Home</span>
+          </button>
+          <button
+            className={`my-mobile-nav-item ${activeNav === 'collections' ? 'active' : ''}`}
+            type="button"
+            onClick={() => goTo('/my/collections')}
+            aria-pressed={activeNav === 'collections'}
+          >
+            <span className="my-mobile-nav-item__icon-wrap">
+              <GearIcon />
+            </span>
+            <span>Explore</span>
+          </button>
+          <button
+            className={`my-mobile-nav-item ${activeNav === 'messages' ? 'active' : ''}`}
+            type="button"
+            onClick={() => goTo('/my/chats')}
+            aria-pressed={activeNav === 'messages'}
+          >
+            <span className="my-mobile-nav-item__icon-wrap">
+              <ChatIcon />
+            </span>
+            <span>Chats</span>
+          </button>
+          <button
+            className={`my-mobile-nav-item ${activeNav === 'notifications' ? 'active' : ''}`}
+            type="button"
+            onClick={() => goTo('/my/notifications')}
+            aria-pressed={activeNav === 'notifications'}
+          >
+            <span className="my-mobile-nav-item__icon-wrap">
+              <BellIcon />
+              {notificationUnreadCount > 0 ? (
+                <span className="my-mobile-nav-item__badge">
+                  {Math.min(notificationUnreadCount, 99)}
+                </span>
+              ) : null}
+            </span>
+            <span>Alerts</span>
+          </button>
+          <button
+            className={`my-mobile-nav-item ${isMobileNavOpen || isPaymentsActive ? 'active' : ''}`}
+            type="button"
+            onClick={() => {
+              setIsMobileNavOpen((current) => !current);
+              setIsNavPanelOpen(false);
+            }}
+            aria-expanded={isMobileNavOpen}
+            aria-label="More creator sections"
+          >
+            <span className="my-mobile-nav-item__icon-wrap">
+              {isMobileNavOpen ? <CloseIcon /> : <MenuIcon />}
+            </span>
+            <span>More</span>
+          </button>
+        </div>
+
+        <div className={`my-mobile-nav-sheet ${isMobileNavOpen ? 'open' : ''}`}>
+          <div className="my-mobile-nav-sheet__profile">
+            {navProfile.avatar ? (
+              <img src={navProfile.avatar} alt={navProfile.name} />
+            ) : (
+              <span className="my-mobile-nav-sheet__profile-fallback" aria-hidden="true">
+                {navInitial}
+              </span>
+            )}
+            <div>
+              <div className="name">{navProfile.name}</div>
+              <div className="muted">{navProfile.handle || 'Creator workspace'}</div>
+            </div>
+          </div>
+
+          <div className="my-mobile-nav-sheet__grid">
+            <button className="my-mobile-nav-sheet__action" type="button" onClick={() => goTo('/posts/create')}>
+              <PlusIcon />
+              <span>New post</span>
+            </button>
+            <button
+              className="my-mobile-nav-sheet__action"
+              type="button"
+              onClick={() => goTo('/my/collections/user-lists/subscriptions/active')}
+            >
+              <BagIcon />
+              <span>Audience</span>
+            </button>
+            <button className="my-mobile-nav-sheet__action" type="button" onClick={() => goTo('/my/payments')}>
+              <CardIcon />
+              <span>Payments</span>
+            </button>
+            <button className="my-mobile-nav-sheet__action" type="button" onClick={() => goTo('/my/settings')}>
+              <GearIcon />
+              <span>Settings</span>
+            </button>
+          </div>
+
+          <div className="my-mobile-nav-sheet__section">
+            <div className="my-mobile-nav-sheet__label">Payout balance</div>
+            <div className="my-mobile-nav-sheet__balance">{navBalanceLabel}</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
