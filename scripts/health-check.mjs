@@ -39,7 +39,7 @@ const envChecks = [
   },
 ];
 
-const supabaseEnvCandidates = ["supabase/.env", "supabase/.env.local", "supabase/.env.example"];
+const supabaseEnvCandidates = ["supabase/.env", "supabase/.env.local"];
 const supabaseRequired = [
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -75,6 +75,8 @@ const requiredMigrations = [
   "20260315183000_creator_card_payout_support.sql",
   "20260323083000_payment_webhook_hardening.sql",
   "20260323100000_creator_payout_ops_hardening.sql",
+  "20260626120000_post_engagement_realtime.sql",
+  "20260627100000_creator_media_bucket_limits.sql",
 ];
 
 const requiredFunctions = [
@@ -122,16 +124,50 @@ function parseEnv(content) {
   return map;
 }
 
+function readProcessEnv(keys) {
+  const map = new Map();
+  keys.forEach((key) => {
+    const value = process.env[key];
+    if (value) {
+      map.set(key, value);
+    }
+  });
+  return map;
+}
+
+function mergeProcessEnv(map, keys) {
+  const next = new Map(map);
+  keys.forEach((key) => {
+    const value = process.env[key];
+    if (value) {
+      next.set(key, value);
+    }
+  });
+  return next;
+}
+
 function checkEnvFile(entry) {
   const fullPath = path.join(root, entry.path);
+  const keys = [...entry.required, ...entry.optional];
   if (!fs.existsSync(fullPath)) {
+    const envMap = readProcessEnv(keys);
+    const missing = entry.required.filter((key) => !envMap.get(key));
+    if (!missing.length) {
+      return { status: "ok", missing: [], file: entry.path, source: "environment", values: envMap };
+    }
     return entry.required.length
-      ? { status: "missing", missing: entry.required, file: entry.path, values: new Map() }
-      : { status: "ok", missing: [], file: entry.path, values: new Map() };
+      ? { status: "missing", missing: entry.required, file: entry.path, source: "file", values: envMap }
+      : { status: "ok", missing: [], file: entry.path, source: "not required", values: envMap };
   }
-  const map = parseEnv(fs.readFileSync(fullPath, "utf8"));
+  const map = mergeProcessEnv(parseEnv(fs.readFileSync(fullPath, "utf8")), keys);
   const missing = entry.required.filter((key) => !map.get(key));
-  return { status: missing.length ? "incomplete" : "ok", missing, file: entry.path, values: map };
+  return {
+    status: missing.length ? "incomplete" : "ok",
+    missing,
+    file: entry.path,
+    source: "file/environment",
+    values: map,
+  };
 }
 
 function checkMigrations() {
@@ -183,15 +219,20 @@ function printEnvResult(result) {
     console.log(`  required missing: ${result.missing.join(", ")}`);
     return;
   }
-  console.log(`- ${result.file}: OK`);
+  console.log(`- ${result.file}: OK${result.source ? ` (${result.source})` : ""}`);
 }
 
 function checkSupabaseEnv() {
+  const keys = [...supabaseRequired, ...supabaseOptional];
   const existing = supabaseEnvCandidates.find((file) => fs.existsSync(path.join(root, file)));
   if (!existing) {
-    return { status: "missing", file: "supabase/.env", missing: supabaseRequired };
+    const envMap = readProcessEnv(keys);
+    const missing = supabaseRequired.filter((key) => !envMap.get(key));
+    return missing.length
+      ? { status: "missing", file: "supabase/.env or environment", missing, values: envMap }
+      : { status: "ok", file: "environment", missing: [], values: envMap };
   }
-  const map = parseEnv(fs.readFileSync(path.join(root, existing), "utf8"));
+  const map = mergeProcessEnv(parseEnv(fs.readFileSync(path.join(root, existing), "utf8")), keys);
   const missing = supabaseRequired.filter((key) => !map.get(key));
   return { status: missing.length ? "incomplete" : "ok", file: existing, missing, values: map };
 }

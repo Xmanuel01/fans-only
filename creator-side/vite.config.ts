@@ -16,6 +16,19 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     base,
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('@supabase')) return 'supabase';
+            if (id.includes('react-router')) return 'router';
+            if (id.includes('react-dom') || id.includes('react')) return 'react-vendor';
+            return 'vendor';
+          },
+        },
+      },
+    },
     server: {
       host: '127.0.0.1',
       port: 5174,
