@@ -15,6 +15,7 @@ import {
   fetchCreatorStories,
   listWithdrawalMethods,
   publishCreatorPost,
+  resolveCreatorPostFileMimeType,
   markChatThreadRead,
   markAllNotificationsRead,
   markNotificationRead,
@@ -24,6 +25,7 @@ import {
   subscribeToChatMessages,
   subscribeToCreatorChatThreads,
   subscribeToNotifications,
+  validateCreatorPostFile,
   type AppNotification,
   type ChatableMember,
   type ChatMessage,
@@ -37,6 +39,7 @@ import {
   upsertBankPayoutAccount,
   upsertMobileMoneyPayoutAccount,
   verifyCurrentPassword,
+  CREATOR_MEDIA_ALLOWED_MIME_TYPES,
 } from '../supabaseClient';
 import './MyPages.css';
 
@@ -128,6 +131,8 @@ const CREATOR_DRAFT_ATTACHMENT_DB = 'creator-post-draft-assets-v1';
 const CREATOR_DRAFT_ATTACHMENT_STORE = 'draft-assets';
 const CREATOR_DRAFT_ATTACHMENT_KEY = 'current';
 const CREATOR_PUBLISH_TIMEOUT_MS = 45000;
+const CREATOR_POST_MAX_ATTACHMENTS = 10;
+const CREATOR_POST_MEDIA_ACCEPT = CREATOR_MEDIA_ALLOWED_MIME_TYPES.join(',');
 
 const ensureHandle = (value: string | null | undefined) => {
   if (!value) return '';
@@ -174,6 +179,14 @@ const formatMinorCurrency = (amountMinor?: number | null, currency?: string | nu
     minimumFractionDigits: major % 1 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
   })}`;
+};
+
+const formatFileSize = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  }
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 };
 
 const formatExpiryLabel = (expiresAt: string | null) => {
@@ -812,6 +825,21 @@ const getCreatorNotificationDetail = (item: AppNotification) => {
     return payload.failure_reason ?? 'The amount was returned to your available balance.';
   }
   return 'Open the app to review the latest activity.';
+};
+
+const showCreatorBrowserNotification = (item: AppNotification) => {
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  if (window.Notification.permission !== 'granted') return;
+  if (document.visibilityState === 'visible' && document.hasFocus()) return;
+
+  const notification = new window.Notification(getCreatorNotificationTitle(item), {
+    body: getCreatorNotificationDetail(item),
+    tag: `creator-notification:${item.id}`,
+  });
+  notification.onclick = () => {
+    window.focus();
+    notification.close();
+  };
 };
 
 const getCreatorNotificationTarget = (item: AppNotification) => {
@@ -3906,14 +3934,19 @@ export function PostsCreate() {
       }
 
       if (restoredAttachments.length) {
-        setAttachments(restoredAttachments);
+        const validRestoredAttachments = restoredAttachments.filter(
+          (file) => validateCreatorPostFile(file) === null
+        );
+        setAttachments(validRestoredAttachments);
       }
 
       if (!restoreDraftNoticeShown.current && (restored || restoredAttachments.length)) {
         restoreDraftNoticeShown.current = true;
         showNotice(
           restoredAttachments.length
-            ? 'Draft restored with attachments.'
+            ? restoredAttachments.every((file) => validateCreatorPostFile(file) === null)
+              ? 'Draft restored with attachments.'
+              : 'Draft restored. Unsupported saved media was removed.'
             : 'Draft restored.'
         );
       }
@@ -3992,6 +4025,17 @@ export function PostsCreate() {
     const files = Array.from(event.target.files ?? []);
     event.target.value = '';
     if (!files.length) {
+      return;
+    }
+
+    if (attachments.length + files.length > CREATOR_POST_MAX_ATTACHMENTS) {
+      showNotice(`You can attach up to ${CREATOR_POST_MAX_ATTACHMENTS} files per post.`);
+      return;
+    }
+
+    const invalidFileMessage = files.map(validateCreatorPostFile).find(Boolean);
+    if (invalidFileMessage) {
+      showNotice(invalidFileMessage);
       return;
     }
 
@@ -4109,6 +4153,12 @@ export function PostsCreate() {
 
   const handlePublish = async () => {
     if (!canPublish) {
+      return;
+    }
+
+    const invalidAttachmentMessage = attachments.map(validateCreatorPostFile).find(Boolean);
+    if (invalidAttachmentMessage) {
+      showNotice(invalidAttachmentMessage);
       return;
     }
 
@@ -4282,7 +4332,7 @@ export function PostsCreate() {
                 className="create-post__file-input"
                 type="file"
                 multiple
-                accept="image/*,video/*"
+                accept={CREATOR_POST_MEDIA_ACCEPT}
                 onChange={handleFiles}
               />
               <button
@@ -4300,22 +4350,29 @@ export function PostsCreate() {
 
             <div className="create-post__attachments">
               {attachments.length ? (
-                attachments.map((file, index) => (
-                  <div key={`${file.name}-${index}`} className="create-post__attachment">
-                    <div>
-                      <div className="create-post__attachment-name">{file.name}</div>
-                      <div className="my-muted">{Math.round(file.size / 1024)} KB</div>
+                attachments.map((file, index) => {
+                  const mimeType = resolveCreatorPostFileMimeType(file);
+                  const mediaKind = mimeType?.startsWith('video/') ? 'Video' : 'Photo';
+
+                  return (
+                    <div key={`${file.name}-${index}`} className="create-post__attachment">
+                      <div className="create-post__attachment-copy">
+                        <div className="create-post__attachment-name">{file.name}</div>
+                        <div className="my-muted">
+                          {mediaKind} - {formatFileSize(file.size)}
+                        </div>
+                      </div>
+                      <button
+                        className="create-post__remove"
+                        type="button"
+                        aria-label="Remove attachment"
+                        onClick={() => removeAttachment(index)}
+                      >
+                        <CloseIcon />
+                      </button>
                     </div>
-                    <button
-                      className="create-post__remove"
-                      type="button"
-                      aria-label="Remove attachment"
-                      onClick={() => removeAttachment(index)}
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="create-post__attachments-empty">No media added yet.</div>
               )}
@@ -5155,8 +5212,9 @@ function MyLayout({
 
     void loadUnreadCount();
     void (async () => {
-      unsubscribe = await subscribeToNotifications(() => {
+      unsubscribe = await subscribeToNotifications((notification) => {
         void loadUnreadCount();
+        if (notification) showCreatorBrowserNotification(notification);
       });
     })();
 

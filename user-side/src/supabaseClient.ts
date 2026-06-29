@@ -17,7 +17,7 @@ export const supabase =
     : null
 
 const AUTH_NETWORK_ERROR_MESSAGE =
-  'Could not reach the authentication service. Check the Supabase URL/DNS and try again.'
+  'Connection problem. Please check your internet connection and try again.'
 
 const FALLBACK_PUBLIC_APP_ORIGIN = 'https://fans-only-olive.vercel.app'
 const AGE_CONFIRMATION_TIMEOUT_MS = 8000
@@ -464,6 +464,18 @@ export type AppNotification = {
   payload: Record<string, any>
   read_at: string | null
   created_at: string
+}
+
+export type PostSocialComment = {
+  id: string
+  author: string
+  body: string
+  created_at: string
+}
+
+export type PostSocialEntry = {
+  likedByUserIds: string[]
+  comments: PostSocialComment[]
 }
 
 export type NotificationPreferences = {
@@ -1357,6 +1369,99 @@ export async function notifyCreatorPostEngagement(input: {
   }
 }
 
+const normalizePostSocialComment = (value: unknown): PostSocialComment | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const item = value as Record<string, unknown>
+  if (
+    typeof item.id !== 'string' ||
+    typeof item.author !== 'string' ||
+    typeof item.body !== 'string' ||
+    typeof item.created_at !== 'string'
+  ) {
+    return null
+  }
+  return {
+    id: item.id,
+    author: item.author,
+    body: item.body,
+    created_at: item.created_at,
+  }
+}
+
+export async function fetchPostSocialState(
+  postIds: number[]
+): Promise<Record<number, PostSocialEntry>> {
+  if (!supabase) return {}
+  const uniquePostIds = Array.from(
+    new Set(postIds.filter((postId) => Number.isFinite(postId)))
+  )
+  if (!uniquePostIds.length) return {}
+
+  const { data, error } = await supabase.rpc('get_post_social_state', {
+    p_post_ids: uniquePostIds,
+  })
+
+  if (error) {
+    if (isMissingRpcError(error, 'get_post_social_state')) {
+      console.warn('Post social RPC is unavailable. Apply post engagement migrations.', error)
+      return {}
+    }
+    throw error
+  }
+
+  const next: Record<number, PostSocialEntry> = {}
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const postId = Number(row.post_id)
+    if (!Number.isFinite(postId)) continue
+    const likedByUserIds = Array.isArray(row.liked_by_user_ids)
+      ? row.liked_by_user_ids.filter((entry): entry is string => typeof entry === 'string')
+      : []
+    const comments = Array.isArray(row.comments)
+      ? row.comments
+          .map(normalizePostSocialComment)
+          .filter((entry): entry is PostSocialComment => Boolean(entry))
+      : []
+    next[postId] = { likedByUserIds, comments }
+  }
+  return next
+}
+
+export async function togglePostLike(postId: number): Promise<{ liked: boolean; like_count: number } | null> {
+  if (!supabase) return null
+  const { data, error } = await supabase.rpc('toggle_post_like', {
+    p_post_id: postId,
+  })
+  if (error) {
+    if (isMissingRpcError(error, 'toggle_post_like')) {
+      console.warn('Post like RPC is unavailable. Apply post engagement migrations.', error)
+      return null
+    }
+    throw error
+  }
+  const row = Array.isArray(data) ? data[0] : data
+  return row ?? null
+}
+
+export async function addPostComment(
+  postId: number,
+  body: string
+): Promise<PostSocialComment | null> {
+  if (!supabase) return null
+  const { data, error } = await supabase.rpc('add_post_comment', {
+    p_post_id: postId,
+    p_body: body,
+  })
+  if (error) {
+    if (isMissingRpcError(error, 'add_post_comment')) {
+      console.warn('Post comment RPC is unavailable. Apply post engagement migrations.', error)
+      return null
+    }
+    throw error
+  }
+  const row = Array.isArray(data) ? data[0] : data
+  return normalizePostSocialComment(row)
+}
+
 export async function fetchFeedPosts(limit = 20): Promise<FeedPost[]> {
   if (!supabase) return []
   const { data, error } = await supabase
@@ -1585,6 +1690,38 @@ export function subscribeToChatMessages(
   }
 }
 
+export async function subscribeToPostSocialChanges(onChange: () => void): Promise<() => void> {
+  if (!supabase) return () => {}
+  const session = await getCurrentSession()
+  if (!session?.user?.id) return () => {}
+
+  const channel = supabase
+    .channel(`post-social:${session.user.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'post_likes',
+      },
+      () => onChange()
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'post_comments',
+      },
+      () => onChange()
+    )
+    .subscribe()
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
+
 export async function fetchNotifications(limit = 50): Promise<AppNotification[]> {
   if (!supabase) return []
   const session = await getCurrentSession()
@@ -1650,7 +1787,9 @@ export async function markAllNotificationsRead() {
   if (error) throw error
 }
 
-export async function subscribeToNotifications(onChange: () => void): Promise<() => void> {
+export async function subscribeToNotifications(
+  onChange: (notification?: AppNotification) => void
+): Promise<() => void> {
   if (!supabase) return () => {}
   const session = await getCurrentSession()
   const userId = session?.user?.id
@@ -1666,7 +1805,25 @@ export async function subscribeToNotifications(onChange: () => void): Promise<()
         table: 'notifications',
         filter: `user_id=eq.${userId}`,
       },
-      () => onChange()
+      (payload) => {
+        const next =
+          payload.eventType === 'INSERT' &&
+          payload.new &&
+          typeof payload.new === 'object'
+            ? (payload.new as AppNotification)
+            : undefined
+        onChange(
+          next
+            ? {
+                ...next,
+                payload:
+                  next.payload && typeof next.payload === 'object' && !Array.isArray(next.payload)
+                    ? next.payload
+                    : {},
+              }
+            : undefined
+        )
+      }
     )
     .subscribe()
 

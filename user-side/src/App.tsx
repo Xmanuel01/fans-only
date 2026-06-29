@@ -34,6 +34,7 @@ import {
   fetchChatableCreators,
   fetchNotifications,
   fetchNotificationPreferences,
+  fetchPostSocialState,
   fetchUnreadNotificationCount,
   fetchRecommendedCreators,
   ensureProfile,
@@ -51,9 +52,12 @@ import {
   purchasePpv,
   purchaseSubscription,
   sendChatMessage,
+  addPostComment,
   subscribeToChatMessages,
   subscribeToMemberChatThreads,
   subscribeToNotifications,
+  subscribeToPostSocialChanges,
+  togglePostLike,
   updateNotificationPreferences,
   signInWithPassword,
   signUpWithPassword,
@@ -67,6 +71,8 @@ import {
   type ExploreSort,
   type SubscriptionHistoryItem,
   type NotificationPreferences,
+  type PostSocialComment,
+  type PostSocialEntry,
   type UserProfile,
   type FeedPost,
   type WalletBalance,
@@ -126,16 +132,6 @@ const SUPPORTED_MEDIA_ASPECT_RATIOS: Array<{ css: string; value: number }> = [
   { css: '9 / 16', value: 9 / 16 },
 ]
 type PaymentReturnKind = 'wallet_topup' | 'tip' | 'gift'
-type PostComment = {
-  id: string
-  author: string
-  body: string
-  created_at: string
-}
-type PostSocialEntry = {
-  likedByUserIds: string[]
-  comments: PostComment[]
-}
 type SubscriptionTarget = {
   id: string
   handle?: string | null
@@ -281,9 +277,9 @@ const normalizePostSocialEntry = (value: unknown): PostSocialEntry => {
             author: comment.author,
             body: comment.body,
             created_at: comment.created_at,
-          } satisfies PostComment
+          } satisfies PostSocialComment
         })
-        .filter((entry): entry is PostComment => Boolean(entry))
+        .filter((entry): entry is PostSocialComment => Boolean(entry))
     : []
 
   return {
@@ -462,6 +458,7 @@ function AuthPrompt({
   recoveryMode: boolean
   onPasswordResetComplete: () => void
 }) {
+  const [authMode, setAuthMode] = useState<'sign_in' | 'sign_up'>('sign_in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -471,15 +468,44 @@ function AuthPrompt({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ email?: boolean; password?: boolean; confirmPassword?: boolean }>({})
+  const isSignUp = authMode === 'sign_up' && !recoveryMode
 
-  const validateSignInFields = () => {
+  const switchAuthMode = (mode: 'sign_in' | 'sign_up') => {
+    setAuthMode(mode)
+    setError(null)
+    setNotice(null)
+    setFieldErrors({})
+    if (mode === 'sign_in') {
+      setConfirmPassword('')
+    }
+  }
+
+  const validateEmailAndPassword = (action: 'sign_in' | 'sign_up') => {
+    const trimmedEmail = email.trim()
     const nextErrors = {
-      email: !email.trim(),
+      email: !trimmedEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmedEmail),
       password: !password.trim(),
+      confirmPassword: false,
+    }
+    if (action === 'sign_up') {
+      nextErrors.password = password.trim().length < 8
+      nextErrors.confirmPassword = !confirmPassword.trim() || password !== confirmPassword
     }
     setFieldErrors(nextErrors)
-    if (nextErrors.email || nextErrors.password) {
-      setError('Enter your email and password to sign in.')
+    if (nextErrors.email) {
+      setError('Enter a valid email address.')
+      setNotice(null)
+      setStatus('error')
+      return false
+    }
+    if (nextErrors.password) {
+      setError(action === 'sign_up' ? 'Use a password with at least 8 characters.' : 'Enter your password.')
+      setNotice(null)
+      setStatus('error')
+      return false
+    }
+    if (nextErrors.confirmPassword) {
+      setError('Confirm your password before creating the account.')
       setNotice(null)
       setStatus('error')
       return false
@@ -488,7 +514,7 @@ function AuthPrompt({
   }
 
   const handleSignIn = async () => {
-    if (!validateSignInFields()) return
+    if (!validateEmailAndPassword('sign_in')) return
     setStatus('signing-in')
     setError(null)
     setNotice(null)
@@ -504,13 +530,17 @@ function AuthPrompt({
   }
 
   const handleSignUp = async () => {
-    if (!email || !password) return
+    if (!validateEmailAndPassword('sign_up')) return
     setStatus('signing-in')
     setError(null)
     setNotice(null)
     try {
       const data = await signUpWithPassword(email, password)
       onAuthSuccess('sign_up', data?.session ?? null)
+      if (!data?.session) {
+        switchAuthMode('sign_in')
+        setNotice('Account created. Check your email to confirm it, then sign in.')
+      }
       setStatus('idle')
     } catch (err: any) {
       console.error(err)
@@ -573,11 +603,13 @@ function AuthPrompt({
           <span className="brand-tagline">Lace and pleasure Haven</span>
         </div>
       </div>
-      <h1>{recoveryMode ? 'Reset password' : 'Welcome back'}</h1>
+      <h1>{recoveryMode ? 'Reset password' : isSignUp ? 'Create account' : 'Welcome back'}</h1>
       <p className="auth-lede">
         {recoveryMode
           ? 'Create a new password for your account to finish recovery.'
-          : 'Sign in to your account'}
+          : isSignUp
+            ? 'Create your account'
+            : 'Sign in to your account'}
       </p>
 
       {!recoveryMode ? (
@@ -652,15 +684,44 @@ function AuthPrompt({
             className={fieldErrors.confirmPassword ? 'auth-input-error' : undefined}
           />
         </label>
+      ) : isSignUp ? (
+        <label className="auth-label">
+          Confirm password
+          <input
+            value={confirmPassword}
+            onChange={(e) => {
+              setConfirmPassword(e.target.value)
+              if (fieldErrors.confirmPassword) {
+                setFieldErrors((current) => ({ ...current, confirmPassword: false }))
+              }
+            }}
+            type="password"
+            placeholder="********"
+            className={fieldErrors.confirmPassword ? 'auth-input-error' : undefined}
+          />
+        </label>
       ) : null}
       {!recoveryMode ? (
         <>
-          <button className="auth-btn primary" onClick={handleSignIn} disabled={status === 'signing-in'}>
-            {status === 'signing-in' ? 'Signing in...' : 'Sign in'}
-          </button>
-          <button className="auth-btn ghost" onClick={handleSignUp} disabled={status === 'signing-in'}>
-            Create account
-          </button>
+          {isSignUp ? (
+            <>
+              <button className="auth-btn primary" onClick={handleSignUp} disabled={status === 'signing-in'}>
+                {status === 'signing-in' ? 'Creating account...' : 'Create account'}
+              </button>
+              <button className="auth-btn ghost" onClick={() => switchAuthMode('sign_in')} disabled={status === 'signing-in'}>
+                Back to sign in
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="auth-btn primary" onClick={handleSignIn} disabled={status === 'signing-in'}>
+                {status === 'signing-in' ? 'Signing in...' : 'Sign in'}
+              </button>
+              <button className="auth-btn ghost" onClick={() => switchAuthMode('sign_up')} disabled={status === 'signing-in'}>
+                Create account
+              </button>
+            </>
+          )}
           <button className="auth-link-btn" onClick={handleForgotPassword} disabled={status === 'sending-reset'}>
             {status === 'sending-reset' ? 'Sending reset link...' : 'Forgot password?'}
           </button>
@@ -681,12 +742,16 @@ function AuthPrompt({
         <li>
           {recoveryMode
             ? 'Use a password with at least 8 characters.'
-            : 'Use your email and password to access your account.'}
+            : isSignUp
+              ? 'Use a password with at least 8 characters.'
+              : 'Use your email and password to access your account.'}
         </li>
         <li>
           {recoveryMode
             ? 'After saving the new password, sign in again if your session does not appear immediately.'
-            : 'After sign-in, return here to view content.'}
+            : isSignUp
+              ? 'You may need to confirm your email before signing in.'
+              : 'After sign-in, return here to view content.'}
         </li>
       </ul>
     </div>
@@ -1808,6 +1873,22 @@ function getNotificationDetail(item: AppNotification) {
     return `Amount: ${formatKsh(payload.amount_cents ?? 0)}.`
   }
   return 'Open the app to see the latest activity.'
+}
+
+function showBrowserNotification(item: AppNotification) {
+  if (typeof window === 'undefined' || !('Notification' in window)) return
+  if (window.Notification.permission !== 'granted') return
+  if (document.visibilityState === 'visible' && document.hasFocus()) return
+
+  const body = getNotificationDetail(item)
+  const notification = new window.Notification(getNotificationTitle(item), {
+    body,
+    tag: `fans-only-notification:${item.id}`,
+  })
+  notification.onclick = () => {
+    window.focus()
+    notification.close()
+  }
 }
 
 function getNotificationTargetPage(
@@ -4577,6 +4658,10 @@ export default function App() {
   const hasReleaseNotes = Boolean(RELEASE_NOTES_URL)
   const hasHelpSupport = Boolean(HELP_CENTER_URL || SUPPORT_EMAIL)
   const hasFeatureRequests = Boolean(FEATURE_REQUESTS_ENABLED && isSupabaseConfigured)
+  const visiblePostIds = useMemo(
+    () => Array.from(new Set([...feedPosts, ...storyPosts].map((post) => post.id))),
+    [feedPosts, storyPosts]
+  )
 
   useEffect(() => {
     setPostSocialById(readPostSocialState())
@@ -4600,19 +4685,30 @@ export default function App() {
     setWalletHistory(walletEntries)
   }
 
+  const refreshPostSocialState = async (postIds: number[]) => {
+    if (!postIds.length) return
+    const nextSocial = await fetchPostSocialState(postIds)
+    setPostSocialById((prev) => {
+      const merged = { ...prev }
+      for (const postId of postIds) {
+        merged[postId] = nextSocial[postId] ?? { likedByUserIds: [], comments: [] }
+      }
+      return merged
+    })
+  }
+
   const handleTogglePostLike = (postId: number) => {
     if (!sessionIdentity.userId) {
       setToast('Sign in to like posts')
       return
     }
 
-    let shouldNotifyCreator = false
+    const currentSocial = postSocialById[postId] ?? { likedByUserIds: [], comments: [] }
+    const wasLiked = currentSocial.likedByUserIds.includes(sessionIdentity.userId)
 
     setPostSocialById((prev) => {
       const current = prev[postId] ?? { likedByUserIds: [], comments: [] }
-      const liked = current.likedByUserIds.includes(sessionIdentity.userId)
-      shouldNotifyCreator = !liked
-      const likedByUserIds = liked
+      const likedByUserIds = wasLiked
         ? current.likedByUserIds.filter((id) => id !== sessionIdentity.userId)
         : [...current.likedByUserIds, sessionIdentity.userId]
 
@@ -4625,11 +4721,37 @@ export default function App() {
       }
     })
 
-    if (shouldNotifyCreator) {
-      void notifyCreatorPostEngagement({ postId, event: 'like' }).catch((error) => {
-        console.warn('Could not notify creator about post like', error)
-      })
+    if (!wasLiked) {
+      void togglePostLike(postId)
+        .then((result) => {
+          if (result === null) {
+            return notifyCreatorPostEngagement({ postId, event: 'like' })
+          }
+          return refreshPostSocialState([postId])
+        })
+        .catch((error) => {
+          console.warn('Could not save post like', error)
+          setToast('Could not update the like right now.')
+          void refreshPostSocialState([postId]).catch((refreshError) => {
+            console.warn('Could not refresh post like state', refreshError)
+          })
+        })
+      return
     }
+
+    void togglePostLike(postId)
+      .then((result) => {
+        if (result !== null) {
+          return refreshPostSocialState([postId])
+        }
+      })
+      .catch((error) => {
+        console.warn('Could not remove post like', error)
+        setToast('Could not update the like right now.')
+        void refreshPostSocialState([postId]).catch((refreshError) => {
+          console.warn('Could not refresh post like state', refreshError)
+        })
+      })
   }
 
   const handleAddPostComment = (postId: number, body: string) => {
@@ -4660,13 +4782,24 @@ export default function App() {
       }
     })
 
-    void notifyCreatorPostEngagement({
-      postId,
-      event: 'comment',
-      commentBody: trimmed,
-    }).catch((error) => {
-      console.warn('Could not notify creator about post comment', error)
-    })
+    void addPostComment(postId, trimmed)
+      .then((comment) => {
+        if (comment === null) {
+          return notifyCreatorPostEngagement({
+            postId,
+            event: 'comment',
+            commentBody: trimmed,
+          })
+        }
+        return refreshPostSocialState([postId])
+      })
+      .catch((error) => {
+        console.warn('Could not save post comment', error)
+        setToast('Could not save that comment right now.')
+        void refreshPostSocialState([postId]).catch((refreshError) => {
+          console.warn('Could not refresh post comment state', refreshError)
+        })
+      })
   }
 
   const refreshAccessState = async () => {
@@ -4877,6 +5010,42 @@ export default function App() {
   }, [session, ageConfirmed])
 
   useEffect(() => {
+    if (envStatus.hasIssues || !isSupabaseConfigured || !session?.user?.id || !ageConfirmed) return
+    if (!visiblePostIds.length) return
+
+    let isMounted = true
+    let unsubscribe = () => {}
+
+    const loadSocialState = async () => {
+      try {
+        const nextSocial = await fetchPostSocialState(visiblePostIds)
+        if (!isMounted) return
+        setPostSocialById((prev) => {
+          const merged = { ...prev }
+          for (const postId of visiblePostIds) {
+            merged[postId] = nextSocial[postId] ?? { likedByUserIds: [], comments: [] }
+          }
+          return merged
+        })
+      } catch (error) {
+        console.warn('Could not load post social state', error)
+      }
+    }
+
+    void loadSocialState()
+    void (async () => {
+      unsubscribe = await subscribeToPostSocialChanges(() => {
+        void loadSocialState()
+      })
+    })()
+
+    return () => {
+      isMounted = false
+      unsubscribe()
+    }
+  }, [session?.user?.id, ageConfirmed, visiblePostIds])
+
+  useEffect(() => {
     if (envStatus.hasIssues) return
     if (!session?.user?.id) {
       setNotificationUnreadCount(0)
@@ -4897,8 +5066,9 @@ export default function App() {
 
     void loadUnreadCount()
     void (async () => {
-      unsubscribe = await subscribeToNotifications(() => {
+      unsubscribe = await subscribeToNotifications((notification) => {
         void loadUnreadCount()
+        if (notification) showBrowserNotification(notification)
       })
     })()
 

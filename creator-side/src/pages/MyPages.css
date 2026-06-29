@@ -2705,6 +2705,19 @@ button,
   background: #0f1724;
 }
 
+.home-post__media:is(video) {
+  aspect-ratio: 3 / 4;
+  height: auto;
+  min-height: 0;
+  object-fit: contain;
+  background: #09111b;
+}
+
+.home-post__media:is(img) {
+  object-fit: contain;
+  background: #09111b;
+}
+
 .home-post__footer {
   display: flex;
   align-items: center;
@@ -6179,12 +6192,18 @@ button,
   background: transparent;
 }
 
+.create-post__attachment-copy {
+  min-width: 0;
+}
+
 .create-post__attachment-name {
   font-weight: 600;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .create-post__remove {
+  flex: 0 0 auto;
   width: 32px;
   height: 32px;
   border-radius: 50%;

@@ -16,6 +16,122 @@ export const supabase =
       })
     : null;
 const CREATOR_PROFILE_BUCKET = 'creator-profiles';
+export const CREATOR_MEDIA_BUCKET = 'creator-media';
+export const CREATOR_MEDIA_MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+export const CREATOR_MEDIA_ALLOWED_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/x-m4v',
+] as const;
+
+const CREATOR_MEDIA_ALLOWED_MIME_TYPE_SET = new Set<string>(CREATOR_MEDIA_ALLOWED_MIME_TYPES);
+
+const inferMediaMimeType = (mimeType: string | null | undefined, fileNameOrPath: string | null | undefined) => {
+  const normalizedMimeType = typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : '';
+  if (normalizedMimeType) {
+    return normalizedMimeType;
+  }
+
+  const normalizedPath = typeof fileNameOrPath === 'string' ? fileNameOrPath.trim().toLowerCase() : '';
+  if (!normalizedPath) {
+    return null;
+  }
+
+  if (normalizedPath.endsWith('.mp4')) return 'video/mp4';
+  if (normalizedPath.endsWith('.mov')) return 'video/quicktime';
+  if (normalizedPath.endsWith('.webm')) return 'video/webm';
+  if (normalizedPath.endsWith('.m4v')) return 'video/x-m4v';
+  if (normalizedPath.endsWith('.jpg') || normalizedPath.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalizedPath.endsWith('.png')) return 'image/png';
+  if (normalizedPath.endsWith('.webp')) return 'image/webp';
+
+  return null;
+};
+
+export const resolveCreatorPostFileMimeType = (file: File) =>
+  inferMediaMimeType(file.type || null, file.name);
+
+export const validateCreatorPostFile = (file: File) => {
+  const resolvedMimeType = resolveCreatorPostFileMimeType(file);
+
+  if (!resolvedMimeType || !CREATOR_MEDIA_ALLOWED_MIME_TYPE_SET.has(resolvedMimeType)) {
+    return `${file.name} is not a supported media type. Use JPG, PNG, WebP, MP4, MOV, M4V, or WebM.`;
+  }
+
+  if (file.size > CREATOR_MEDIA_MAX_FILE_SIZE_BYTES) {
+    return `${file.name} is too large. Videos and photos must be 100 MB or smaller.`;
+  }
+
+  return null;
+};
+
+type CreatorMediaDimensions = { width: number | null; height: number | null };
+
+const emptyCreatorMediaDimensions: CreatorMediaDimensions = { width: null, height: null };
+
+async function resolveCreatorPostFileDimensions(
+  file: File,
+  mimeType: string | null
+): Promise<{ width: number | null; height: number | null }> {
+  if (typeof window === 'undefined' || typeof URL === 'undefined' || !mimeType) {
+    return emptyCreatorMediaDimensions;
+  }
+
+  if (mimeType.startsWith('image/')) {
+    return await new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      const finish = (dimensions = emptyCreatorMediaDimensions) => {
+        URL.revokeObjectURL(url);
+        resolve(dimensions);
+      };
+
+      image.onload = () => {
+        finish({
+          width: Number.isFinite(image.naturalWidth) && image.naturalWidth > 0 ? image.naturalWidth : null,
+          height: Number.isFinite(image.naturalHeight) && image.naturalHeight > 0 ? image.naturalHeight : null,
+        });
+      };
+      image.onerror = () => finish();
+      image.src = url;
+    });
+  }
+
+  if (mimeType.startsWith('video/')) {
+    return await new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const video = document.createElement('video');
+      let settled = false;
+      const finish = (dimensions = emptyCreatorMediaDimensions) => {
+        if (settled) return;
+        settled = true;
+        video.removeAttribute('src');
+        video.load();
+        URL.revokeObjectURL(url);
+        resolve(dimensions);
+      };
+
+      window.setTimeout(() => finish(), 5000);
+      video.preload = 'metadata';
+      video.muted = true;
+      video.playsInline = true;
+      video.onloadedmetadata = () => {
+        finish({
+          width: Number.isFinite(video.videoWidth) && video.videoWidth > 0 ? video.videoWidth : null,
+          height: Number.isFinite(video.videoHeight) && video.videoHeight > 0 ? video.videoHeight : null,
+        });
+      };
+      video.onerror = () => finish();
+      video.src = url;
+    });
+  }
+
+  return emptyCreatorMediaDimensions;
+}
 
 const isMissingRpcError = (error: unknown, functionName: string) => {
   if (!error || typeof error !== 'object') return false;
@@ -1058,7 +1174,9 @@ export async function markAllNotificationsRead() {
   if (error) throw error;
 }
 
-export async function subscribeToNotifications(onChange: () => void): Promise<() => void> {
+export async function subscribeToNotifications(
+  onChange: (notification?: AppNotification) => void
+): Promise<() => void> {
   if (!supabase) return () => {};
   const userId = await requireUserId();
   const channel = supabase
@@ -1071,7 +1189,25 @@ export async function subscribeToNotifications(onChange: () => void): Promise<()
         table: 'notifications',
         filter: `user_id=eq.${userId}`,
       },
-      () => onChange(),
+      (payload) => {
+        const next =
+          payload.eventType === 'INSERT' &&
+          payload.new &&
+          typeof payload.new === 'object'
+            ? (payload.new as AppNotification)
+            : undefined;
+        onChange(
+          next
+            ? {
+                ...next,
+                payload:
+                  next.payload && typeof next.payload === 'object' && !Array.isArray(next.payload)
+                    ? next.payload
+                    : {},
+              }
+            : undefined,
+        );
+      },
     )
     .subscribe();
 
@@ -1405,28 +1541,6 @@ const CREATOR_CONTENT_SELECT = [
   'media_assets(id, storage_path, mime_type, width, height)',
 ].join(',');
 
-const inferCreatorMediaMimeType = (mimeType: string | null | undefined, fileNameOrPath: string | null | undefined) => {
-  const normalizedMimeType = typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : '';
-  if (normalizedMimeType) {
-    return normalizedMimeType;
-  }
-
-  const normalizedPath = typeof fileNameOrPath === 'string' ? fileNameOrPath.trim().toLowerCase() : '';
-  if (!normalizedPath) {
-    return null;
-  }
-
-  if (normalizedPath.endsWith('.mp4')) return 'video/mp4';
-  if (normalizedPath.endsWith('.mov')) return 'video/quicktime';
-  if (normalizedPath.endsWith('.webm')) return 'video/webm';
-  if (normalizedPath.endsWith('.m4v')) return 'video/x-m4v';
-  if (normalizedPath.endsWith('.jpg') || normalizedPath.endsWith('.jpeg')) return 'image/jpeg';
-  if (normalizedPath.endsWith('.png')) return 'image/png';
-  if (normalizedPath.endsWith('.webp')) return 'image/webp';
-
-  return null;
-};
-
 async function createSignedMediaMap(rows: any[]) {
   if (!supabase) return new Map<string, string>();
 
@@ -1443,7 +1557,7 @@ async function createSignedMediaMap(rows: any[]) {
   }
 
   const { data: signed, error: signedErr } = await supabase.storage
-    .from('creator-media')
+    .from(CREATOR_MEDIA_BUCKET)
     .createSignedUrls(uniquePaths, 60 * 60);
 
   if (signedErr) {
@@ -1484,7 +1598,7 @@ function mapCreatorContentRows(rows: any[], signedMap: Map<string, string>): Cre
       return {
         id: asset.id,
         url: storagePath ? signedMap.get(storagePath) ?? '' : '',
-        mime_type: inferCreatorMediaMimeType(asset.mime_type ?? null, storagePath),
+        mime_type: inferMediaMimeType(asset.mime_type ?? null, storagePath),
         width: asset.width ?? null,
         height: asset.height ?? null,
       };
@@ -1582,6 +1696,11 @@ export async function publishCreatorPost(params: {
   const userId = await requireUserId();
   let postId: number | null = null;
   const uploadedPaths: string[] = [];
+  const files = params.files ?? [];
+  const invalidFileMessage = files.map(validateCreatorPostFile).find((message) => message !== null);
+  if (invalidFileMessage) {
+    throw new Error(invalidFileMessage);
+  }
 
   try {
     const { data: post, error: postError } = await supabase
@@ -1602,20 +1721,17 @@ export async function publishCreatorPost(params: {
     if (postError) throw postError;
 
     postId = post.id;
-    const files = params.files ?? [];
     if (!files.length) return post;
 
     const uploads = [];
     for (const file of files) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const path = `${userId}/${post.id}/${crypto.randomUUID?.() ?? Date.now()}-${safeName}`;
-      const resolvedMimeType = inferCreatorMediaMimeType(file.type || null, file.name);
-      const uploadPayload = new Blob([await file.arrayBuffer()], {
-        type: resolvedMimeType ?? file.type ?? 'application/octet-stream',
-      });
+      const resolvedMimeType = resolveCreatorPostFileMimeType(file);
+      const dimensions = await resolveCreatorPostFileDimensions(file, resolvedMimeType);
       const { error: uploadError } = await supabase.storage
-        .from('creator-media')
-        .upload(path, uploadPayload, {
+        .from(CREATOR_MEDIA_BUCKET)
+        .upload(path, file, {
           contentType: resolvedMimeType ?? undefined,
           upsert: false,
         });
@@ -1625,8 +1741,8 @@ export async function publishCreatorPost(params: {
         post_id: post.id,
         storage_path: path,
         mime_type: resolvedMimeType,
-        width: null,
-        height: null,
+        width: dimensions.width,
+        height: dimensions.height,
         size_bytes: file.size,
       });
     }
@@ -1646,7 +1762,7 @@ export async function publishCreatorPost(params: {
     }
     if (uploadedPaths.length) {
       const { error: cleanupStorageError } = await supabase.storage
-        .from('creator-media')
+        .from(CREATOR_MEDIA_BUCKET)
         .remove(uploadedPaths);
       if (cleanupStorageError) {
         console.warn('Failed to clean up uploaded media after publish error', cleanupStorageError);
